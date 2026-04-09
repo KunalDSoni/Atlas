@@ -1,0 +1,14 @@
+{
+  "name": "atlas",
+  "version": "1.0.0",
+  "description": "Atlas — Project management tool built for teams that ship fast. A full-stack Jira clone with Kanban boards, sprint management, role-based access, and real-time dashboards.",
+  "private": true,
+  "scripts": {
+    "start": "cd backend && node server.js",
+    "dev": "cd backend && node server.js",
+    "install:backend": "cd backend && npm install"
+  },
+  "keywords": ["jira", "project-management", "kanban", "sprint", "atlas"],
+  "author": "Kunal Soni",
+  "license": "MIT"
+}
