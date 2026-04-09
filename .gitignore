@@ -24,5 +24,7 @@ npm-debug.log*
 
 # Build
 dist/
-build/
 *.tgz
+
+# Ignore build artifacts but keep frontend/build (pre-built SPA)
+!frontend/build/
