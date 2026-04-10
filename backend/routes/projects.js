@@ -13,6 +13,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
+const { auditLog } = require('../middleware/logger');
 
 const router = express.Router();
 
@@ -48,6 +49,7 @@ router.post('/', requireAuth, async (req, res) => {
     }
 
     const project = queryOne(db, 'SELECT * FROM projects WHERE id = ?', [id]);
+    auditLog({ userId: req.userId, action: 'Created project', category: 'projects', entityType: 'project', entityId: id, entityName: `${key} - ${name}` });
     res.status(201).json(project);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -88,7 +90,9 @@ router.delete('/:id', requireAuth, async (req, res) => {
     run(db, 'DELETE FROM issues WHERE project_id = ?', [pid]);
     run(db, 'DELETE FROM sprints WHERE project_id = ?', [pid]);
     run(db, 'DELETE FROM project_members WHERE project_id = ?', [pid]);
+    const proj = queryOne(db, 'SELECT name, key FROM projects WHERE id = ?', [pid]);
     run(db, 'DELETE FROM projects WHERE id = ?', [pid]);
+    auditLog({ userId: req.userId, action: 'Deleted project', category: 'projects', entityType: 'project', entityId: pid, entityName: proj ? `${proj.key} - ${proj.name}` : pid });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

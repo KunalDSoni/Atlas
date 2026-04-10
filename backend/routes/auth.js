@@ -7,6 +7,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { getDb, queryOne, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
+const { auditLog } = require('../middleware/logger');
 
 const router = express.Router();
 
@@ -28,6 +29,7 @@ router.post('/login', async (req, res) => {
     run(db, "INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, datetime('now', '+7 days'))", [uuidv4(), user.id, token]);
     run(db, "UPDATE users SET last_login = datetime('now') WHERE id = ?", [user.id]);
 
+    auditLog({ userId: user.id, action: 'User logged in', category: 'auth', entityType: 'user', entityId: user.id, entityName: user.name });
     res.json({
       id: user.id, name: user.name, email: user.email, role: user.role,
       avatar_color: user.avatar_color, avatar_url: user.avatar_url,
@@ -46,6 +48,7 @@ router.post('/logout', async (req, res) => {
       const db = await getDb();
       run(db, 'DELETE FROM sessions WHERE token = ?', [token]);
     }
+    auditLog({ userId: req.userId, action: 'User logged out', category: 'auth', entityType: 'user', entityId: req.userId });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

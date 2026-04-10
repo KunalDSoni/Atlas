@@ -9,6 +9,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
+const { auditLog } = require('../middleware/logger');
 
 const router = express.Router();
 
@@ -44,6 +45,7 @@ router.post('/projects/:projectId/sprints', requireAuth, async (req, res) => {
       [id, req.params.projectId, name, goal || '', start_date || null, end_date || null]);
 
     const sprint = queryOne(db, 'SELECT * FROM sprints WHERE id = ?', [id]);
+    auditLog({ userId: req.userId, action: 'Created sprint', category: 'sprints', entityType: 'sprint', entityId: id, entityName: name });
     res.status(201).json(enrichSprint(db, sprint));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -80,6 +82,9 @@ router.put('/sprints/:id', requireAuth, async (req, res) => {
     }
 
     const updated = queryOne(db, 'SELECT * FROM sprints WHERE id = ?', [req.params.id]);
+    if (status && status !== sprint.status) {
+      auditLog({ userId: req.userId, action: `Sprint ${status}`, category: 'sprints', entityType: 'sprint', entityId: req.params.id, entityName: updated.name, details: { from: sprint.status, to: status } });
+    }
     res.json(enrichSprint(db, updated));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -88,9 +93,11 @@ router.put('/sprints/:id', requireAuth, async (req, res) => {
 router.delete('/sprints/:id', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
+    const sprint = queryOne(db, 'SELECT name FROM sprints WHERE id = ?', [req.params.id]);
     // Move issues back to backlog (null sprint_id)
     run(db, 'UPDATE issues SET sprint_id = NULL WHERE sprint_id = ?', [req.params.id]);
     run(db, 'DELETE FROM sprints WHERE id = ?', [req.params.id]);
+    auditLog({ userId: req.userId, action: 'Deleted sprint', category: 'sprints', entityType: 'sprint', entityId: req.params.id, entityName: sprint ? sprint.name : req.params.id });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
