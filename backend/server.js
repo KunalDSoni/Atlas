@@ -19,6 +19,8 @@ const sprintsRoutes = require('./routes/sprints');
 const issuesRoutes = require('./routes/issues');
 const commentsRoutes = require('./routes/comments');
 const adminRoutes = require('./routes/admin');
+const reportsRoutes = require('./routes/reports');
+const wikiRoutes = require('./routes/wiki');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -66,6 +68,17 @@ app.use('/api', commentsRoutes);
 // Admin Module — admin dashboard stats
 app.use('/api/admin', adminRoutes);
 
+// Reports Module — project reports, charts, CSV export
+app.use('/api', reportsRoutes);
+
+// Wiki (Confluence) Module — spaces, pages, comments, search
+app.use('/api', wikiRoutes);
+
+// Wiki (Confluence) frontend
+app.get('/wiki', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'frontend', 'build', 'wiki.html'));
+});
+
 // SPA fallback (Express 5 compatible)
 app.get('/{*splat}', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'frontend', 'build', 'index.html'));
@@ -86,6 +99,8 @@ async function start() {
     console.log(`  Issues    → /api/projects/:id/issues, /api/issues/:id (CRUD + move)`);
     console.log(`  Comments  → /api/issues/:id/comments, /api/comments/:id (CRUD)`);
     console.log(`  Admin     → /api/admin/stats`);
+    console.log(`  Reports   → /api/projects/:id/reports/* (sprint, velocity, workload, burndown, CSV)`);
+    console.log(`  Wiki      → /api/wiki/* (spaces, pages, comments, search, templates)`);
   });
 }
 
