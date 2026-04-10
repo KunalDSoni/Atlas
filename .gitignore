@@ -5,10 +5,11 @@ package-lock.json
 # Database
 backend/data.db
 
-# Environment
+# Environment (NEVER commit these)
 .env
 .env.local
 .env.production
+backend/.env
 
 # IDE
 .vscode/

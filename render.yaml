@@ -1,0 +1,26 @@
+# Render.com deployment config
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: atlas
+    runtime: node
+    buildCommand: cd backend && npm install
+    startCommand: cd backend && node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3001"
+      - key: DB_DRIVER
+        value: sqlite
+      - key: SEED_DEMO_DATA
+        value: "false"
+      - key: ADMIN_NAME
+        value: Kunal Soni
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true

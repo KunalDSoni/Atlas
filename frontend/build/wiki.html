@@ -1,0 +1,1201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atlas Wiki</title>
+    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
+    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+    <script>
+        // Debug: catch Babel compilation errors
+        window.addEventListener('error', function(e) {
+            console.error('Global error:', e.message, e.filename, e.lineno);
+            if (document.getElementById('root') && !document.getElementById('root').innerHTML) {
+                document.getElementById('root').innerHTML = '<div style="padding:40px;color:red;font-family:sans-serif"><h2>Error loading Atlas Wiki</h2><p>' + e.message + '</p></div>';
+            }
+        });
+    </script>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        :root {
+            --blue:#0c66e4; --blue-dark:#0952cc; --blue-light:#e9f2ff; --blue-subtle:#579dff;
+            --text:#172B4D; --text-subtle:#44546f; --text-muted:#626f86;
+            --bg:#fff; --bg-neutral:#f7f8f9; --bg-neutral-subtle:#f1f2f4;
+            --border:#dfe1e6; --border-bold:#091e4224;
+            --green:#22a06b; --red:#de350b; --yellow:#e2b203; --purple:#6e5dc6;
+            --nav-bg:#1868db; --nav-bg-dark:#0c3d8f;
+            --font:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,sans-serif;
+            --sidebar-w:280px;
+        }
+        body { font-family:var(--font); color:var(--text); background:var(--bg); }
+        button { font-family:var(--font); cursor:pointer; }
+        input,textarea,select { font-family:var(--font); }
+        a { text-decoration:none; color:inherit; }
+
+        /* ===== TOP NAV (Confluence blue bar) ===== */
+        .topnav {
+            height:56px; background:var(--nav-bg); display:flex; align-items:center;
+            padding:0 16px; gap:4px; position:sticky; top:0; z-index:100;
+            box-shadow:0 1px 1px rgba(0,0,0,.14);
+        }
+        .topnav-left { display:flex; align-items:center; gap:4px; }
+        .topnav-logo {
+            display:flex; align-items:center; gap:6px; color:#fff; font-weight:700;
+            font-size:15px; padding:6px 10px; border-radius:4px; cursor:pointer; letter-spacing:-.2px;
+        }
+        .topnav-logo:hover { background:rgba(255,255,255,.12); }
+        .topnav-logo svg { width:24px; height:24px; }
+        .topnav-btn {
+            color:rgba(255,255,255,.9); font-size:14px; font-weight:500; border:none;
+            background:none; padding:6px 12px; border-radius:4px; white-space:nowrap;
+            display:flex; align-items:center; gap:4px;
+        }
+        .topnav-btn:hover { background:rgba(255,255,255,.12); color:#fff; }
+        .topnav-btn svg { width:16px; height:16px; }
+        .topnav-center { flex:1; display:flex; justify-content:center; }
+        .topnav-search {
+            width:100%; max-width:460px; position:relative;
+        }
+        .topnav-search input {
+            width:100%; padding:7px 12px 7px 34px; border-radius:6px; border:none;
+            background:rgba(255,255,255,.18); color:#fff; font-size:14px;
+            transition:background .2s;
+        }
+        .topnav-search input::placeholder { color:rgba(255,255,255,.55); }
+        .topnav-search input:focus { background:rgba(255,255,255,.28); outline:none; }
+        .topnav-search-icon {
+            position:absolute; left:10px; top:50%; transform:translateY(-50%); color:rgba(255,255,255,.55);
+        }
+        .topnav-right { display:flex; align-items:center; gap:6px; margin-left:auto; }
+        .topnav-create {
+            background:#fff; color:var(--blue); border:none; padding:6px 14px; border-radius:4px;
+            font-size:14px; font-weight:600; display:flex; align-items:center; gap:4px;
+        }
+        .topnav-create:hover { background:#f0f0f0; }
+        .topnav-avatar {
+            width:32px; height:32px; border-radius:50%; display:flex; align-items:center;
+            justify-content:center; font-weight:700; font-size:13px; color:#fff; cursor:pointer;
+            border:2px solid rgba(255,255,255,.3);
+        }
+
+        /* ===== LAYOUT ===== */
+        .app-layout { display:flex; height:calc(100vh - 56px); }
+
+        /* ===== LEFT SIDEBAR ===== */
+        .sidebar {
+            width:var(--sidebar-w); min-width:var(--sidebar-w); background:var(--bg-neutral);
+            border-right:1px solid var(--border); display:flex; flex-direction:column;
+            overflow:hidden;
+        }
+        .sidebar-scroll { flex:1; overflow-y:auto; padding:12px 8px; }
+        .sidebar-space-header {
+            display:flex; align-items:center; gap:10px; padding:8px 12px;
+            border-radius:6px; cursor:pointer; margin-bottom:4px;
+        }
+        .sidebar-space-header:hover { background:rgba(0,0,0,.04); }
+        .sidebar-space-icon {
+            width:28px; height:28px; border-radius:4px; display:flex; align-items:center;
+            justify-content:center; font-size:14px; color:#fff; flex-shrink:0;
+        }
+        .sidebar-space-name { font-size:14px; font-weight:600; color:var(--text); }
+        .sidebar-section { margin-top:8px; }
+        .sidebar-section-label {
+            font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px;
+            color:var(--text-muted); padding:8px 12px 4px; user-select:none;
+        }
+        .sidebar-item {
+            display:flex; align-items:center; gap:6px; padding:5px 8px 5px 12px;
+            border-radius:4px; cursor:pointer; font-size:14px; color:var(--text-subtle);
+            margin-bottom:1px; position:relative;
+        }
+        .sidebar-item:hover { background:rgba(0,0,0,.04); }
+        .sidebar-item.active { background:var(--blue-light); color:var(--blue); font-weight:500; }
+        .sidebar-item-icon { width:20px; height:20px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .sidebar-item-icon svg { width:16px; height:16px; }
+        .sidebar-item-text { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+        /* Page tree */
+        .tree-item {
+            display:flex; align-items:center; gap:2px; padding:4px 8px; padding-left:12px;
+            border-radius:4px; cursor:pointer; font-size:13px; color:var(--text-subtle);
+            margin-bottom:1px; min-height:30px;
+        }
+        .tree-item:hover { background:rgba(0,0,0,.04); }
+        .tree-item.active { background:var(--blue-light); color:var(--blue); font-weight:500; }
+        .tree-toggle {
+            width:20px; height:20px; display:flex; align-items:center; justify-content:center;
+            border-radius:4px; flex-shrink:0; color:var(--text-muted); font-size:10px;
+        }
+        .tree-toggle:hover { background:rgba(0,0,0,.06); }
+        .tree-page-icon { width:18px; height:18px; flex-shrink:0; margin-right:4px; color:var(--text-muted); display:flex; align-items:center; justify-content:center; }
+        .tree-page-icon svg { width:16px; height:16px; }
+        .tree-page-title { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .tree-children { margin-left:16px; }
+        .draft-badge {
+            font-size:10px; font-weight:600; color:var(--text-muted); background:var(--bg-neutral-subtle);
+            border:1px solid var(--border); padding:1px 6px; border-radius:3px; white-space:nowrap; margin-left:auto;
+        }
+
+        /* Jira link at bottom */
+        .sidebar-footer {
+            border-top:1px solid var(--border); padding:8px; flex-shrink:0;
+        }
+        .sidebar-jira-link {
+            display:flex; align-items:center; gap:8px; padding:8px 12px;
+            border-radius:4px; font-size:13px; color:var(--text-subtle); cursor:pointer;
+        }
+        .sidebar-jira-link:hover { background:rgba(0,0,0,.04); }
+        .sidebar-jira-link svg { width:18px; height:18px; }
+        .sidebar-create-btn {
+            display:flex; align-items:center; gap:6px; padding:8px 12px;
+            border-radius:4px; font-size:13px; color:var(--blue); cursor:pointer;
+            border:1px dashed var(--border); background:none; width:100%; font-weight:500;
+            margin-top:8px;
+        }
+        .sidebar-create-btn:hover { background:var(--blue-light); border-color:var(--blue); }
+        .sidebar-create-btn svg { width:16px; height:16px; flex-shrink:0; }
+
+        /* ===== MAIN CONTENT ===== */
+        .main { flex:1; display:flex; flex-direction:column; overflow:hidden; background:#fff; }
+        .main-scroll { flex:1; overflow-y:auto; }
+        .main-content { max-width:860px; margin:0 auto; padding:32px 48px; width:100%; }
+
+        /* ===== DASHBOARD ===== */
+        .dash-section { margin-bottom:40px; }
+        .dash-section-title {
+            font-size:20px; font-weight:600; margin-bottom:16px; color:var(--text);
+        }
+        .dash-cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px; }
+        .dash-card {
+            border:1px solid var(--border); border-radius:8px; padding:16px; cursor:pointer;
+            transition:border-color .15s, box-shadow .15s; background:#fff;
+        }
+        .dash-card:hover { border-color:var(--blue); box-shadow:0 2px 8px rgba(12,102,228,.1); }
+        .dash-card-title { font-size:15px; font-weight:600; color:var(--text); margin-bottom:6px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+        .dash-card-meta { font-size:12px; color:var(--text-muted); display:flex; gap:8px; }
+        .space-cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:16px; }
+        .space-card {
+            border:1px solid var(--border); border-radius:8px; padding:20px; cursor:pointer;
+            transition:border-color .15s, box-shadow .15s;
+        }
+        .space-card:hover { border-color:var(--blue); box-shadow:0 4px 12px rgba(0,0,0,.08); }
+        .space-card-icon { width:40px; height:40px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:20px; margin-bottom:10px; color:#fff; }
+        .space-card-name { font-size:16px; font-weight:600; color:var(--text); margin-bottom:4px; }
+        .space-card-desc { font-size:13px; color:var(--text-muted); line-height:1.5; margin-bottom:8px; }
+        .space-card-count { font-size:12px; color:var(--text-muted); }
+
+        /* ===== PAGE VIEW ===== */
+        .breadcrumb { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--text-muted); margin-bottom:16px; flex-wrap:wrap; }
+        .breadcrumb-link { color:var(--blue); cursor:pointer; }
+        .breadcrumb-link:hover { text-decoration:underline; }
+        .breadcrumb-sep { color:var(--text-muted); }
+        .page-title-view { font-size:28px; font-weight:700; color:var(--text); margin-bottom:12px; line-height:1.25; }
+        .page-meta-bar { display:flex; align-items:center; gap:16px; font-size:13px; color:var(--text-muted); flex-wrap:wrap; margin-bottom:8px; }
+        .page-meta-author { display:flex; align-items:center; gap:6px; }
+        .mini-avatar { width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:10px; color:#fff; flex-shrink:0; }
+        .page-actions-bar { display:flex; align-items:center; gap:8px; margin-bottom:24px; padding-bottom:16px; border-bottom:1px solid var(--border); }
+
+        .btn {
+            padding:6px 14px; border:1px solid var(--border); border-radius:4px; background:#fff;
+            color:var(--text); font-size:13px; font-weight:500; display:inline-flex;
+            align-items:center; gap:5px; white-space:nowrap; cursor:pointer;
+            transition:background .15s, border-color .15s;
+        }
+        .btn:hover { background:var(--bg-neutral); border-color:var(--text-muted); }
+        .btn-primary { background:var(--blue); color:#fff; border-color:var(--blue); }
+        .btn-primary:hover { background:var(--blue-dark); border-color:var(--blue-dark); }
+        .btn-subtle { border:none; background:none; color:var(--text-subtle); padding:6px 10px; }
+        .btn-subtle:hover { background:var(--bg-neutral); }
+
+        /* Page body content */
+        .page-body { font-size:15px; line-height:1.7; color:var(--text); word-break:break-word; }
+        .page-body h1 { font-size:24px; font-weight:700; margin:28px 0 12px; }
+        .page-body h2 { font-size:20px; font-weight:700; margin:24px 0 8px; }
+        .page-body h3 { font-size:16px; font-weight:700; margin:20px 0 8px; }
+        .page-body p { margin-bottom:12px; }
+        .page-body a { color:var(--blue); }
+        .page-body a:hover { text-decoration:underline; }
+        .page-body code { background:var(--bg-neutral); padding:2px 6px; border-radius:3px; font-family:'SFMono-Regular',Consolas,monospace; font-size:13px; }
+        .page-body pre { background:var(--bg-neutral); padding:16px; border-radius:6px; overflow-x:auto; margin-bottom:12px; }
+        .page-body ul,.page-body ol { margin-left:24px; margin-bottom:12px; }
+        .page-body li { margin-bottom:4px; }
+        .page-body blockquote { border-left:3px solid var(--blue-subtle); padding:8px 16px; margin:0 0 12px; background:var(--blue-light); border-radius:0 4px 4px 0; }
+        .page-body table { width:100%; border-collapse:collapse; margin-bottom:16px; }
+        .page-body th,.page-body td { border:1px solid var(--border); padding:8px 12px; text-align:left; font-size:14px; }
+        .page-body th { background:var(--bg-neutral); font-weight:600; }
+        .page-body img { max-width:100%; height:auto; border-radius:4px; }
+
+        /* Labels */
+        .labels { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:20px; }
+        .label-tag { background:var(--bg-neutral-subtle); color:var(--text-subtle); padding:3px 10px; border-radius:3px; font-size:12px; font-weight:500; }
+
+        /* Comments */
+        .comments-section { margin-top:40px; border-top:1px solid var(--border); padding-top:24px; }
+        .comments-title { font-size:16px; font-weight:600; margin-bottom:16px; color:var(--text); }
+        .comment-box { display:flex; gap:12px; margin-bottom:16px; }
+        .comment-avatar { width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:12px; flex-shrink:0; }
+        .comment-content { flex:1; }
+        .comment-header { display:flex; align-items:center; gap:8px; font-size:13px; margin-bottom:4px; }
+        .comment-author { font-weight:600; color:var(--text); }
+        .comment-time { color:var(--text-muted); }
+        .comment-body { font-size:14px; color:var(--text); line-height:1.5; }
+        .comment-input-area { margin-bottom:24px; }
+        .comment-input-area textarea {
+            width:100%; min-height:80px; padding:10px 12px; border:1px solid var(--border);
+            border-radius:6px; font-size:14px; resize:vertical; color:var(--text);
+        }
+        .comment-input-area textarea:focus { outline:none; border-color:var(--blue); box-shadow:0 0 0 2px rgba(12,102,228,.15); }
+
+        /* ===== EDITOR ===== */
+        .editor-topbar {
+            height:52px; background:#fff; border-bottom:1px solid var(--border);
+            display:flex; align-items:center; justify-content:space-between; padding:0 16px;
+            flex-shrink:0;
+        }
+        .editor-topbar-left { display:flex; align-items:center; gap:8px; }
+        .editor-topbar-right { display:flex; align-items:center; gap:8px; }
+        .editor-saved-status { font-size:13px; color:var(--text-muted); display:flex; align-items:center; gap:4px; }
+        .editor-saved-status svg { width:14px; height:14px; color:var(--green); }
+
+        .editor-toolbar {
+            display:flex; align-items:center; gap:2px; padding:6px 12px; border-bottom:1px solid var(--border);
+            background:#fff; flex-wrap:wrap; flex-shrink:0;
+        }
+        .tb-btn {
+            width:32px; height:32px; display:flex; align-items:center; justify-content:center;
+            border:none; background:none; border-radius:4px; color:var(--text);
+            font-size:14px; cursor:pointer; flex-shrink:0;
+        }
+        .tb-btn:hover { background:var(--bg-neutral); }
+        .tb-btn.active { background:var(--blue-light); color:var(--blue); }
+        .tb-btn svg { width:18px; height:18px; }
+        .tb-sep { width:1px; height:24px; background:var(--border); margin:0 4px; flex-shrink:0; }
+        .tb-select {
+            padding:4px 8px; border:1px solid transparent; border-radius:4px; font-size:13px;
+            color:var(--text); background:none; cursor:pointer; font-weight:500;
+        }
+        .tb-select:hover { background:var(--bg-neutral); border-color:var(--border); }
+        .editor-title-input {
+            font-size:28px; font-weight:700; border:none; outline:none; color:var(--text);
+            padding:24px 48px 8px; width:100%; background:transparent;
+        }
+        .editor-title-input::placeholder { color:#b3bac5; }
+        .editor-body {
+            flex:1; padding:8px 48px 48px; font-size:15px; line-height:1.7; color:var(--text);
+            outline:none; min-height:300px; overflow-y:auto;
+        }
+        .editor-body:empty::before {
+            content:'Start writing or type / for commands...'; color:#b3bac5; font-style:normal;
+        }
+
+        /* ===== SEARCH RESULTS ===== */
+        .search-result { padding:16px; border:1px solid var(--border); border-radius:8px; cursor:pointer; margin-bottom:8px; }
+        .search-result:hover { border-color:var(--blue); background:rgba(12,102,228,.02); }
+        .search-result-title { font-size:15px; font-weight:600; color:var(--blue); margin-bottom:4px; }
+        .search-result-meta { font-size:12px; color:var(--text-muted); margin-bottom:6px; }
+        .search-result-snippet { font-size:13px; color:var(--text-subtle); line-height:1.5; }
+
+        /* ===== PAGE LIST ===== */
+        .page-list-item {
+            display:flex; align-items:center; gap:10px; padding:10px 12px;
+            border:1px solid var(--border); border-radius:6px; cursor:pointer; margin-bottom:6px;
+        }
+        .page-list-item:hover { border-color:var(--blue); background:rgba(12,102,228,.02); }
+        .page-list-icon { color:var(--text-muted); flex-shrink:0; }
+        .page-list-icon svg { width:18px; height:18px; }
+        .page-list-info { flex:1; }
+        .page-list-title { font-size:14px; font-weight:500; color:var(--text); }
+        .page-list-meta { font-size:12px; color:var(--text-muted); }
+
+        /* Modal */
+        .modal-overlay {
+            position:fixed; inset:0; background:rgba(9,30,66,.54); display:flex;
+            align-items:center; justify-content:center; z-index:1000;
+        }
+        .modal { background:#fff; border-radius:8px; padding:28px; max-width:480px; width:90%; box-shadow:0 8px 40px rgba(0,0,0,.2); }
+        .modal-title { font-size:20px; font-weight:700; color:var(--text); margin-bottom:20px; }
+        .modal-footer { display:flex; gap:8px; justify-content:flex-end; margin-top:20px; }
+        .form-group { margin-bottom:16px; }
+        .form-label { font-size:13px; font-weight:600; color:var(--text-subtle); margin-bottom:6px; display:block; }
+        .form-input {
+            width:100%; padding:8px 12px; border:1px solid var(--border); border-radius:4px;
+            font-size:14px; color:var(--text);
+        }
+        .form-input:focus { outline:none; border-color:var(--blue); box-shadow:0 0 0 2px rgba(12,102,228,.15); }
+
+        /* Version history */
+        .version-grid { display:grid; grid-template-columns:260px 1fr; gap:24px; margin-top:20px; }
+        .version-list-item {
+            padding:10px 12px; border:1px solid var(--border); border-radius:6px; cursor:pointer; margin-bottom:6px;
+        }
+        .version-list-item:hover { border-color:var(--blue); }
+        .version-list-item.active { border-color:var(--blue); background:var(--blue-light); }
+
+        /* Empty / loading */
+        .empty-state { text-align:center; padding:60px 20px; color:var(--text-muted); }
+        .empty-state-icon { font-size:48px; margin-bottom:12px; }
+        .empty-state-title { font-size:18px; font-weight:600; color:var(--text); margin-bottom:6px; }
+        .loading-spinner { display:flex; align-items:center; justify-content:center; padding:60px; color:var(--text-muted); font-size:14px; }
+
+        /* Responsive */
+        @media(max-width:1024px) {
+            .sidebar { width:220px; min-width:220px; }
+            .main-content { padding:24px 32px; }
+        }
+        @media(max-width:768px) {
+            .app-layout { flex-direction:column; }
+            .sidebar { width:100%; min-width:100%; border-right:none; border-bottom:1px solid var(--border); max-height:200px; }
+            .main-content { padding:16px; }
+            .topnav-search { display:none; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+        const API = window.location.origin + '/api';
+
+        // ===== SVG Icons =====
+        const Icons = {
+            confluence: () => (
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2.1 17.6c-.2.3-.4.7-.5 1-.2.4 0 .9.4 1.1l4.6 2.7c.4.2.9.1 1.1-.3.1-.3.3-.6.5-.9 1.4-2.3 2.8-2.1 5.4-.8l4.5 2.2c.4.2.9 0 1.1-.4l2.2-4.8c.2-.4 0-.9-.4-1.1l-4.4-2.1c-4.8-2.4-8.9-2.2-14.5 3.4zm19.8-11.2c.2-.3.4-.7.5-1 .2-.4 0-.9-.4-1.1L17.4 1.6c-.4-.2-.9-.1-1.1.3-.1.3-.3.6-.5.9-1.4 2.3-2.8 2.1-5.4.8L6 1.4c-.4-.2-.9 0-1.1.4L2.7 6.6c-.2.4 0 .9.4 1.1l4.4 2.1c4.8 2.4 8.9 2.2 14.4-3.4z"/></svg>
+            ),
+            jira: () => (
+                <svg viewBox="0 0 24 24" fill="#0052cc"><path d="M12.005 2c-2.6 2.6-2.6 6.7-.1 9.3l.1.1 4.6 4.6c.2.2.5.2.7 0l2.1-2.1c.2-.2.2-.5 0-.7l-4.6-4.6c-1.3-1.3-1.3-3.4 0-4.7.2-.2.2-.5 0-.7L12.705 1.1c-.2-.2-.5-.2-.7 0z"/><path d="M8.4 5.6c-.2.2-.2.5 0 .7l4.6 4.6c1.3 1.3 1.3 3.4 0 4.7l-.1.1-4.6 4.6c-.2.2-.2.5 0 .7l2.1 2.1c.2.2.5.2.7 0 2.6-2.6 2.6-6.7.1-9.3l-.1-.1-4.6-4.6c-.2-.2-.5-.2-.7 0L4.2 7c-.2.2-.2.5 0 .7l2.1-2.1z"/></svg>
+            ),
+            search: () => (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            ),
+            page: () => (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            ),
+            chevronRight: () => (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+            ),
+            chevronDown: () => (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
+            ),
+            plus: () => (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            ),
+            star: () => (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            ),
+            heart: () => (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+            ),
+            edit: () => (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            ),
+            clock: () => (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            ),
+            check: () => (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
+            ),
+            close: () => (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            ),
+            share: () => (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+            ),
+            home: () => (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+            ),
+            content: () => (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/></svg>
+            ),
+            bold: () => <span style={{fontWeight:700,fontSize:15}}>B</span>,
+            italic: () => <span style={{fontStyle:'italic',fontSize:15,fontFamily:'serif'}}>I</span>,
+            underline: () => <span style={{textDecoration:'underline',fontSize:15}}>U</span>,
+            listBullet: () => (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1" fill="currentColor"/><circle cx="4" cy="12" r="1" fill="currentColor"/><circle cx="4" cy="18" r="1" fill="currentColor"/></svg>
+            ),
+            listNumber: () => (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><text x="2" y="8" fill="currentColor" fontSize="8" fontWeight="bold">1</text><text x="2" y="14" fill="currentColor" fontSize="8" fontWeight="bold">2</text><text x="2" y="20" fill="currentColor" fontSize="8" fontWeight="bold">3</text></svg>
+            ),
+            alignLeft: () => (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="17" y1="10" x2="3" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="17" y1="14" x2="3" y2="14"/><line x1="21" y1="18" x2="3" y2="18"/></svg>
+            ),
+            link: () => (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            ),
+            image: () => (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            ),
+            table: () => (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+            ),
+            mention: () => (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0V12a10 10 0 1 0-3.92 7.94"/></svg>
+            ),
+            emoji: () => (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+            ),
+            hr: () => (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="12" x2="21" y2="12"/></svg>
+            ),
+            code: () => (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            ),
+        };
+
+        // ===== Helpers =====
+        const getAuthHeaders = () => {
+            try {
+                const s = localStorage.getItem('atlas_user');
+                if (!s) return { 'Content-Type': 'application/json' };
+                const u = JSON.parse(s);
+                return { 'x-user-id': String(u.id), 'x-user-role': u.role || '', 'x-auth-token': u.token || '', 'Content-Type': 'application/json' };
+            } catch(e) { return { 'Content-Type': 'application/json' }; }
+        };
+        const getUser = () => {
+            try {
+                const s = localStorage.getItem('atlas_user');
+                if (!s) return null;
+                return JSON.parse(s);
+            } catch(e) { return null; }
+        };
+        const avatarColors = { red:'#de350b', blue:'#0052cc', green:'#22a06b', purple:'#5e4db2', orange:'#974f0c', teal:'#00875a', yellow:'#b8621b' };
+        const getAvatarColor = (c) => avatarColors[c] || avatarColors.blue;
+        const fmtDate = (d) => { if(!d) return ''; const x=new Date(d); return x.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); };
+        const fmtDateTime = (d) => { if(!d) return ''; const x=new Date(d); return x.toLocaleDateString()+' '+x.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); };
+
+        // ===== API =====
+        const api = {
+            getSpaces: () => fetch(`${API}/wiki/spaces`,{headers:getAuthHeaders()}).then(r=>r.json()),
+            getSpace: (id) => fetch(`${API}/wiki/spaces/${id}`,{headers:getAuthHeaders()}).then(r=>r.json()),
+            getSpaceTree: (sid) => fetch(`${API}/wiki/spaces/${sid}/tree`,{headers:getAuthHeaders()}).then(r=>r.json()),
+            getSpacePages: (sid) => fetch(`${API}/wiki/spaces/${sid}/pages`,{headers:getAuthHeaders()}).then(r=>r.json()),
+            getPage: (id) => fetch(`${API}/wiki/pages/${id}`,{headers:getAuthHeaders()}).then(r=>r.json()),
+            savePage: (id,d) => fetch(`${API}/wiki/pages/${id}`,{method:'PUT',headers:getAuthHeaders(),body:JSON.stringify(d)}).then(r=>r.json()),
+            createPage: (sid,d) => fetch(`${API}/wiki/spaces/${sid}/pages`,{method:'POST',headers:getAuthHeaders(),body:JSON.stringify(d)}).then(r=>r.json()),
+            getRecentPages: () => fetch(`${API}/wiki/pages/recent`,{headers:getAuthHeaders()}).then(r=>r.json()),
+            getStarredPages: () => fetch(`${API}/wiki/pages/starred`,{headers:getAuthHeaders()}).then(r=>r.json()),
+            getPageComments: (pid) => fetch(`${API}/wiki/pages/${pid}/comments`,{headers:getAuthHeaders()}).then(r=>r.json()),
+            addComment: (pid,d) => fetch(`${API}/wiki/pages/${pid}/comments`,{method:'POST',headers:getAuthHeaders(),body:JSON.stringify(d)}).then(r=>r.json()),
+            getPageVersions: (pid) => fetch(`${API}/wiki/pages/${pid}/versions`,{headers:getAuthHeaders()}).then(r=>r.json()),
+            toggleStar: (d) => fetch(`${API}/wiki/star`,{method:'POST',headers:getAuthHeaders(),body:JSON.stringify(d)}).then(r=>r.json()),
+            toggleLike: (pid) => fetch(`${API}/wiki/pages/${pid}/like`,{method:'POST',headers:getAuthHeaders()}).then(r=>r.json()),
+            search: (q) => fetch(`${API}/wiki/search?q=${encodeURIComponent(q)}`,{headers:getAuthHeaders()}).then(r=>r.json()),
+            getTemplates: () => fetch(`${API}/wiki/templates`,{headers:getAuthHeaders()}).then(r=>r.json()),
+            createSpace: (d) => fetch(`${API}/wiki/spaces`,{method:'POST',headers:getAuthHeaders(),body:JSON.stringify(d)}).then(r=>r.json()),
+        };
+
+        // ===== TOP NAVIGATION =====
+        function TopNav({ onNavigate, onSearch }) {
+            const [sq, setSq] = useState('');
+            const user = getUser();
+            if (!user) return <div className="topnav"><div className="topnav-logo">Atlas Wiki</div></div>;
+            return (
+                <div className="topnav">
+                    <div className="topnav-left">
+                        <div className="topnav-logo" onClick={() => onNavigate('home')}>
+                            <Icons.confluence /> Atlas Wiki
+                        </div>
+                        <button className="topnav-btn" onClick={() => onNavigate('home')}>For you</button>
+                        <button className="topnav-btn" onClick={() => onNavigate('templates')}>Templates</button>
+                        <button className="topnav-btn" onClick={() => onNavigate('home')}>Spaces</button>
+                        <button className="topnav-btn" onClick={() => onNavigate('home')}>Apps</button>
+                    </div>
+                    <div className="topnav-center">
+                        <div className="topnav-search">
+                            <div className="topnav-search-icon"><Icons.search /></div>
+                            <input placeholder="Search Atlas Wiki" value={sq} onChange={e=>setSq(e.target.value)}
+                                onKeyDown={e=>{ if(e.key==='Enter'&&sq.trim()) onSearch(sq); }} />
+                        </div>
+                    </div>
+                    <div className="topnav-right">
+                        <button className="topnav-create" onClick={() => onNavigate('home')}>
+                            <Icons.plus /> Create
+                        </button>
+                        <div className="topnav-avatar" style={{background:getAvatarColor(user.avatar_color)}}>
+                            {(user.name || 'U').charAt(0).toUpperCase()}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ===== SIDEBAR =====
+        function Sidebar({ spaces, currentSpaceId, tree, onNavigate, onSelectPage, activePageId }) {
+            const [expanded, setExpanded] = useState(new Set());
+            const currentSpace = Array.isArray(spaces) ? spaces.find(s => s.id === currentSpaceId) : null;
+            const user = getUser();
+
+            const toggle = (id) => {
+                const n = new Set(expanded);
+                n.has(id) ? n.delete(id) : n.add(id);
+                setExpanded(n);
+            };
+
+            const renderTree = (items, depth=0) => {
+                if (!Array.isArray(items)) return null;
+                return items.map(item => {
+                    const hasKids = Array.isArray(item.children) && item.children.length > 0;
+                    const isExpanded = expanded.has(item.id);
+                    return (
+                        <div key={item.id}>
+                            <div className={`tree-item${activePageId===item.id?' active':''}`}
+                                style={{paddingLeft: `${12 + depth * 16}px`}}>
+                                <div className="tree-toggle" onClick={() => hasKids && toggle(item.id)}>
+                                    {hasKids ? (isExpanded ? <Icons.chevronDown /> : <Icons.chevronRight />) : <span style={{width:16}} />}
+                                </div>
+                                <div className="tree-page-icon"><Icons.page /></div>
+                                <div className="tree-page-title" onClick={() => onSelectPage(item.id)}>{item.title}</div>
+                                {item.status === 'draft' && <div className="draft-badge">DRAFT</div>}
+                            </div>
+                            {isExpanded && hasKids && (
+                                <div className="tree-children">
+                                    {renderTree(item.children, depth + 1)}
+                                </div>
+                            )}
+                        </div>
+                    );
+                });
+            };
+
+            return (
+                <div className="sidebar">
+                    <div className="sidebar-scroll">
+                        {currentSpace ? (
+                            <>
+                                <div className="sidebar-space-header" onClick={() => onNavigate('space', currentSpaceId)}>
+                                    <div className="sidebar-space-icon" style={{background: currentSpace.color || '#0052cc'}}>
+                                        {currentSpace.icon || (currentSpace.name || 'S').charAt(0)}
+                                    </div>
+                                    <div className="sidebar-space-name">{currentSpace.name}</div>
+                                </div>
+                                <div className="sidebar-section">
+                                    <div className="sidebar-section-label">Content</div>
+                                    <div className="sidebar-item active">
+                                        <div className="sidebar-item-icon"><Icons.content /></div>
+                                        <div className="sidebar-item-text">Pages</div>
+                                    </div>
+                                </div>
+                                <div className="sidebar-section" style={{marginTop:4}}>
+                                    {renderTree(tree)}
+                                </div>
+                                <button className="sidebar-create-btn" onClick={() => onNavigate('create-page', currentSpaceId)}>
+                                    <Icons.plus /> Create page
+                                </button>
+                            </>
+                        ) : (
+                            <>
+                                {user && (
+                                    <div className="sidebar-space-header">
+                                        <div className="mini-avatar" style={{background:getAvatarColor(user.avatar_color), width:28, height:28, fontSize:12}}>
+                                            {(user.name || 'U').charAt(0).toUpperCase()}
+                                        </div>
+                                        <div className="sidebar-space-name">{user.name}'s space</div>
+                                    </div>
+                                )}
+                                <div className="sidebar-section">
+                                    <div className="sidebar-section-label">Navigation</div>
+                                    <div className="sidebar-item" onClick={() => onNavigate('home')}>
+                                        <div className="sidebar-item-icon"><Icons.home /></div>
+                                        <div className="sidebar-item-text">Overview</div>
+                                    </div>
+                                    <div className="sidebar-item" onClick={() => onNavigate('recent')}>
+                                        <div className="sidebar-item-icon"><Icons.clock /></div>
+                                        <div className="sidebar-item-text">Recent</div>
+                                    </div>
+                                    <div className="sidebar-item" onClick={() => onNavigate('starred')}>
+                                        <div className="sidebar-item-icon"><Icons.star /></div>
+                                        <div className="sidebar-item-text">Starred</div>
+                                    </div>
+                                </div>
+                                {Array.isArray(spaces) && spaces.length > 0 && (
+                                    <div className="sidebar-section">
+                                        <div className="sidebar-section-label">Spaces</div>
+                                        {spaces.map(sp => (
+                                            <div key={sp.id} className={`sidebar-item${currentSpaceId===sp.id?' active':''}`}
+                                                onClick={() => onNavigate('space', sp.id)}>
+                                                <div className="sidebar-space-icon" style={{background:sp.color||'#0052cc', width:20, height:20, fontSize:10, borderRadius:3}}>
+                                                    {sp.icon || (sp.name || 'S').charAt(0)}
+                                                </div>
+                                                <div className="sidebar-item-text">{sp.name}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </div>
+                    <div className="sidebar-footer">
+                        <a href="/" className="sidebar-jira-link" target="_self">
+                            <Icons.jira /> Jira
+                        </a>
+                    </div>
+                </div>
+            );
+        }
+
+        // ===== DASHBOARD =====
+        function Dashboard({ onNavigate, onSelectPage }) {
+            const [recent, setRecent] = useState([]);
+            const [starred, setStarred] = useState([]);
+            const [spaces, setSpaces] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [showCreate, setShowCreate] = useState(false);
+
+            useEffect(() => {
+                Promise.all([api.getRecentPages(), api.getStarredPages(), api.getSpaces()])
+                    .then(([r,s,sp]) => {
+                        setRecent(Array.isArray(r)?r:[]);
+                        setStarred(Array.isArray(s)?s:[]);
+                        setSpaces(Array.isArray(sp)?sp:[]);
+                        setLoading(false);
+                    });
+            }, []);
+
+            if (loading) return <div className="loading-spinner">Loading...</div>;
+
+            return (
+                <div className="main-scroll">
+                    <div className="main-content">
+                        {Array.isArray(recent) && recent.length > 0 && (
+                            <div className="dash-section">
+                                <div className="dash-section-title">Recent pages</div>
+                                <div className="dash-cards">
+                                    {recent.map(p => (
+                                        <div key={p.id} className="dash-card" onClick={() => onSelectPage(p.id)}>
+                                            <div className="dash-card-title">{p.title}</div>
+                                            <div className="dash-card-meta">
+                                                <span>{p.space_name}</span>
+                                                <span>{fmtDate(p.updated_at)}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        {Array.isArray(starred) && starred.length > 0 && (
+                            <div className="dash-section">
+                                <div className="dash-section-title">Starred</div>
+                                <div className="dash-cards">
+                                    {starred.map(p => (
+                                        <div key={p.id} className="dash-card" onClick={() => onSelectPage(p.id)}>
+                                            <div className="dash-card-title">{p.title}</div>
+                                            <div className="dash-card-meta"><span>{p.space_name}</span></div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        <div className="dash-section">
+                            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
+                                <div className="dash-section-title" style={{marginBottom:0}}>All spaces</div>
+                                <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+                                    <Icons.plus /> Create space
+                                </button>
+                            </div>
+                            <div className="space-cards">
+                                {Array.isArray(spaces) && spaces.map(sp => (
+                                    <div key={sp.id} className="space-card" onClick={() => onNavigate('space', sp.id)}>
+                                        <div className="space-card-icon" style={{background:sp.color||'#0052cc'}}>{sp.icon||(sp.name || 'S').charAt(0)}</div>
+                                        <div className="space-card-name">{sp.name}</div>
+                                        <div className="space-card-desc">{sp.description}</div>
+                                        <div className="space-card-count">{sp.page_count || 0} pages</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                    {showCreate && <CreateSpaceModal onClose={() => setShowCreate(false)} onCreated={(sp) => { setShowCreate(false); onNavigate('space', sp.id); }} />}
+                </div>
+            );
+        }
+
+        // ===== CREATE SPACE MODAL =====
+        function CreateSpaceModal({ onClose, onCreated }) {
+            const [name, setName] = useState('');
+            const [key, setKey] = useState('');
+            const [desc, setDesc] = useState('');
+            const create = () => {
+                if (!name.trim()) return;
+                api.createSpace({ name, key: key || name.substring(0,4).toUpperCase(), description: desc })
+                    .then(sp => onCreated(sp));
+            };
+            return (
+                <div className="modal-overlay" onClick={onClose}>
+                    <div className="modal" onClick={e=>e.stopPropagation()}>
+                        <div className="modal-title">Create a space</div>
+                        <div className="form-group">
+                            <label className="form-label">Space name</label>
+                            <input className="form-input" value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Engineering" autoFocus />
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">Space key</label>
+                            <input className="form-input" value={key} onChange={e=>setKey(e.target.value)} placeholder="e.g. ENG" />
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">Description</label>
+                            <input className="form-input" value={desc} onChange={e=>setDesc(e.target.value)} placeholder="What is this space about?" />
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn" onClick={onClose}>Cancel</button>
+                            <button className="btn btn-primary" onClick={create}>Create</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ===== SPACE VIEW =====
+        function SpaceView({ spaceId, onNavigate, onSelectPage }) {
+            const [space, setSpace] = useState(null);
+            const [pages, setPages] = useState([]);
+            const [loading, setLoading] = useState(true);
+
+            useEffect(() => {
+                Promise.all([api.getSpace(spaceId), api.getSpacePages(spaceId)])
+                    .then(([s, p]) => {
+                        setSpace(s);
+                        setPages(Array.isArray(p)?p:[]);
+                        setLoading(false);
+                    });
+            }, [spaceId]);
+
+            if (loading) return <div className="loading-spinner">Loading...</div>;
+            if (!space) return null;
+
+            return (
+                <div className="main-scroll">
+                    <div className="main-content">
+                        <div style={{display:'flex',alignItems:'center',gap:16,marginBottom:24}}>
+                            <div className="space-card-icon" style={{background:space.color||'#0052cc',width:56,height:56,fontSize:28,borderRadius:8}}>
+                                {space.icon||(space.name || 'S').charAt(0)}
+                            </div>
+                            <div>
+                                <div style={{fontSize:24,fontWeight:700,color:'var(--text)'}}>{space.name}</div>
+                                <div style={{fontSize:14,color:'var(--text-muted)',marginTop:2}}>{space.description}</div>
+                            </div>
+                        </div>
+                        <div style={{display:'flex',gap:8,marginBottom:24}}>
+                            <button className="btn btn-primary" onClick={() => onNavigate('create-page', spaceId)}>
+                                <Icons.plus /> Create page
+                            </button>
+                        </div>
+                        <div>
+                            <div style={{fontSize:16,fontWeight:600,marginBottom:12}}>Pages</div>
+                            {pages.map(p => (
+                                <div key={p.id} className="page-list-item" onClick={() => onSelectPage(p.id)}>
+                                    <div className="page-list-icon"><Icons.page /></div>
+                                    <div className="page-list-info">
+                                        <div className="page-list-title">{p.title}</div>
+                                        <div className="page-list-meta">Updated {fmtDate(p.updated_at)} by {p.author_name}</div>
+                                    </div>
+                                </div>
+                            ))}
+                            {pages.length === 0 && <div className="empty-state"><div className="empty-state-title">No pages yet</div></div>}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ===== PAGE VIEW =====
+        function PageView({ pageId, onNavigate, onSelectPage }) {
+            const [page, setPage] = useState(null);
+            const [comments, setComments] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [newComment, setNewComment] = useState('');
+            const [liked, setLiked] = useState(false);
+            const [likeCount, setLikeCount] = useState(0);
+
+            useEffect(() => {
+                setLoading(true);
+                Promise.all([api.getPage(pageId), api.getPageComments(pageId)])
+                    .then(([p,c]) => {
+                        setPage(p); setComments(Array.isArray(c)?c:[]); setLiked(p.liked||false); setLikeCount(p.like_count||0); setLoading(false);
+                    });
+            }, [pageId]);
+
+            const addComment = () => {
+                if (!newComment.trim()) return;
+                api.addComment(pageId, { body: newComment }).then(c => { setComments([...comments, c]); setNewComment(''); });
+            };
+            const handleLike = () => { api.toggleLike(pageId).then(() => { setLiked(!liked); setLikeCount(liked?likeCount-1:likeCount+1); }); };
+            const handleStar = () => { api.toggleStar({ page_id: pageId }); };
+
+            if (loading) return <div className="loading-spinner">Loading...</div>;
+            if (!page) return null;
+
+            return (
+                <div className="main-scroll">
+                    <div className="main-content">
+                        <div className="breadcrumb">
+                            <span className="breadcrumb-link" onClick={() => onNavigate('space', page.space_id)}>{page.space_name}</span>
+                            {Array.isArray(page.breadcrumb) && page.breadcrumb.map(c => (
+                                <React.Fragment key={c.id}>
+                                    <span className="breadcrumb-sep">/</span>
+                                    <span className="breadcrumb-link" onClick={() => onSelectPage(c.id)}>{c.title}</span>
+                                </React.Fragment>
+                            ))}
+                            <span className="breadcrumb-sep">/</span>
+                            <span>{page.title}</span>
+                        </div>
+
+                        <div className="page-title-view">{page.title}</div>
+                        <div className="page-meta-bar">
+                            <div className="page-meta-author">
+                                <div className="mini-avatar" style={{background:getAvatarColor(page.author_color)}}>
+                                    {(page.author_name || 'A').charAt(0).toUpperCase()}
+                                </div>
+                                <span style={{fontWeight:500}}>{page.author_name}</span>
+                            </div>
+                            <span>Updated {fmtDate(page.updated_at)}</span>
+                            <span>v{page.version || 1}</span>
+                        </div>
+                        <div className="page-actions-bar">
+                            <button className="btn" onClick={handleLike}>
+                                <Icons.heart /> {likeCount}
+                            </button>
+                            <button className="btn" onClick={handleStar}>
+                                <Icons.star /> Star
+                            </button>
+                            <button className="btn" onClick={() => onNavigate('edit-page', pageId)}>
+                                <Icons.edit /> Edit
+                            </button>
+                            <button className="btn" onClick={() => onNavigate('history', pageId)}>
+                                <Icons.clock /> History
+                            </button>
+                            <button className="btn btn-subtle">
+                                <Icons.share /> Share
+                            </button>
+                        </div>
+
+                        {Array.isArray(page.labels) && page.labels.length > 0 && (
+                            <div className="labels">
+                                {page.labels.map(l => <span key={l} className="label-tag">{l}</span>)}
+                            </div>
+                        )}
+
+                        <div className="page-body" dangerouslySetInnerHTML={{ __html: page.body }} />
+
+                        {Array.isArray(page.children) && page.children.length > 0 && (
+                            <div style={{marginTop:32,borderTop:'1px solid var(--border)',paddingTop:20}}>
+                                <div style={{fontSize:16,fontWeight:600,marginBottom:12}}>Child pages</div>
+                                {page.children.map(ch => (
+                                    <div key={ch.id} className="page-list-item" onClick={() => onSelectPage(ch.id)}>
+                                        <div className="page-list-icon"><Icons.page /></div>
+                                        <div className="page-list-info"><div className="page-list-title">{ch.title}</div></div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        <div className="comments-section">
+                            <div className="comments-title">Comments ({comments.length})</div>
+                            <div className="comment-input-area">
+                                <textarea placeholder="Add a comment..." value={newComment} onChange={e=>setNewComment(e.target.value)} />
+                                <div style={{marginTop:8}}>
+                                    <button className="btn btn-primary" onClick={addComment}>Save</button>
+                                </div>
+                            </div>
+                            {Array.isArray(comments) && comments.map(c => (
+                                <div key={c.id} className="comment-box" style={{marginLeft: c.parent_id ? 40 : 0}}>
+                                    <div className="comment-avatar" style={{background:getAvatarColor(c.author_color)}}>
+                                        {(c.author_name || 'A').charAt(0).toUpperCase()}
+                                    </div>
+                                    <div className="comment-content">
+                                        <div className="comment-header">
+                                            <span className="comment-author">{c.author_name}</span>
+                                            <span className="comment-time">{fmtDateTime(c.created_at)}</span>
+                                        </div>
+                                        <div className="comment-body">{c.body}</div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ===== PAGE EDITOR (Confluence-style) =====
+        function PageEditor({ pageId, spaceId, onNavigate }) {
+            const [page, setPage] = useState(null);
+            const [title, setTitle] = useState('');
+            const [loading, setLoading] = useState(!!pageId);
+            const [saved, setSaved] = useState(true);
+            const editorRef = useRef(null);
+
+            useEffect(() => {
+                if (pageId) {
+                    api.getPage(pageId).then(d => { setPage(d); setTitle(d.title); setLoading(false); });
+                } else { setLoading(false); }
+            }, [pageId]);
+
+            useEffect(() => {
+                if (!loading && editorRef.current && page) {
+                    editorRef.current.innerHTML = page.body || '';
+                }
+            }, [loading, page]);
+
+            const exec = (cmd, val=null) => { document.execCommand(cmd, false, val); editorRef.current && editorRef.current.focus(); setSaved(false); };
+            const handleHeading = (e) => {
+                const v = e.target.value;
+                if (v === 'p') exec('formatBlock', 'p');
+                else exec('formatBlock', v);
+            };
+
+            const handlePublish = () => {
+                if (!title.trim()) { alert('Title is required'); return; }
+                const html = (editorRef.current && editorRef.current.innerHTML) || '';
+                if (pageId) {
+                    api.savePage(pageId, { title, body: html, change_message: '' }).then(() => {
+                        setSaved(true); onNavigate('page', pageId);
+                    });
+                } else {
+                    api.createPage(spaceId, { title, body: html }).then(np => {
+                        onNavigate('page', np.id);
+                    });
+                }
+            };
+
+            const handleClose = () => {
+                if (pageId) onNavigate('page', pageId);
+                else if (spaceId) onNavigate('space', spaceId);
+                else onNavigate('home');
+            };
+
+            if (loading) return <div className="loading-spinner">Loading...</div>;
+
+            return (
+                <div className="main" style={{display:'flex',flexDirection:'column',height:'calc(100vh - 56px)'}}>
+                    {/* Editor top bar */}
+                    <div className="editor-topbar">
+                        <div className="editor-topbar-left">
+                            <div className="editor-saved-status">
+                                {saved ? <><Icons.check /> Saved</> : 'Unsaved changes'}
+                            </div>
+                        </div>
+                        <div className="editor-topbar-right">
+                            <button className="btn btn-subtle" onClick={handleClose}><Icons.close /> Close</button>
+                            <button className="btn btn-subtle"><Icons.share /> Share</button>
+                            <button className="btn btn-primary" onClick={handlePublish}>Publish</button>
+                        </div>
+                    </div>
+
+                    {/* Toolbar */}
+                    <div className="editor-toolbar">
+                        <select className="tb-select" onChange={handleHeading} defaultValue="p">
+                            <option value="p">Normal text</option>
+                            <option value="h1">Heading 1</option>
+                            <option value="h2">Heading 2</option>
+                            <option value="h3">Heading 3</option>
+                        </select>
+                        <div className="tb-sep" />
+                        <button className="tb-btn" onClick={() => exec('bold')} title="Bold"><Icons.bold /></button>
+                        <button className="tb-btn" onClick={() => exec('italic')} title="Italic"><Icons.italic /></button>
+                        <button className="tb-btn" onClick={() => exec('underline')} title="Underline"><Icons.underline /></button>
+                        <div className="tb-sep" />
+                        <button className="tb-btn" onClick={() => exec('insertUnorderedList')} title="Bullet list"><Icons.listBullet /></button>
+                        <button className="tb-btn" onClick={() => exec('insertOrderedList')} title="Numbered list"><Icons.listNumber /></button>
+                        <div className="tb-sep" />
+                        <button className="tb-btn" onClick={() => exec('justifyLeft')} title="Align left"><Icons.alignLeft /></button>
+                        <div className="tb-sep" />
+                        <button className="tb-btn" onClick={() => { const url = prompt('Enter URL:'); if(url) exec('createLink', url); }} title="Link"><Icons.link /></button>
+                        <button className="tb-btn" onClick={() => { const url = prompt('Image URL:'); if(url) exec('insertImage', url); }} title="Image"><Icons.image /></button>
+                        <button className="tb-btn" onClick={() => exec('insertHTML','<table style="width:100%;border-collapse:collapse"><tr><td style="border:1px solid #dfe1e6;padding:8px">Cell</td><td style="border:1px solid #dfe1e6;padding:8px">Cell</td></tr><tr><td style="border:1px solid #dfe1e6;padding:8px">Cell</td><td style="border:1px solid #dfe1e6;padding:8px">Cell</td></tr></table>')} title="Table"><Icons.table /></button>
+                        <div className="tb-sep" />
+                        <button className="tb-btn" onClick={() => exec('insertHTML','<code> </code>')} title="Code"><Icons.code /></button>
+                        <button className="tb-btn" onClick={() => exec('insertHorizontalRule')} title="Divider"><Icons.hr /></button>
+                        <button className="tb-btn" title="Mention"><Icons.mention /></button>
+                        <button className="tb-btn" title="Emoji"><Icons.emoji /></button>
+                    </div>
+
+                    {/* Editor body */}
+                    <div style={{flex:1,overflowY:'auto'}}>
+                        <input className="editor-title-input" value={title} onChange={e=>{setTitle(e.target.value);setSaved(false);}}
+                            placeholder="Give this page a title..." />
+                        <div ref={editorRef} className="editor-body" contentEditable suppressContentEditableWarning
+                            onInput={() => setSaved(false)}
+                        />
+                    </div>
+                </div>
+            );
+        }
+
+        // ===== PAGE HISTORY =====
+        function PageHistory({ pageId, onNavigate }) {
+            const [versions, setVersions] = useState([]);
+            const [sel, setSel] = useState(null);
+            const [loading, setLoading] = useState(true);
+
+            useEffect(() => {
+                api.getPageVersions(pageId).then(d => { setVersions(Array.isArray(d)?d:[]); setLoading(false); });
+            }, [pageId]);
+
+            if (loading) return <div className="loading-spinner">Loading...</div>;
+
+            return (
+                <div className="main-scroll">
+                    <div className="main-content">
+                        <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:20}}>
+                            <button className="btn" onClick={() => onNavigate('page', pageId)}>Back to page</button>
+                            <div style={{fontSize:20,fontWeight:700}}>Version history</div>
+                        </div>
+                        <div className="version-grid">
+                            <div>
+                                {versions.map(v => (
+                                    <div key={v.version} className={`version-list-item${sel && sel.version===v.version?' active':''}`}
+                                        onClick={() => setSel(v)}>
+                                        <div style={{fontSize:14,fontWeight:600}}>Version {v.version}</div>
+                                        <div style={{fontSize:12,color:'var(--text-muted)'}}>by {v.editor_name}</div>
+                                        <div style={{fontSize:12,color:'var(--text-muted)'}}>{fmtDateTime(v.created_at)}</div>
+                                        {v.change_message && <div style={{fontSize:12,color:'var(--text-subtle)',marginTop:2}}>{v.change_message}</div>}
+                                    </div>
+                                ))}
+                            </div>
+                            <div>
+                                {sel ? (
+                                    <>
+                                        <div style={{fontSize:16,fontWeight:600,marginBottom:12}}>Version {sel.version}</div>
+                                        <div className="page-body" dangerouslySetInnerHTML={{ __html: sel.body }} />
+                                    </>
+                                ) : (
+                                    <div className="empty-state"><div className="empty-state-title">Select a version to preview</div></div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ===== SEARCH RESULTS =====
+        function SearchResults({ query, onSelectPage }) {
+            const [results, setResults] = useState([]);
+            const [loading, setLoading] = useState(true);
+            useEffect(() => {
+                api.search(query).then(d => { setResults(Array.isArray(d)?d:[]); setLoading(false); });
+            }, [query]);
+            if (loading) return <div className="loading-spinner">Searching...</div>;
+            return (
+                <div className="main-scroll">
+                    <div className="main-content">
+                        <div style={{fontSize:20,fontWeight:700,marginBottom:20}}>Search results for "{query}"</div>
+                        {results.length === 0 ? (
+                            <div className="empty-state"><div className="empty-state-icon">🔍</div><div className="empty-state-title">No results found</div></div>
+                        ) : results.map(r => (
+                            <div key={r.id} className="search-result" onClick={() => onSelectPage(r.id)}>
+                                <div className="search-result-title">{r.title}</div>
+                                <div className="search-result-meta">{r.space_name}</div>
+                                {r.snippet && <div className="search-result-snippet">{r.snippet}</div>}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
+        // ===== TEMPLATES VIEW =====
+        function TemplatesView({ onNavigate }) {
+            const [templates, setTemplates] = useState([]);
+            const [loading, setLoading] = useState(true);
+            useEffect(() => {
+                api.getTemplates().then(d => { setTemplates(Array.isArray(d)?d:[]); setLoading(false); });
+            }, []);
+            if (loading) return <div className="loading-spinner">Loading...</div>;
+            return (
+                <div className="main-scroll">
+                    <div className="main-content">
+                        <div style={{fontSize:20,fontWeight:700,marginBottom:20}}>Templates</div>
+                        <div className="dash-cards">
+                            {templates.map(t => (
+                                <div key={t.id} className="dash-card">
+                                    <div className="dash-card-title">{t.title}</div>
+                                    <div className="dash-card-meta"><span>{t.description}</span></div>
+                                </div>
+                            ))}
+                        </div>
+                        {templates.length===0 && <div className="empty-state"><div className="empty-state-title">No templates available</div></div>}
+                    </div>
+                </div>
+            );
+        }
+
+        // ===== MAIN APP =====
+        function App() {
+            const [view, setView] = useState('home');
+            const [viewParam, setViewParam] = useState(null);
+            const [spaces, setSpaces] = useState([]);
+            const [tree, setTree] = useState([]);
+            const [currentSpaceId, setCurrentSpaceId] = useState(null);
+
+            const user = getUser();
+
+            useEffect(() => {
+                api.getSpaces().then(d => { if(Array.isArray(d)) setSpaces(d); });
+            }, []);
+
+            const navigate = useCallback((v, param) => {
+                setView(v);
+                setViewParam(param || null);
+                if (v === 'space' && param) {
+                    setCurrentSpaceId(param);
+                    api.getSpaceTree(param).then(d => { if(Array.isArray(d)) setTree(d); });
+                } else if (v === 'page' && param) {
+                    // keep current space
+                } else if (v === 'create-page' && param) {
+                    setCurrentSpaceId(param);
+                    api.getSpaceTree(param).then(d => { if(Array.isArray(d)) setTree(d); });
+                } else if (v === 'home' || v === 'recent' || v === 'starred' || v === 'templates' || v === 'search') {
+                    setCurrentSpaceId(null);
+                    setTree([]);
+                }
+            }, []);
+
+            const selectPage = useCallback((pid) => {
+                navigate('page', pid);
+            }, [navigate]);
+
+            const handleSearch = useCallback((q) => {
+                navigate('search', q);
+            }, [navigate]);
+
+            if (!user) return (
+                <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',flexDirection:'column',gap:16,fontFamily:'var(--font)'}}>
+                    <div style={{fontSize:48}}>🔒</div>
+                    <h2 style={{color:'#172B4D'}}>Please log in to Atlas first</h2>
+                    <p style={{color:'#626f86'}}>You need to be signed in to access Atlas Wiki.</p>
+                    <a href="/" style={{padding:'8px 24px',background:'#0c66e4',color:'#fff',borderRadius:4,fontWeight:600,textDecoration:'none'}}>Go to Atlas Login</a>
+                </div>
+            );
+
+            const isEditor = view === 'edit-page' || view === 'create-page';
+
+            return (
+                <div style={{display:'flex',flexDirection:'column',height:'100vh'}}>
+                    <TopNav onNavigate={navigate} onSearch={handleSearch} />
+                    <div className="app-layout">
+                        {!isEditor && (
+                            <Sidebar spaces={spaces} currentSpaceId={currentSpaceId} tree={tree}
+                                onNavigate={navigate} onSelectPage={selectPage} activePageId={view==='page'?viewParam:null} />
+                        )}
+                        {view === 'home' && <Dashboard onNavigate={navigate} onSelectPage={selectPage} />}
+                        {view === 'recent' && <Dashboard onNavigate={navigate} onSelectPage={selectPage} />}
+                        {view === 'starred' && <Dashboard onNavigate={navigate} onSelectPage={selectPage} />}
+                        {view === 'templates' && <TemplatesView onNavigate={navigate} />}
+                        {view === 'space' && viewParam && <SpaceView spaceId={viewParam} onNavigate={navigate} onSelectPage={selectPage} />}
+                        {view === 'page' && viewParam && <PageView pageId={viewParam} onNavigate={navigate} onSelectPage={selectPage} />}
+                        {view === 'edit-page' && viewParam && <PageEditor pageId={viewParam} onNavigate={navigate} />}
+                        {view === 'create-page' && viewParam && <PageEditor spaceId={viewParam} onNavigate={navigate} />}
+                        {view === 'history' && viewParam && <PageHistory pageId={viewParam} onNavigate={navigate} />}
+                        {view === 'search' && viewParam && <SearchResults query={viewParam} onSelectPage={selectPage} />}
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
