@@ -1,9 +1,11 @@
 # Dependencies
 node_modules/
-package-lock.json
 
 # Database
+*.db
+data/
 backend/data.db
+backend/:memory:
 
 # Environment (NEVER commit these)
 .env
@@ -26,6 +28,18 @@ npm-debug.log*
 # Build
 dist/
 *.tgz
+
+# Coverage
+coverage/
+
+# Uploads (keep directory, ignore contents)
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# SSL certs
+nginx/ssl/*.pem
+nginx/ssl/*.key
+nginx/ssl/*.crt
 
 # Ignore build artifacts but keep frontend/build (pre-built SPA)
 !frontend/build/

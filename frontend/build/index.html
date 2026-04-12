@@ -940,7 +940,13 @@ function AppContent(){const{view,currentProject,currentUser}=useContext(AppConte
 function App(){
   const[currentUser,setCurrentUserRaw]=useState(()=>{try{const s=localStorage.getItem('atlas_user');return s?JSON.parse(s):null}catch(e){return null}});
   const setCurrentUser=useCallback((u)=>{setCurrentUserRaw(u);try{if(u)localStorage.setItem('atlas_user',JSON.stringify(u));else localStorage.removeItem('atlas_user')}catch(e){}},[]);
-  const[projects,setProjects]=useState([]);const[currentProject,setCurrentProject]=useState(null);const[users,setAllUsers]=useState([]);const[view,setView]=useState('board');const[selectedIssue,setSelectedIssue]=useState(null);const[showCreateIssue,setShowCreateIssue]=useState(false);
+  const[projects,setProjects]=useState([]);const[currentProject,setCurrentProject]=useState(null);const[users,setAllUsers]=useState([]);
+  const validViews=['board','backlog','sprints','reports','dashboard','profile','settings','admin-dashboard','admin-users','admin-projects','admin-audit'];
+  const getHashView=()=>{const h=window.location.hash.replace('#','');return validViews.includes(h)?h:'board'};
+  const[view,setViewRaw]=useState(getHashView);
+  const setView=useCallback((v)=>{setViewRaw(v);window.location.hash=v},[]);
+  useEffect(()=>{const onHash=()=>{const h=getHashView();setViewRaw(h)};window.addEventListener('hashchange',onHash);return()=>window.removeEventListener('hashchange',onHash)},[]);
+  const[selectedIssue,setSelectedIssue]=useState(null);const[showCreateIssue,setShowCreateIssue]=useState(false);
   useEffect(()=>{if(!currentUser){setProjects([]);setCurrentProject(null);return}const h={'x-user-id':currentUser.id,'x-user-role':currentUser.role};if(currentUser.token)h['x-auth-token']=currentUser.token;
     fetch(`${API}/auth/me`,{headers:h}).then(r=>{if(!r.ok){setCurrentUser(null);return null}return r.json()}).then(me=>{if(!me)return;
     fetch(`${API}/projects`,{headers:h}).then(r=>r.json()).then(p=>{if(Array.isArray(p)){setProjects(p);if(p.length)setCurrentProject(p[0])}});

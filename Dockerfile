@@ -1,22 +1,47 @@
-FROM node:20-alpine
+# ===== Atlas — Production Dockerfile =====
+# Multi-stage build for minimal image size
+
+# Stage 1: Install dependencies
+FROM node:20-alpine AS deps
+WORKDIR /app/backend
+COPY backend/package*.json ./
+RUN npm ci --production && npm cache clean --force
+
+# Stage 2: Production image
+FROM node:20-alpine AS production
+LABEL maintainer="atlas-team"
+LABEL app="atlas"
+
+# Security: run as non-root user
+RUN addgroup -g 1001 -S atlas && \
+    adduser -S atlas -u 1001 -G atlas
 
 WORKDIR /app
 
-# Install backend dependencies
-COPY backend/package*.json ./backend/
-RUN cd backend && npm ci --production
+# Copy dependencies from builder
+COPY --from=deps /app/backend/node_modules ./backend/node_modules
 
-# Copy backend code
+# Copy application code
 COPY backend/ ./backend/
-
-# Copy frontend build
 COPY frontend/build/ ./frontend/build/
 
-# Environment
+# Create data directory for SQLite persistence
+RUN mkdir -p /app/data && chown -R atlas:atlas /app/data
+
+# Remove test files from production image
+RUN rm -rf ./backend/tests ./backend/jest.config.* ./backend/.babelrc
+
 ENV NODE_ENV=production
 ENV PORT=3001
+ENV DATA_DIR=/app/data
 
 EXPOSE 3001
 
+# Switch to non-root user
+USER atlas
+
 WORKDIR /app/backend
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3001/api/auth/me || exit 1
+
 CMD ["node", "server.js"]

@@ -21,12 +21,13 @@ router.get('/wiki/spaces', requireAuth, async (req, res) => {
 
 router.post('/wiki/spaces', requireAuth, async (req, res) => {
   try {
-    const { name, space_key, description, icon, color } = req.body;
-    if (!name || !space_key) return res.status(400).json({ error: 'Name and key required' });
+    const { name, space_key, key, description, icon, color } = req.body;
+    const spaceKey = space_key || key;
+    if (!name || !spaceKey) return res.status(400).json({ error: 'Name and key required' });
     const db = await getDb();
     const id = uuidv4();
     run(db, "INSERT INTO wiki_spaces (id, space_key, name, description, icon, color, owner_id) VALUES (?,?,?,?,?,?,?)",
-      [id, space_key.toUpperCase(), name, description || '', icon || '📄', color || '#0c66e4', req.userId]);
+      [id, spaceKey.toUpperCase(), name, description || '', icon || '📄', color || '#0c66e4', req.userId]);
     const space = queryOne(db, 'SELECT * FROM wiki_spaces WHERE id = ?', [id]);
     res.status(201).json(space);
   } catch (e) { res.status(500).json({ error: e.message }); }
