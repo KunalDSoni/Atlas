@@ -25,8 +25,9 @@ COPY --from=deps /app/backend/node_modules ./backend/node_modules
 COPY backend/ ./backend/
 COPY frontend/build/ ./frontend/build/
 
-# Create data directory for SQLite persistence
-RUN mkdir -p /app/data && chown -R atlas:atlas /app/data
+# Create writable directories for SQLite + uploads
+RUN mkdir -p /app/data /app/backend/uploads && \
+    chown -R atlas:atlas /app/data /app/backend/uploads
 
 # Remove test files from production image
 RUN rm -rf ./backend/tests ./backend/jest.config.* ./backend/.babelrc
@@ -41,7 +42,5 @@ EXPOSE 3001
 USER atlas
 
 WORKDIR /app/backend
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3001/api/auth/me || exit 1
 
 CMD ["node", "server.js"]
