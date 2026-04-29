@@ -35,6 +35,7 @@ RUN rm -rf ./backend/tests ./backend/jest.config.* ./backend/.babelrc
 ENV NODE_ENV=production
 ENV PORT=3001
 ENV DATA_DIR=/app/data
+ENV SQLITE_PATH=/app/data/data.db
 
 EXPOSE 3001
 
