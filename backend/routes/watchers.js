@@ -14,7 +14,7 @@ const router = express.Router();
 router.get('/issues/:issueId/watchers', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const watchers = queryAll(db,
+    const watchers = await queryAll(db,
       `SELECT w.*, u.name, u.avatar_color, u.email
        FROM issue_watchers w
        JOIN users u ON w.user_id = u.id
@@ -33,14 +33,14 @@ router.post('/issues/:issueId/watchers', requireAuth, async (req, res) => {
     const userId = req.body.user_id || req.userId;
 
     // Check if already watching
-    const existing = queryOne(db,
+    const existing = await queryOne(db,
       'SELECT id FROM issue_watchers WHERE issue_id = ? AND user_id = ?',
       [req.params.issueId, userId]
     );
     if (existing) return res.json({ ok: true, already: true });
 
     const id = uuidv4();
-    run(db, 'INSERT INTO issue_watchers (id, issue_id, user_id) VALUES (?, ?, ?)',
+    await run(db, 'INSERT INTO issue_watchers (id, issue_id, user_id) VALUES (?, ?, ?)',
       [id, req.params.issueId, userId]);
 
     res.status(201).json({ ok: true, id });
@@ -51,7 +51,7 @@ router.post('/issues/:issueId/watchers', requireAuth, async (req, res) => {
 router.delete('/issues/:issueId/watchers/:userId', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    run(db, 'DELETE FROM issue_watchers WHERE issue_id = ? AND user_id = ?',
+    await run(db, 'DELETE FROM issue_watchers WHERE issue_id = ? AND user_id = ?',
       [req.params.issueId, req.params.userId]);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }

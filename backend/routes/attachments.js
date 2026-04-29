@@ -54,16 +54,16 @@ const upload = multer({
 router.post('/issues/:issueId/attachments', requireAuth, upload.array('files', 10), async (req, res) => {
   try {
     const db = await getDb();
-    const issue = queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.issueId]);
+    const issue = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.issueId]);
     if (!issue) return res.status(404).json({ error: 'Issue not found' });
 
     const results = [];
     for (const file of (req.files || [])) {
       const id = uuidv4();
-      run(db, `INSERT INTO attachments (id, issue_id, filename, original_name, mime_type, size, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      await run(db, `INSERT INTO attachments (id, issue_id, filename, original_name, mime_type, size, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [id, req.params.issueId, file.filename, file.originalname, file.mimetype, file.size, req.userId]);
 
-      const att = queryOne(db, `SELECT a.*, u.name as uploader_name, u.avatar_color as uploader_color FROM attachments a LEFT JOIN users u ON a.uploaded_by = u.id WHERE a.id = ?`, [id]);
+      const att = await queryOne(db, `SELECT a.*, u.name as uploader_name, u.avatar_color as uploader_color FROM attachments a LEFT JOIN users u ON a.uploaded_by = u.id WHERE a.id = ?`, [id]);
       results.push(att);
     }
     res.status(201).json(results);
@@ -74,7 +74,7 @@ router.post('/issues/:issueId/attachments', requireAuth, upload.array('files', 1
 router.get('/issues/:issueId/attachments', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const attachments = queryAll(db,
+    const attachments = await queryAll(db,
       `SELECT a.*, u.name as uploader_name, u.avatar_color as uploader_color
        FROM attachments a LEFT JOIN users u ON a.uploaded_by = u.id
        WHERE a.issue_id = ? ORDER BY a.created_at DESC`,
@@ -87,7 +87,7 @@ router.get('/issues/:issueId/attachments', requireAuth, async (req, res) => {
 router.get('/attachments/:id/download', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const att = queryOne(db, 'SELECT * FROM attachments WHERE id = ?', [req.params.id]);
+    const att = await queryOne(db, 'SELECT * FROM attachments WHERE id = ?', [req.params.id]);
     if (!att) return res.status(404).json({ error: 'Attachment not found' });
 
     const filePath = path.join(UPLOADS_DIR, att.filename);
@@ -103,7 +103,7 @@ router.get('/attachments/:id/download', requireAuth, async (req, res) => {
 router.get('/attachments/:id/preview', async (req, res) => {
   try {
     const db = await getDb();
-    const att = queryOne(db, 'SELECT * FROM attachments WHERE id = ?', [req.params.id]);
+    const att = await queryOne(db, 'SELECT * FROM attachments WHERE id = ?', [req.params.id]);
     if (!att) return res.status(404).json({ error: 'Attachment not found' });
 
     const filePath = path.join(UPLOADS_DIR, att.filename);
@@ -118,7 +118,7 @@ router.get('/attachments/:id/preview', async (req, res) => {
 router.delete('/attachments/:id', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const att = queryOne(db, 'SELECT * FROM attachments WHERE id = ?', [req.params.id]);
+    const att = await queryOne(db, 'SELECT * FROM attachments WHERE id = ?', [req.params.id]);
     if (!att) return res.status(404).json({ error: 'Attachment not found' });
 
     // Delete file from disk
@@ -126,7 +126,7 @@ router.delete('/attachments/:id', requireAuth, async (req, res) => {
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 
     // Delete from DB
-    run(db, 'DELETE FROM attachments WHERE id = ?', [req.params.id]);
+    await run(db, 'DELETE FROM attachments WHERE id = ?', [req.params.id]);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

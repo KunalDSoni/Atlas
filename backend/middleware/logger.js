@@ -90,11 +90,11 @@ async function logToDb({ userId, userName, action, category, entityType, entityI
     // Look up user name if not provided but we have userId
     let uName = userName;
     if (!uName && userId) {
-      const user = queryOne(db, 'SELECT name FROM users WHERE id = ?', [userId]);
+      const user = await queryOne(db, 'SELECT name FROM users WHERE id = ?', [userId]);
       uName = user ? user.name : null;
     }
 
-    run(db,
+    await run(db,
       `INSERT INTO audit_log (id, user_id, user_name, action, category, entity_type, entity_id, entity_name, details, ip_address, method, path, status_code, duration_ms)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, userId, uName, action, category || 'system', entityType || null, entityId || null, entityName || null,

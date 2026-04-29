@@ -5,9 +5,9 @@ async function authMiddleware(req, res, next) {
   if (token) {
     try {
       const db = await getDb();
-      const session = queryOne(db, "SELECT * FROM sessions WHERE token = ? AND expires_at > datetime('now')", [token]);
+      const session = await queryOne(db, "SELECT * FROM sessions WHERE token = ? AND expires_at > datetime('now')", [token]);
       if (session) {
-        const user = queryOne(db, 'SELECT id, name, role FROM users WHERE id = ? AND is_active = 1', [session.user_id]);
+        const user = await queryOne(db, 'SELECT id, name, role FROM users WHERE id = ? AND is_active = 1', [session.user_id]);
         if (user) {
           req.userId = user.id;
           req.userName = user.name;
@@ -24,7 +24,7 @@ async function authMiddleware(req, res, next) {
     if (req.userId && !req.userName) {
       try {
         const db = await getDb();
-        const u = queryOne(db, 'SELECT name FROM users WHERE id = ?', [req.userId]);
+        const u = await queryOne(db, 'SELECT name FROM users WHERE id = ?', [req.userId]);
         if (u) req.userName = u.name;
       } catch(e) {}
     }
