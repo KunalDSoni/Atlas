@@ -6,8 +6,8 @@
   "scripts": {
     "test": "jest --verbose --forceExit --detectOpenHandles --runInBand",
     "test:coverage": "jest --verbose --forceExit --detectOpenHandles --coverage",
-    "test:backend": "jest --verbose --forceExit --detectOpenHandles --testPathPattern=tests/backend",
-    "test:frontend": "jest --verbose --forceExit --detectOpenHandles --testPathPattern=tests/frontend"
+    "test:backend": "jest --verbose --forceExit --detectOpenHandles --runInBand --testPathPatterns=tests/backend",
+    "test:frontend": "jest --verbose --forceExit --detectOpenHandles --runInBand --testPathPatterns=tests/frontend"
   },
   "jest": {
     "testEnvironment": "node",
