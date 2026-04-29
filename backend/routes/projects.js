@@ -12,7 +12,10 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { getDb, queryOne, queryAll, run } = require('../database');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireRole } = require('../middleware/auth');
+
+// Only admins and board admins can create/modify boards (projects) or manage members.
+const requireBoardAdmin = requireRole('admin', 'board_admin');
 const { auditLog } = require('../middleware/logger');
 
 const router = express.Router();
@@ -32,7 +35,7 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 // POST /api/projects
-router.post('/', requireAuth, async (req, res) => {
+router.post('/', requireAuth, requireBoardAdmin, async (req, res) => {
   try {
     const { name, key, description, lead_id } = req.body;
     if (!name || !key) return res.status(400).json({ error: 'Name and key required' });
@@ -55,7 +58,7 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 // PUT /api/projects/:id
-router.put('/:id', requireAuth, async (req, res) => {
+router.put('/:id', requireAuth, requireBoardAdmin, async (req, res) => {
   try {
     const db = await getDb();
     const project = await queryOne(db, 'SELECT * FROM projects WHERE id = ?', [req.params.id]);
@@ -81,7 +84,7 @@ router.put('/:id', requireAuth, async (req, res) => {
 });
 
 // DELETE /api/projects/:id
-router.delete('/:id', requireAuth, async (req, res) => {
+router.delete('/:id', requireAuth, requireBoardAdmin, async (req, res) => {
   try {
     const db = await getDb();
     const pid = req.params.id;
@@ -129,7 +132,7 @@ router.get('/:id/members', requireAuth, async (req, res) => {
 });
 
 // POST /api/projects/:id/members
-router.post('/:id/members', requireAuth, async (req, res) => {
+router.post('/:id/members', requireAuth, requireBoardAdmin, async (req, res) => {
   try {
     const { user_id, role_in_project } = req.body;
     if (!user_id) return res.status(400).json({ error: 'User ID required' });
@@ -146,7 +149,7 @@ router.post('/:id/members', requireAuth, async (req, res) => {
 });
 
 // PUT /api/projects/:id/members/:userId
-router.put('/:id/members/:userId', requireAuth, async (req, res) => {
+router.put('/:id/members/:userId', requireAuth, requireBoardAdmin, async (req, res) => {
   try {
     const db = await getDb();
     const { role_in_project } = req.body;
@@ -157,7 +160,7 @@ router.put('/:id/members/:userId', requireAuth, async (req, res) => {
 });
 
 // DELETE /api/projects/:id/members/:userId
-router.delete('/:id/members/:userId', requireAuth, async (req, res) => {
+router.delete('/:id/members/:userId', requireAuth, requireBoardAdmin, async (req, res) => {
   try {
     const db = await getDb();
     await run(db, 'DELETE FROM project_members WHERE project_id = ? AND user_id = ?', [req.params.id, req.params.userId]);
