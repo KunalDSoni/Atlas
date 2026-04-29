@@ -281,13 +281,15 @@ async function initPostgres() {
   const { Pool } = require('pg');
   const pool = new Pool({ connectionString: config.db.postgresUrl });
 
-  // Convert SQLite schema to Postgres-compatible
+  // Convert SQLite schema to Postgres-compatible.
+  // Note: boolean-like INTEGER columns (is_active, notify_*, etc.) stay as
+  // INTEGER in Postgres — route code uses `= 1` / `= 0` literals, which
+  // work natively against integer columns but would fail against booleans.
   const pgSchema = SCHEMA_SQL.map(sql =>
     sql
       .replace(/TEXT DEFAULT \(datetime\('now'\)\)/g, "TIMESTAMPTZ DEFAULT NOW()")
       .replace(/datetime\('now'\)/g, "NOW()")
       .replace(/datetime\('now', '\+(\d+) days'\)/g, "NOW() + INTERVAL '$1 days'")
-      .replace(/INTEGER DEFAULT (\d)/g, "BOOLEAN DEFAULT $1")  // is_active
   );
 
   for (const sql of pgSchema) {
