@@ -1,0 +1,58 @@
+# ===== Atlas — Docker Compose Production Stack =====
+# Usage:
+#   docker compose up -d          # Start all services
+#   docker compose down            # Stop all services
+#   docker compose logs -f app     # View app logs
+#   docker compose up -d --build   # Rebuild and restart
+
+services:
+  # Node.js Backend + Frontend
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: atlas-app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+    volumes:
+      - atlas-data:/app/data          # SQLite persistence
+      - atlas-uploads:/app/backend/uploads  # File uploads
+    networks:
+      - atlas-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/api/auth/me"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: atlas-nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_PORT:-80}:80"
+      - "${NGINX_SSL_PORT:-443}:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro   # Mount SSL certs (optional)
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - atlas-network
+
+volumes:
+  atlas-data:
+    driver: local
+  atlas-uploads:
+    driver: local
+
+networks:
+  atlas-network:
+    driver: bridge

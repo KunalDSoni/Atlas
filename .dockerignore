@@ -1,0 +1,39 @@
+# Dependencies
+node_modules
+backend/node_modules
+
+# Test files
+backend/tests
+backend/jest.config.*
+backend/.babelrc
+coverage
+
+# Dev & Deploy configs
+.git
+.github
+.gitignore
+.env
+.env.*
+!.env.example
+deploy/
+docker-compose.yml
+docker-compose.*.yml
+nginx/
+
+# Data & uploads (these are mounted as volumes)
+data.db
+*.db
+backend/uploads
+
+# IDE & OS
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Docs
+*.md
+*.docx
+render.yaml

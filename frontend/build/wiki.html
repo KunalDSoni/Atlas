@@ -441,6 +441,9 @@
             code: () => (
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
             ),
+            folder: () => (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            ),
         };
 
         // ===== Helpers =====
@@ -486,8 +489,9 @@
         };
 
         // ===== TOP NAVIGATION =====
-        function TopNav({ onNavigate, onSearch }) {
+        function TopNav({ onNavigate, onSearch, spaces, onShowCreateSpace }) {
             const [sq, setSq] = useState('');
+            const [showMenu, setShowMenu] = useState(false);
             const user = getUser();
             if (!user) return <div className="topnav"><div className="topnav-logo">Atlas Wiki</div></div>;
             return (
@@ -497,9 +501,7 @@
                             <Icons.confluence /> Atlas Wiki
                         </div>
                         <button className="topnav-btn" onClick={() => onNavigate('home')}>For you</button>
-                        <button className="topnav-btn" onClick={() => onNavigate('templates')}>Templates</button>
                         <button className="topnav-btn" onClick={() => onNavigate('home')}>Spaces</button>
-                        <button className="topnav-btn" onClick={() => onNavigate('home')}>Apps</button>
                     </div>
                     <div className="topnav-center">
                         <div className="topnav-search">
@@ -509,9 +511,25 @@
                         </div>
                     </div>
                     <div className="topnav-right">
-                        <button className="topnav-create" onClick={() => onNavigate('home')}>
-                            <Icons.plus /> Create
-                        </button>
+                        <div style={{position:'relative'}}>
+                            <button className="topnav-create" onClick={() => setShowMenu(!showMenu)}>
+                                <Icons.plus /> Create
+                            </button>
+                            {showMenu && (
+                                <div style={{position:'absolute',right:0,top:'100%',marginTop:4,background:'#fff',borderRadius:8,boxShadow:'0 4px 16px rgba(0,0,0,.15)',minWidth:200,zIndex:999,overflow:'hidden'}}>
+                                    <button style={{display:'flex',alignItems:'center',gap:8,width:'100%',padding:'10px 16px',border:'none',background:'none',cursor:'pointer',fontSize:14,color:'#172B4D',textAlign:'left'}}
+                                        onMouseOver={e=>e.currentTarget.style.background='#f1f2f4'} onMouseOut={e=>e.currentTarget.style.background='none'}
+                                        onClick={() => { setShowMenu(false); const sid = spaces && spaces.length ? spaces[0].id : null; if(sid) onNavigate('create-page', sid); else { alert('Create a space first'); onShowCreateSpace(); } }}>
+                                        <span style={{width:16,height:16,display:'inline-flex',flexShrink:0}}><Icons.content /></span> New page
+                                    </button>
+                                    <button style={{display:'flex',alignItems:'center',gap:8,width:'100%',padding:'10px 16px',border:'none',background:'none',cursor:'pointer',fontSize:14,color:'#172B4D',textAlign:'left'}}
+                                        onMouseOver={e=>e.currentTarget.style.background='#f1f2f4'} onMouseOut={e=>e.currentTarget.style.background='none'}
+                                        onClick={() => { setShowMenu(false); onShowCreateSpace(); }}>
+                                        <span style={{width:16,height:16,display:'inline-flex',flexShrink:0}}><Icons.folder /></span> New space
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                         <div className="topnav-avatar" style={{background:getAvatarColor(user.avatar_color)}}>
                             {(user.name || 'U').charAt(0).toUpperCase()}
                         </div>
@@ -579,7 +597,7 @@
                                 <div className="sidebar-section" style={{marginTop:4}}>
                                     {renderTree(tree)}
                                 </div>
-                                <button className="sidebar-create-btn" onClick={() => onNavigate('create-page', currentSpaceId)}>
+                                <button className="sidebar-create-btn" onClick={() => { const sid = currentSpaceId || (spaces && spaces.length ? spaces[0].id : null); if(sid) onNavigate('create-page', sid); else alert('Create a space first'); }}>
                                     <Icons.plus /> Create page
                                 </button>
                             </>
@@ -635,7 +653,7 @@
         }
 
         // ===== DASHBOARD =====
-        function Dashboard({ onNavigate, onSelectPage }) {
+        function Dashboard({ onNavigate, onSelectPage, onRefreshSpaces }) {
             const [recent, setRecent] = useState([]);
             const [starred, setStarred] = useState([]);
             const [spaces, setSpaces] = useState([]);
@@ -705,7 +723,7 @@
                             </div>
                         </div>
                     </div>
-                    {showCreate && <CreateSpaceModal onClose={() => setShowCreate(false)} onCreated={(sp) => { setShowCreate(false); onNavigate('space', sp.id); }} />}
+                    {showCreate && <CreateSpaceModal onClose={() => setShowCreate(false)} onCreated={(sp) => { setShowCreate(false); if(onRefreshSpaces) onRefreshSpaces(); onNavigate('space', sp.id); }} />}
                 </div>
             );
         }
@@ -918,12 +936,38 @@
         }
 
         // ===== PAGE EDITOR (Confluence-style) =====
+        /* Toolbar popup styles */
+        const tbPopupStyle = {position:'absolute',top:'100%',left:0,marginTop:4,background:'#fff',borderRadius:8,boxShadow:'0 4px 16px rgba(0,0,0,.18)',zIndex:999,padding:8,minWidth:220};
+        const tbPopupInputStyle = {width:'100%',padding:'6px 8px',border:'1px solid #dfe1e6',borderRadius:4,fontSize:13,marginBottom:6,outline:'none',boxSizing:'border-box'};
+        const tbPopupBtnStyle = {padding:'6px 14px',borderRadius:4,border:'none',cursor:'pointer',fontSize:13,fontWeight:600};
+
+        const EMOJIS = ['😀','😂','😍','🤔','👍','👎','🎉','🔥','💡','✅','❌','⚠️','📌','📎','💬','🚀','⭐','❤️','👋','🙏','💪','🎯','📝','🔗','📊','📅','🏆','💻','🐛','🔧','📦','🌟','😊','🤝','✨','🎨','📐','🧪','📈','📉'];
+
+        function ToolbarPopup({ children, onClose }) {
+            const ref = useRef(null);
+            useEffect(() => {
+                const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
+                document.addEventListener('mousedown', handler);
+                return () => document.removeEventListener('mousedown', handler);
+            }, [onClose]);
+            return <div ref={ref} style={tbPopupStyle} onClick={e=>e.stopPropagation()}>{children}</div>;
+        }
+
         function PageEditor({ pageId, spaceId, onNavigate }) {
             const [page, setPage] = useState(null);
             const [title, setTitle] = useState('');
             const [loading, setLoading] = useState(!!pageId);
             const [saved, setSaved] = useState(true);
             const editorRef = useRef(null);
+            const [popup, setPopup] = useState(null); // 'link','image','table','mention','emoji','align','code'
+            const [linkUrl, setLinkUrl] = useState('');
+            const [linkText, setLinkText] = useState('');
+            const [imgUrl, setImgUrl] = useState('');
+            const [tableRows, setTableRows] = useState(3);
+            const [tableCols, setTableCols] = useState(3);
+            const [mentionSearch, setMentionSearch] = useState('');
+            const [users, setUsers] = useState([]);
+            const savedSelection = useRef(null);
 
             useEffect(() => {
                 if (pageId) {
@@ -937,11 +981,106 @@
                 }
             }, [loading, page]);
 
+            // Fetch users for mentions
+            useEffect(() => {
+                fetch(`${API}/users`, { headers: getAuthHeaders() }).then(r=>r.json()).then(d => { if(Array.isArray(d)) setUsers(d); }).catch(()=>{});
+            }, []);
+
+            const saveSelection = () => {
+                const sel = window.getSelection();
+                if (sel.rangeCount > 0) savedSelection.current = sel.getRangeAt(0).cloneRange();
+            };
+            const restoreSelection = () => {
+                if (savedSelection.current) {
+                    const sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(savedSelection.current);
+                }
+            };
+
             const exec = (cmd, val=null) => { document.execCommand(cmd, false, val); editorRef.current && editorRef.current.focus(); setSaved(false); };
+
             const handleHeading = (e) => {
                 const v = e.target.value;
                 if (v === 'p') exec('formatBlock', 'p');
                 else exec('formatBlock', v);
+            };
+
+            const openPopup = (name) => {
+                saveSelection();
+                setPopup(popup === name ? null : name);
+                if (name === 'link') { setLinkUrl(''); setLinkText(''); }
+                if (name === 'image') setImgUrl('');
+                if (name === 'table') { setTableRows(3); setTableCols(3); }
+                if (name === 'mention') setMentionSearch('');
+            };
+            const closePopup = () => setPopup(null);
+
+            const insertLink = () => {
+                if (!linkUrl.trim()) return;
+                restoreSelection();
+                const sel = window.getSelection();
+                if (linkText.trim() && sel.isCollapsed) {
+                    exec('insertHTML', `<a href="${linkUrl}" target="_blank">${linkText}</a>`);
+                } else {
+                    exec('createLink', linkUrl);
+                }
+                closePopup();
+            };
+
+            const insertImage = () => {
+                if (!imgUrl.trim()) return;
+                restoreSelection();
+                exec('insertImage', imgUrl);
+                closePopup();
+            };
+
+            const insertTable = () => {
+                const r = Math.max(1, Math.min(10, tableRows));
+                const c = Math.max(1, Math.min(10, tableCols));
+                const cellStyle = 'border:1px solid #dfe1e6;padding:8px;min-width:60px';
+                let html = '<table style="width:100%;border-collapse:collapse;margin:12px 0">';
+                for (let i = 0; i < r; i++) {
+                    html += '<tr>';
+                    for (let j = 0; j < c; j++) {
+                        if (i === 0) html += `<th style="${cellStyle};background:#f4f5f7;font-weight:600">Header</th>`;
+                        else html += `<td style="${cellStyle}">Cell</td>`;
+                    }
+                    html += '</tr>';
+                }
+                html += '</table><p><br/></p>';
+                restoreSelection();
+                exec('insertHTML', html);
+                closePopup();
+            };
+
+            const insertMention = (user) => {
+                restoreSelection();
+                exec('insertHTML', `<span style="background:#deebff;color:#0052cc;padding:1px 4px;border-radius:3px;font-weight:500" contenteditable="false">@${user.name}</span>&nbsp;`);
+                closePopup();
+            };
+
+            const insertEmoji = (em) => {
+                restoreSelection();
+                exec('insertHTML', em);
+                closePopup();
+            };
+
+            const insertCodeBlock = () => {
+                restoreSelection();
+                exec('insertHTML', '<pre style="background:#f4f5f7;border:1px solid #dfe1e6;border-radius:4px;padding:12px 16px;font-family:monospace;font-size:13px;overflow-x:auto;margin:12px 0"><code>// code here</code></pre><p><br/></p>');
+                closePopup();
+            };
+
+            const insertInlineCode = () => {
+                restoreSelection();
+                const sel = window.getSelection();
+                if (sel.toString().trim()) {
+                    exec('insertHTML', `<code style="background:#f4f5f7;padding:2px 4px;border-radius:3px;font-family:monospace;font-size:0.9em">${sel.toString()}</code>`);
+                } else {
+                    exec('insertHTML', '<code style="background:#f4f5f7;padding:2px 4px;border-radius:3px;font-family:monospace;font-size:0.9em">code</code>&nbsp;');
+                }
+                closePopup();
             };
 
             const handlePublish = () => {
@@ -963,6 +1102,8 @@
                 else if (spaceId) onNavigate('space', spaceId);
                 else onNavigate('home');
             };
+
+            const filteredUsers = users.filter(u => !mentionSearch || u.name.toLowerCase().includes(mentionSearch.toLowerCase()));
 
             if (loading) return <div className="loading-spinner">Loading...</div>;
 
@@ -991,23 +1132,136 @@
                             <option value="h3">Heading 3</option>
                         </select>
                         <div className="tb-sep" />
-                        <button className="tb-btn" onClick={() => exec('bold')} title="Bold"><Icons.bold /></button>
-                        <button className="tb-btn" onClick={() => exec('italic')} title="Italic"><Icons.italic /></button>
-                        <button className="tb-btn" onClick={() => exec('underline')} title="Underline"><Icons.underline /></button>
+                        <button className="tb-btn" onClick={() => exec('bold')} title="Bold (Ctrl+B)"><Icons.bold /></button>
+                        <button className="tb-btn" onClick={() => exec('italic')} title="Italic (Ctrl+I)"><Icons.italic /></button>
+                        <button className="tb-btn" onClick={() => exec('underline')} title="Underline (Ctrl+U)"><Icons.underline /></button>
                         <div className="tb-sep" />
                         <button className="tb-btn" onClick={() => exec('insertUnorderedList')} title="Bullet list"><Icons.listBullet /></button>
                         <button className="tb-btn" onClick={() => exec('insertOrderedList')} title="Numbered list"><Icons.listNumber /></button>
                         <div className="tb-sep" />
-                        <button className="tb-btn" onClick={() => exec('justifyLeft')} title="Align left"><Icons.alignLeft /></button>
+                        {/* Alignment dropdown */}
+                        <div style={{position:'relative'}}>
+                            <button className="tb-btn" onClick={() => openPopup('align')} title="Text alignment"><Icons.alignLeft /></button>
+                            {popup === 'align' && (
+                                <ToolbarPopup onClose={closePopup}>
+                                    <div style={{display:'flex',gap:2,minWidth:'auto',padding:0}}>
+                                        <button className="tb-btn" onClick={() => { restoreSelection(); exec('justifyLeft'); closePopup(); }} title="Left">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="17" y1="10" x2="3" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="17" y1="14" x2="3" y2="14"/><line x1="21" y1="18" x2="3" y2="18"/></svg>
+                                        </button>
+                                        <button className="tb-btn" onClick={() => { restoreSelection(); exec('justifyCenter'); closePopup(); }} title="Center">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="10" x2="6" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="18" y1="14" x2="6" y2="14"/><line x1="21" y1="18" x2="3" y2="18"/></svg>
+                                        </button>
+                                        <button className="tb-btn" onClick={() => { restoreSelection(); exec('justifyRight'); closePopup(); }} title="Right">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="21" y1="10" x2="7" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="14" x2="7" y2="14"/><line x1="21" y1="18" x2="3" y2="18"/></svg>
+                                        </button>
+                                    </div>
+                                </ToolbarPopup>
+                            )}
+                        </div>
                         <div className="tb-sep" />
-                        <button className="tb-btn" onClick={() => { const url = prompt('Enter URL:'); if(url) exec('createLink', url); }} title="Link"><Icons.link /></button>
-                        <button className="tb-btn" onClick={() => { const url = prompt('Image URL:'); if(url) exec('insertImage', url); }} title="Image"><Icons.image /></button>
-                        <button className="tb-btn" onClick={() => exec('insertHTML','<table style="width:100%;border-collapse:collapse"><tr><td style="border:1px solid #dfe1e6;padding:8px">Cell</td><td style="border:1px solid #dfe1e6;padding:8px">Cell</td></tr><tr><td style="border:1px solid #dfe1e6;padding:8px">Cell</td><td style="border:1px solid #dfe1e6;padding:8px">Cell</td></tr></table>')} title="Table"><Icons.table /></button>
+                        {/* Link popup */}
+                        <div style={{position:'relative'}}>
+                            <button className="tb-btn" onClick={() => openPopup('link')} title="Insert link"><Icons.link /></button>
+                            {popup === 'link' && (
+                                <ToolbarPopup onClose={closePopup}>
+                                    <div style={{fontSize:12,fontWeight:600,color:'#626f86',marginBottom:6}}>Insert link</div>
+                                    <input style={tbPopupInputStyle} placeholder="Display text (optional)" value={linkText} onChange={e=>setLinkText(e.target.value)} autoFocus />
+                                    <input style={tbPopupInputStyle} placeholder="https://example.com" value={linkUrl} onChange={e=>setLinkUrl(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')insertLink()}} />
+                                    <div style={{display:'flex',justifyContent:'flex-end',gap:6,marginTop:2}}>
+                                        <button style={{...tbPopupBtnStyle,background:'#f1f2f4',color:'#172B4D'}} onClick={closePopup}>Cancel</button>
+                                        <button style={{...tbPopupBtnStyle,background:'#0c66e4',color:'#fff'}} onClick={insertLink}>Insert</button>
+                                    </div>
+                                </ToolbarPopup>
+                            )}
+                        </div>
+                        {/* Image popup */}
+                        <div style={{position:'relative'}}>
+                            <button className="tb-btn" onClick={() => openPopup('image')} title="Insert image"><Icons.image /></button>
+                            {popup === 'image' && (
+                                <ToolbarPopup onClose={closePopup}>
+                                    <div style={{fontSize:12,fontWeight:600,color:'#626f86',marginBottom:6}}>Insert image</div>
+                                    <input style={tbPopupInputStyle} placeholder="Image URL (https://...)" value={imgUrl} onChange={e=>setImgUrl(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==='Enter')insertImage()}} />
+                                    {imgUrl && <div style={{marginBottom:6}}><img src={imgUrl} style={{maxWidth:'100%',maxHeight:100,borderRadius:4,border:'1px solid #dfe1e6'}} onError={e=>e.target.style.display='none'} /></div>}
+                                    <div style={{display:'flex',justifyContent:'flex-end',gap:6}}>
+                                        <button style={{...tbPopupBtnStyle,background:'#f1f2f4',color:'#172B4D'}} onClick={closePopup}>Cancel</button>
+                                        <button style={{...tbPopupBtnStyle,background:'#0c66e4',color:'#fff'}} onClick={insertImage}>Insert</button>
+                                    </div>
+                                </ToolbarPopup>
+                            )}
+                        </div>
+                        {/* Table popup */}
+                        <div style={{position:'relative'}}>
+                            <button className="tb-btn" onClick={() => openPopup('table')} title="Insert table"><Icons.table /></button>
+                            {popup === 'table' && (
+                                <ToolbarPopup onClose={closePopup}>
+                                    <div style={{fontSize:12,fontWeight:600,color:'#626f86',marginBottom:6}}>Insert table</div>
+                                    <div style={{display:'flex',gap:8,marginBottom:8}}>
+                                        <label style={{fontSize:12,flex:1}}>Rows<input type="number" min="1" max="10" value={tableRows} onChange={e=>setTableRows(+e.target.value)} style={{...tbPopupInputStyle,marginBottom:0,marginTop:2}} /></label>
+                                        <label style={{fontSize:12,flex:1}}>Columns<input type="number" min="1" max="10" value={tableCols} onChange={e=>setTableCols(+e.target.value)} style={{...tbPopupInputStyle,marginBottom:0,marginTop:2}} /></label>
+                                    </div>
+                                    {/* Visual grid preview */}
+                                    <div style={{display:'grid',gridTemplateColumns:`repeat(${Math.min(tableCols,10)},1fr)`,gap:2,marginBottom:8}}>
+                                        {Array.from({length:Math.min(tableRows,10)*Math.min(tableCols,10)}).map((_,i)=>(
+                                            <div key={i} style={{height:14,background:i<Math.min(tableCols,10)?'#deebff':'#f4f5f7',borderRadius:2,border:'1px solid #dfe1e6'}}/>
+                                        ))}
+                                    </div>
+                                    <div style={{display:'flex',justifyContent:'flex-end',gap:6}}>
+                                        <button style={{...tbPopupBtnStyle,background:'#f1f2f4',color:'#172B4D'}} onClick={closePopup}>Cancel</button>
+                                        <button style={{...tbPopupBtnStyle,background:'#0c66e4',color:'#fff'}} onClick={insertTable}>Insert</button>
+                                    </div>
+                                </ToolbarPopup>
+                            )}
+                        </div>
                         <div className="tb-sep" />
-                        <button className="tb-btn" onClick={() => exec('insertHTML','<code> </code>')} title="Code"><Icons.code /></button>
+                        {/* Code dropdown */}
+                        <div style={{position:'relative'}}>
+                            <button className="tb-btn" onClick={() => openPopup('code')} title="Insert code"><Icons.code /></button>
+                            {popup === 'code' && (
+                                <ToolbarPopup onClose={closePopup}>
+                                    <button style={{display:'block',width:'100%',padding:'8px 10px',border:'none',background:'none',cursor:'pointer',borderRadius:4,fontSize:13,textAlign:'left',color:'#172B4D'}} onMouseOver={e=>e.currentTarget.style.background='#f1f2f4'} onMouseOut={e=>e.currentTarget.style.background='none'} onClick={insertInlineCode}>
+                                        <span style={{fontFamily:'monospace',background:'#f4f5f7',padding:'1px 4px',borderRadius:3,fontSize:12}}>code</span> Inline code
+                                    </button>
+                                    <button style={{display:'block',width:'100%',padding:'8px 10px',border:'none',background:'none',cursor:'pointer',borderRadius:4,fontSize:13,textAlign:'left',color:'#172B4D'}} onMouseOver={e=>e.currentTarget.style.background='#f1f2f4'} onMouseOut={e=>e.currentTarget.style.background='none'} onClick={insertCodeBlock}>
+                                        <span style={{fontFamily:'monospace',background:'#f4f5f7',padding:'2px 6px',borderRadius:3,fontSize:11}}>{'{ }'}</span> Code block
+                                    </button>
+                                </ToolbarPopup>
+                            )}
+                        </div>
                         <button className="tb-btn" onClick={() => exec('insertHorizontalRule')} title="Divider"><Icons.hr /></button>
-                        <button className="tb-btn" title="Mention"><Icons.mention /></button>
-                        <button className="tb-btn" title="Emoji"><Icons.emoji /></button>
+                        {/* Mention popup */}
+                        <div style={{position:'relative'}}>
+                            <button className="tb-btn" onClick={() => openPopup('mention')} title="Mention someone"><Icons.mention /></button>
+                            {popup === 'mention' && (
+                                <ToolbarPopup onClose={closePopup}>
+                                    <div style={{fontSize:12,fontWeight:600,color:'#626f86',marginBottom:6}}>Mention a person</div>
+                                    <input style={tbPopupInputStyle} placeholder="Search people..." value={mentionSearch} onChange={e=>setMentionSearch(e.target.value)} autoFocus />
+                                    <div style={{maxHeight:160,overflowY:'auto'}}>
+                                        {filteredUsers.length === 0 && <div style={{fontSize:12,color:'#626f86',padding:4}}>No users found</div>}
+                                        {filteredUsers.map(u => (
+                                            <button key={u.id} style={{display:'flex',alignItems:'center',gap:8,width:'100%',padding:'6px 8px',border:'none',background:'none',cursor:'pointer',borderRadius:4,fontSize:13,color:'#172B4D'}} onMouseOver={e=>e.currentTarget.style.background='#f1f2f4'} onMouseOut={e=>e.currentTarget.style.background='none'} onClick={() => insertMention(u)}>
+                                                <div style={{width:24,height:24,borderRadius:'50%',background:u.avatar_color||'#0052cc',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:10,fontWeight:700,flexShrink:0}}>{(u.name||'?')[0].toUpperCase()}</div>
+                                                <span>{u.name}</span>
+                                                <span style={{marginLeft:'auto',fontSize:11,color:'#626f86'}}>{u.role}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </ToolbarPopup>
+                            )}
+                        </div>
+                        {/* Emoji popup */}
+                        <div style={{position:'relative'}}>
+                            <button className="tb-btn" onClick={() => openPopup('emoji')} title="Insert emoji"><Icons.emoji /></button>
+                            {popup === 'emoji' && (
+                                <ToolbarPopup onClose={closePopup}>
+                                    <div style={{fontSize:12,fontWeight:600,color:'#626f86',marginBottom:6}}>Insert emoji</div>
+                                    <div style={{display:'grid',gridTemplateColumns:'repeat(8,1fr)',gap:2}}>
+                                        {EMOJIS.map(em => (
+                                            <button key={em} style={{width:32,height:32,border:'none',background:'none',cursor:'pointer',borderRadius:4,fontSize:18,display:'flex',alignItems:'center',justifyContent:'center'}} onMouseOver={e=>e.currentTarget.style.background='#f1f2f4'} onMouseOut={e=>e.currentTarget.style.background='none'} onClick={() => insertEmoji(em)}>{em}</button>
+                                        ))}
+                                    </div>
+                                </ToolbarPopup>
+                            )}
+                        </div>
                     </div>
 
                     {/* Editor body */}
@@ -1128,11 +1382,16 @@
             const [spaces, setSpaces] = useState([]);
             const [tree, setTree] = useState([]);
             const [currentSpaceId, setCurrentSpaceId] = useState(null);
+            const [showCreateSpace, setShowCreateSpace] = useState(false);
 
             const user = getUser();
 
-            useEffect(() => {
+            const refreshSpaces = useCallback(() => {
                 api.getSpaces().then(d => { if(Array.isArray(d)) setSpaces(d); });
+            }, []);
+
+            useEffect(() => {
+                refreshSpaces();
             }, []);
 
             const navigate = useCallback((v, param) => {
@@ -1146,7 +1405,7 @@
                 } else if (v === 'create-page' && param) {
                     setCurrentSpaceId(param);
                     api.getSpaceTree(param).then(d => { if(Array.isArray(d)) setTree(d); });
-                } else if (v === 'home' || v === 'recent' || v === 'starred' || v === 'templates' || v === 'search') {
+                } else if (v === 'home' || v === 'recent' || v === 'starred' || v === 'search') {
                     setCurrentSpaceId(null);
                     setTree([]);
                 }
@@ -1173,16 +1432,16 @@
 
             return (
                 <div style={{display:'flex',flexDirection:'column',height:'100vh'}}>
-                    <TopNav onNavigate={navigate} onSearch={handleSearch} />
+                    <TopNav onNavigate={navigate} onSearch={handleSearch} spaces={spaces} onShowCreateSpace={() => setShowCreateSpace(true)} />
                     <div className="app-layout">
                         {!isEditor && (
                             <Sidebar spaces={spaces} currentSpaceId={currentSpaceId} tree={tree}
                                 onNavigate={navigate} onSelectPage={selectPage} activePageId={view==='page'?viewParam:null} />
                         )}
-                        {view === 'home' && <Dashboard onNavigate={navigate} onSelectPage={selectPage} />}
-                        {view === 'recent' && <Dashboard onNavigate={navigate} onSelectPage={selectPage} />}
-                        {view === 'starred' && <Dashboard onNavigate={navigate} onSelectPage={selectPage} />}
-                        {view === 'templates' && <TemplatesView onNavigate={navigate} />}
+                        {view === 'home' && <Dashboard onNavigate={navigate} onSelectPage={selectPage} onRefreshSpaces={refreshSpaces} />}
+                        {view === 'recent' && <Dashboard onNavigate={navigate} onSelectPage={selectPage} onRefreshSpaces={refreshSpaces} />}
+                        {view === 'starred' && <Dashboard onNavigate={navigate} onSelectPage={selectPage} onRefreshSpaces={refreshSpaces} />}
+
                         {view === 'space' && viewParam && <SpaceView spaceId={viewParam} onNavigate={navigate} onSelectPage={selectPage} />}
                         {view === 'page' && viewParam && <PageView pageId={viewParam} onNavigate={navigate} onSelectPage={selectPage} />}
                         {view === 'edit-page' && viewParam && <PageEditor pageId={viewParam} onNavigate={navigate} />}
@@ -1190,6 +1449,7 @@
                         {view === 'history' && viewParam && <PageHistory pageId={viewParam} onNavigate={navigate} />}
                         {view === 'search' && viewParam && <SearchResults query={viewParam} onSelectPage={selectPage} />}
                     </div>
+                    {showCreateSpace && <CreateSpaceModal onClose={() => setShowCreateSpace(false)} onCreated={(sp) => { setShowCreateSpace(false); refreshSpaces(); navigate('space', sp.id); }} />}
                 </div>
             );
         }

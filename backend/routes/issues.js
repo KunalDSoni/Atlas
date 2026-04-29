@@ -8,6 +8,7 @@
 
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
+const { auditLog } = require('../middleware/logger');
 const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 
@@ -21,6 +22,9 @@ function enrichIssue(db, issue) {
     ? queryOne(db, 'SELECT name, avatar_color FROM users WHERE id = ?', [issue.reporter_id])
     : null;
   const commentCount = queryOne(db, 'SELECT COUNT(*) as count FROM comments WHERE issue_id = ?', [issue.id]);
+  const attachmentCount = queryOne(db, 'SELECT COUNT(*) as count FROM attachments WHERE issue_id = ?', [issue.id]);
+  const watcherCount = queryOne(db, 'SELECT COUNT(*) as count FROM issue_watchers WHERE issue_id = ?', [issue.id]);
+  const linkCount = queryOne(db, 'SELECT COUNT(*) as count FROM issue_links WHERE source_issue_id = ? OR target_issue_id = ?', [issue.id, issue.id]);
 
   return {
     ...issue,
@@ -28,7 +32,11 @@ function enrichIssue(db, issue) {
     assignee_color: assignee?.avatar_color || null,
     reporter_name: reporter?.name || null,
     reporter_color: reporter?.avatar_color || null,
-    comment_count: commentCount.count
+    comment_count: commentCount.count,
+    attachment_count: attachmentCount.count,
+    watcher_count: watcherCount.count,
+    link_count: linkCount.count,
+    labels_parsed: (() => { try { return JSON.parse(issue.labels || '[]'); } catch(e) { return []; } })()
   };
 }
 
@@ -61,17 +69,18 @@ router.post('/projects/:projectId/issues', requireAuth, async (req, res) => {
     const issueNumber = issueCount.count + 1;
     const id = uuidv4();
 
-    const { title, description, type, priority, assignee_id, reporter_id, sprint_id, story_points } = req.body;
+    const { title, description, type, priority, assignee_id, reporter_id, sprint_id, story_points, due_date, labels, original_estimate } = req.body;
     if (!title) return res.status(400).json({ error: 'Title required' });
 
-    run(db, `INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, assignee_id, reporter_id, sprint_id, story_points, board_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?, 0)`,
+    run(db, `INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, assignee_id, reporter_id, sprint_id, story_points, due_date, labels, original_estimate, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
       [id, req.params.projectId, `${project.key}-${issueNumber}`, issueNumber,
        title, description || '', type || 'task', priority || 'medium',
        assignee_id || null, reporter_id || req.userId, sprint_id || null,
-       story_points || null]);
+       story_points || null, due_date || null, labels || '[]', original_estimate || null]);
 
     const issue = queryOne(db, 'SELECT * FROM issues WHERE id = ?', [id]);
+    auditLog({ userId: req.userId, action: 'Created issue', category: 'issues', entityType: 'issue', entityId: id, entityName: issue.issue_key, details: { title, type: type || 'task', priority: priority || 'medium' } });
     res.status(201).json(enrichIssue(db, issue));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -93,13 +102,20 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
     const issue = queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
     if (!issue) return res.status(404).json({ error: 'Issue not found' });
 
-    const allowed = ['title', 'description', 'type', 'status', 'priority', 'assignee_id', 'sprint_id', 'story_points', 'board_order'];
+    const allowed = ['title', 'description', 'type', 'status', 'priority', 'assignee_id', 'sprint_id', 'story_points', 'board_order', 'labels', 'due_date', 'original_estimate', 'time_spent'];
     const updates = [];
     const params = [];
+    const activityEntries = [];
     for (const key of allowed) {
       if (req.body[key] !== undefined) {
+        const oldVal = key === 'labels' ? (issue[key] || '[]') : (issue[key] !== null && issue[key] !== undefined ? String(issue[key]) : null);
+        const newVal = key === 'labels' ? (typeof req.body[key] === 'string' ? req.body[key] : JSON.stringify(req.body[key])) : req.body[key];
         updates.push(`${key} = ?`);
-        params.push(req.body[key]);
+        params.push(newVal);
+        // Log activity for meaningful field changes
+        if (key !== 'board_order' && String(oldVal) !== String(newVal)) {
+          activityEntries.push({ field: key, old_value: oldVal, new_value: String(newVal) });
+        }
       }
     }
     updates.push("updated_at = datetime('now')");
@@ -107,6 +123,13 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
     if (updates.length > 0) {
       params.push(req.params.id);
       run(db, `UPDATE issues SET ${updates.join(', ')} WHERE id = ?`, params);
+    }
+
+    // Log activity
+    for (const entry of activityEntries) {
+      const actId = uuidv4();
+      run(db, `INSERT INTO activity_log (id, issue_id, user_id, action, field, old_value, new_value) VALUES (?, ?, ?, 'update', ?, ?, ?)`,
+        [actId, req.params.id, req.userId, entry.field, entry.old_value, entry.new_value]);
     }
 
     const updated = queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
@@ -118,8 +141,14 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
 router.delete('/issues/:id', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
+    const issue = queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
+    run(db, 'DELETE FROM attachments WHERE issue_id = ?', [req.params.id]);
     run(db, 'DELETE FROM comments WHERE issue_id = ?', [req.params.id]);
+    run(db, 'DELETE FROM activity_log WHERE issue_id = ?', [req.params.id]);
+    run(db, 'DELETE FROM issue_watchers WHERE issue_id = ?', [req.params.id]);
+    run(db, 'DELETE FROM issue_links WHERE source_issue_id = ? OR target_issue_id = ?', [req.params.id, req.params.id]);
     run(db, 'DELETE FROM issues WHERE id = ?', [req.params.id]);
+    auditLog({ userId: req.userId, action: 'Deleted issue', category: 'issues', entityType: 'issue', entityId: req.params.id, entityName: issue ? issue.issue_key : req.params.id });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

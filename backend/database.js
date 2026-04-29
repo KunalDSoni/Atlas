@@ -94,6 +94,9 @@ const SCHEMA_SQL = [
     parent_id TEXT REFERENCES issues(id),
     story_points INTEGER,
     labels TEXT DEFAULT '[]',
+    due_date TEXT,
+    original_estimate TEXT,
+    time_spent TEXT,
     board_order INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
@@ -114,6 +117,31 @@ const SCHEMA_SQL = [
     field TEXT,
     old_value TEXT,
     new_value TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS issue_watchers (
+    id TEXT PRIMARY KEY,
+    issue_id TEXT NOT NULL REFERENCES issues(id),
+    user_id TEXT NOT NULL REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(issue_id, user_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS issue_links (
+    id TEXT PRIMARY KEY,
+    source_issue_id TEXT NOT NULL REFERENCES issues(id),
+    target_issue_id TEXT NOT NULL REFERENCES issues(id),
+    link_type TEXT NOT NULL DEFAULT 'relates_to' CHECK(link_type IN ('blocks','is_blocked_by','relates_to','duplicates','is_duplicated_by','clones','is_cloned_by')),
+    created_by TEXT NOT NULL REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS attachments (
+    id TEXT PRIMARY KEY,
+    issue_id TEXT NOT NULL REFERENCES issues(id),
+    filename TEXT NOT NULL,
+    original_name TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    uploaded_by TEXT NOT NULL REFERENCES users(id),
     created_at TEXT DEFAULT (datetime('now'))
   )`,
   // ===== CONFLUENCE TABLES =====
@@ -197,6 +225,24 @@ const SCHEMA_SQL = [
     body TEXT DEFAULT '',
     icon TEXT DEFAULT '📝',
     is_global INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  // ===== AUDIT LOG TABLE =====
+  `CREATE TABLE IF NOT EXISTS audit_log (
+    id TEXT PRIMARY KEY,
+    user_id TEXT REFERENCES users(id),
+    user_name TEXT,
+    action TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'system',
+    entity_type TEXT,
+    entity_id TEXT,
+    entity_name TEXT,
+    details TEXT,
+    ip_address TEXT,
+    method TEXT,
+    path TEXT,
+    status_code INTEGER,
+    duration_ms INTEGER,
     created_at TEXT DEFAULT (datetime('now'))
   )`
 ];

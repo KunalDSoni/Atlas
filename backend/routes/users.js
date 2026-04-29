@@ -9,6 +9,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { auditLog } = require('../middleware/logger');
 
 const router = express.Router();
 
@@ -40,6 +41,7 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
     // Create default settings
     run(db, `INSERT INTO user_settings (id, user_id) VALUES (?, ?)`, [uuidv4(), id]);
 
+    auditLog({ userId: req.userId, action: 'Created user', category: 'users', entityType: 'user', entityId: id, entityName: `${name} (${email})`, details: { role: role || 'user' } });
     res.status(201).json({ id, name, email, role: role || 'user', avatar_color: color, is_active: 1 });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -84,7 +86,9 @@ router.put('/:id', requireAuth, requireAdmin, async (req, res) => {
 router.delete('/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const db = await getDb();
+    const user = queryOne(db, 'SELECT name, email FROM users WHERE id = ?', [req.params.id]);
     run(db, 'UPDATE users SET is_active = 0 WHERE id = ?', [req.params.id]);
+    auditLog({ userId: req.userId, action: 'Deactivated user', category: 'users', entityType: 'user', entityId: req.params.id, entityName: user ? `${user.name} (${user.email})` : req.params.id });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

@@ -116,9 +116,10 @@
     .modal{background:var(--bg);border-radius:var(--radius-lg);width:800px;max-height:calc(100vh - 96px);overflow-y:auto;box-shadow:0 8px 16px rgba(9,30,66,0.25)}
     .modal-header{display:flex;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border)}.modal-header h2{flex:1;font-size:16px}
     .modal-body{padding:20px}.modal-footer{padding:12px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
-    .issue-detail{display:grid;grid-template-columns:1fr 240px;gap:20px}.issue-detail-main{min-width:0}
+    .issue-detail{display:grid;grid-template-columns:1fr 240px;gap:20px}.issue-detail-main{min-width:0}.issue-detail-main svg{max-width:24px;max-height:24px}
     .issue-detail-sidebar{border-left:1px solid var(--border);padding-left:20px}
-    .detail-field{margin-bottom:16px}.detail-field-label{font-size:11px;font-weight:700;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px}
+    .issue-detail-sidebar svg{max-width:16px;max-height:16px}
+    .detail-field{margin-bottom:16px}.detail-field-label{font-size:11px;font-weight:700;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;display:flex;align-items:center;gap:4px}.detail-field-label svg{width:14px;height:14px;flex-shrink:0}
     .comment{display:flex;gap:12px;padding:12px 0;border-top:1px solid var(--border-light)}.comment-body{flex:1}
     .comment-meta{font-size:12px;color:var(--text-muted);margin-bottom:4px}.comment-meta strong{color:var(--text)}.comment-text{font-size:14px;line-height:1.6}
 
@@ -162,6 +163,72 @@
     .confirm-overlay{position:fixed;inset:0;background:rgba(9,30,66,0.54);display:flex;align-items:center;justify-content:center;z-index:200}
     .confirm-dialog{background:var(--bg);border-radius:var(--radius-lg);padding:24px;width:420px;box-shadow:0 8px 16px rgba(9,30,66,0.25)}
     .confirm-dialog h3{font-size:18px;font-weight:700;margin-bottom:8px}.confirm-dialog p{color:var(--text-muted);font-size:13px;margin-bottom:20px}
+    /* === ATTACHMENTS === */
+    .attach-section{margin-top:20px;border-top:1px solid var(--border-light);padding-top:16px}
+    .attach-header{display:flex;align-items:center;gap:6px;margin-bottom:10px}
+    .attach-header svg{width:16px;height:16px;flex-shrink:0}
+    .attach-header h3{font-size:13px;font-weight:600;flex:1}
+    .attach-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
+    .attach-card{border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;cursor:pointer;transition:all 0.1s;position:relative}
+    .attach-card:hover{border-color:var(--accent);box-shadow:var(--shadow-hover)}
+    .attach-preview{height:100px;background:var(--bg-surface);display:flex;align-items:center;justify-content:center;overflow:hidden}
+    .attach-preview img{width:100%;height:100%;object-fit:cover}
+    .attach-preview video{width:100%;height:100%;object-fit:cover}
+    .attach-preview-icon{color:var(--text-faint);display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px}
+    .attach-preview-icon svg{width:28px;height:28px}
+    .attach-info{padding:6px 8px}
+    .attach-name{font-size:11px;font-weight:500;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .attach-meta{font-size:10px;color:var(--text-faint);margin-top:2px}
+    .attach-delete{position:absolute;top:4px;right:4px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,0.5);color:#fff;display:none;align-items:center;justify-content:center;border:none;cursor:pointer;font-size:10px;padding:0}
+    .attach-card:hover .attach-delete{display:flex}
+    .attach-drop{border:2px dashed var(--border);border-radius:var(--radius);padding:20px;text-align:center;color:var(--text-faint);font-size:13px;cursor:pointer;transition:all 0.15s;margin-bottom:10px}
+    .attach-drop:hover,.attach-drop.drag-active{border-color:var(--accent);background:var(--accent-bg);color:var(--accent)}
+    .attach-drop svg{width:24px;height:24px;margin-bottom:4px}
+    .attach-hidden{display:none}
+
+    /* === LABELS === */
+    .label-tag{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600;margin:2px;cursor:default}
+    .label-tag .label-x{cursor:pointer;opacity:0.6;margin-left:2px;font-size:12px}.label-tag .label-x:hover{opacity:1}
+    .label-input-wrap{display:flex;align-items:center;gap:4px;margin-top:4px}
+    .label-input-wrap input{padding:3px 6px;border:1px solid var(--border);border-radius:var(--radius);font-size:11px;width:100px;outline:none}
+    .label-input-wrap input:focus{border-color:var(--accent)}
+    .label-colors{display:flex;gap:2px;flex-wrap:wrap;margin-top:4px}
+    .label-color-dot{width:16px;height:16px;border-radius:3px;cursor:pointer;border:2px solid transparent}
+    .label-color-dot:hover,.label-color-dot.sel{border-color:var(--text)}
+
+    /* === ACTIVITY === */
+    .activity-item{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-light);font-size:13px}
+    .activity-item:last-child{border-bottom:none}
+    .activity-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);margin-top:6px;flex-shrink:0}
+    .activity-time{font-size:11px;color:var(--text-faint);margin-top:2px}
+
+    /* === WATCHERS === */
+    .watcher-btn{display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);cursor:pointer;font-size:12px;color:var(--text-muted);transition:all 0.1s}
+    .watcher-btn svg{width:14px;height:14px;flex-shrink:0}
+    .watcher-btn:hover{border-color:var(--accent);color:var(--accent)}
+    .watcher-btn.watching{background:var(--accent-bg);border-color:var(--accent);color:var(--accent)}
+
+    /* === LINKED ISSUES === */
+    .link-item{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-light);font-size:12px}
+    .link-item:last-child{border-bottom:none}
+    .link-type-label{font-size:10px;color:var(--text-faint);text-transform:uppercase;font-weight:700;letter-spacing:0.3px}
+    .link-issue-key{font-weight:600;color:var(--accent);cursor:pointer}
+    .link-issue-key:hover{text-decoration:underline}
+    .link-delete{opacity:0;cursor:pointer;color:var(--text-faint);transition:opacity 0.1s;display:flex;width:14px;height:14px;flex-shrink:0}
+    .link-delete svg{width:14px;height:14px}
+    .link-item:hover .link-delete{opacity:1}
+    .link-delete:hover{color:var(--red)}
+
+    /* === DUE DATE === */
+    .due-overdue{color:var(--red) !important;font-weight:600}
+    .due-soon{color:var(--orange) !important;font-weight:600}
+
+    /* === TABS === */
+    .detail-tabs{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:16px}
+    .detail-tab{padding:8px 16px;font-size:13px;font-weight:500;color:var(--text-muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all 0.1s}
+    .detail-tab:hover{color:var(--text)}
+    .detail-tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+
     @media(max-width:900px){.login-page{flex-direction:column}.login-right{width:100%}.settings-layout{grid-template-columns:1fr}.issue-detail{grid-template-columns:1fr}.stats-grid{grid-template-columns:repeat(2,1fr)}}
   </style>
 </head>
@@ -209,6 +276,14 @@ Bug:()=><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="currentColor"
 Task:()=><svg viewBox="0 0 10 10"><polyline points="2,5.5 4,7.5 8,3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
 Download:()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
 Report:()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
+Attach:()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>,
+FileText:()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>,
+Film:()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/><line x1="17" y1="17" x2="22" y2="17"/></svg>,
+Image:()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>,
+Tag:()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>,
+Calendar:()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
+Link2:()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 7h3a5 5 0 010 10h-3m-6 0H6A5 5 0 016 7h3"/><line x1="8" y1="12" x2="16" y2="12"/></svg>,
+Activity:()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>,
 };
 
 // ===== SHARED =====
@@ -250,7 +325,7 @@ function BoardView(){
   return(<div className="fade-in" style={{display:'flex',flexDirection:'column',height:'100%'}}>
     {activeSprint&&<div className="sprint-bar"><div className="sprint-bar-icon"><I.Sprint/></div><div className="sprint-info"><h3>{activeSprint.name}</h3>{activeSprint.goal&&<p>{activeSprint.goal}</p>}</div>{daysLeft!==null&&<div className="sprint-remaining"><I.Clock/> {daysLeft>0?`${daysLeft} days remaining`:'Sprint ended'}</div>}<div className="sprint-stats-text">{activeSprint.done_count||0}/{activeSprint.issue_count||0} done &bull; {activeSprint.done_points||0}/{activeSprint.total_points||0} pts</div>{perms.canManageSprints&&<button className="btn btn-success" style={{fontSize:12}} onClick={async()=>{if(!confirm(`Complete "${activeSprint.name}"? Incomplete issues will remain in the sprint.`))return;try{await api(`/sprints/${activeSprint.id}`,{method:'PUT',body:{status:'completed'}});load()}catch(e){alert('Failed: '+e.message)}}}>Complete sprint</button>}<button className="btn btn-ghost btn-sm"><I.Dots/></button></div>}
     <div className="board-toolbar"><div className="board-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input placeholder="Search board" value={search} onChange={e=>setSearch(e.target.value)}/></div>{assignees.length>0&&<><div className="filter-sep"/><div className="avatar-group">{assignees.slice(0,5).map(a=><Avatar key={a.id} name={a.name} color={a.color} selected={filterAssignee===a.id} onClick={()=>setFilterAssignee(filterAssignee===a.id?null:a.id)}/>)}</div></>}<div className="filter-sep"/><select style={{border:'2px solid var(--border)',borderRadius:'var(--radius)',padding:'4px 24px 4px 8px',fontSize:12,background:'var(--bg)',appearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%23626f86' viewBox='0 0 16 16'%3E%3Cpath d='M4.427 7.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 7H4.604a.25.25 0 00-.177.427z'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 6px center',color:'var(--text)'}} value={filterType} onChange={e=>setFilterType(e.target.value)}><option value="">Type</option><option value="story">Story</option><option value="bug">Bug</option><option value="task">Task</option></select>{(search||filterAssignee||filterType)&&<button className="btn btn-ghost btn-sm" onClick={()=>{setSearch('');setFilterAssignee(null);setFilterType('')}} style={{fontSize:12}}>Clear</button>}<div style={{flex:1}}/>{perms.canCreateIssue&&<button className="btn btn-primary" onClick={()=>setShowCreateIssue(true)}><I.Plus/> Create</button>}</div>
-    <div className="board">{columns.map(col=>(<div className="board-column" key={col.key}><div className="board-column-header"><span className="col-dot" style={{background:col.color}}/><h3>{col.label}</h3><span className="count">{grouped[col.key]?.length||0}</span></div><div className="board-column-body" onDragOver={e=>{e.preventDefault();e.currentTarget.classList.add('drag-over')}} onDragLeave={e=>e.currentTarget.classList.remove('drag-over')} onDrop={e=>onDrop(e,col.key)}>{grouped[col.key]?.map(issue=>(<div key={issue.id} className="issue-card" draggable={perms.canDragIssue} onDragStart={()=>{dragItem.current=issue}} onClick={()=>setSelectedIssue(issue)}><div className="issue-card-title">{issue.title}</div><div className="issue-card-footer"><div className="issue-card-meta"><TypeIcon type={issue.type}/><span className="key-badge">{issue.issue_key}</span>{issue.story_points>0&&<span className="pts-badge">{issue.story_points}</span>}<PriorityIcon p={issue.priority}/>{issue.comment_count>0&&<span className="comment-count"><I.Comment/>{issue.comment_count}</span>}{col.key==='done'&&<span className="done-check"><I.CheckCircle/></span>}</div>{issue.assignee_name&&<Avatar name={issue.assignee_name} color={issue.assignee_color} size="sm"/>}</div></div>))}</div></div>))}</div>
+    <div className="board">{columns.map(col=>(<div className="board-column" key={col.key}><div className="board-column-header"><span className="col-dot" style={{background:col.color}}/><h3>{col.label}</h3><span className="count">{grouped[col.key]?.length||0}</span></div><div className="board-column-body" onDragOver={e=>{e.preventDefault();e.currentTarget.classList.add('drag-over')}} onDragLeave={e=>e.currentTarget.classList.remove('drag-over')} onDrop={e=>onDrop(e,col.key)}>{grouped[col.key]?.map(issue=>(<div key={issue.id} className="issue-card" draggable={perms.canDragIssue} onDragStart={()=>{dragItem.current=issue}} onClick={()=>setSelectedIssue(issue)}>{(()=>{try{const ls=Array.isArray(issue.labels_parsed)?issue.labels_parsed:JSON.parse(issue.labels||'[]');return ls.length>0?<div style={{display:'flex',flexWrap:'wrap',gap:2,marginBottom:4}}>{ls.slice(0,3).map((l,i)=>{const c=LABEL_COLORS.find(x=>x.name===l.color)||LABEL_COLORS[0];return<span key={i} style={{background:c.bg,color:c.fg,padding:'0 4px',borderRadius:2,fontSize:9,fontWeight:600}}>{l.text}</span>})}{ls.length>3&&<span style={{fontSize:9,color:'var(--text-faint)'}}>+{ls.length-3}</span>}</div>:null}catch(e){return null}})()}<div className="issue-card-title">{issue.title}</div><div className="issue-card-footer"><div className="issue-card-meta"><TypeIcon type={issue.type}/><span className="key-badge">{issue.issue_key}</span>{issue.story_points>0&&<span className="pts-badge">{issue.story_points}</span>}<PriorityIcon p={issue.priority}/>{issue.comment_count>0&&<span className="comment-count"><I.Comment/>{issue.comment_count}</span>}{issue.attachment_count>0&&<span className="comment-count"><I.Attach/>{issue.attachment_count}</span>}{issue.due_date&&(()=>{const d=Math.ceil((new Date(issue.due_date)-new Date())/(864e5));return<span className="comment-count" style={{color:d<0?'var(--red)':d<=3?'var(--orange)':'var(--text-faint)'}} title={`Due ${issue.due_date}`}><I.Calendar/>{d<0?'Overdue':d===0?'Today':d+'d'}</span>})()}{col.key==='done'&&<span className="done-check"><I.CheckCircle/></span>}</div>{issue.assignee_name&&<Avatar name={issue.assignee_name} color={issue.assignee_color} size="sm"/>}</div></div>))}</div></div>))}</div>
   </div>);
 }
 
@@ -617,35 +692,231 @@ function AdminProjectsView(){const api=useApi();const perms=usePerms();const[pro
   {toast&&<Toast message={toast.msg} type={toast.type} onClose={()=>setToast(null)}/>}</div>);
 }
 
+// ===== AUDIT LOG VIEW =====
+function AuditLogView(){
+  const api=useApi();const[entries,setEntries]=useState([]);const[stats,setStats]=useState(null);const[page,setPage]=useState(1);const[totalPages,setTotalPages]=useState(1);const[total,setTotal]=useState(0);
+  const[filters,setFilters]=useState({search:'',method:'',category:'',from_date:'',to_date:''});const[loading,setLoading]=useState(false);const[tab,setTab]=useState('log');
+  const load=async(p)=>{setLoading(true);try{
+    const params=new URLSearchParams({page:p||page,limit:30});
+    if(filters.search)params.set('search',filters.search);if(filters.method)params.set('method',filters.method);
+    if(filters.category)params.set('category',filters.category);if(filters.from_date)params.set('from_date',filters.from_date);
+    if(filters.to_date)params.set('to_date',filters.to_date);
+    const d=await api(`/admin/audit-log?${params}`);setEntries(d.entries||[]);setTotal(d.total||0);setTotalPages(d.total_pages||1);setPage(d.page||1);
+  }catch(e){console.error(e)}finally{setLoading(false)}};
+  const loadStats=async()=>{try{setStats(await api('/admin/audit-log/stats'))}catch(e){}};
+  useEffect(()=>{load(1);loadStats()},[]);
+  const applyFilters=()=>load(1);
+  const clearFilters=()=>{setFilters({search:'',method:'',category:'',from_date:'',to_date:''});setTimeout(()=>load(1),50)};
+  const timeAgo=(d)=>{const diff=Date.now()-new Date(d).getTime();const s=Math.floor(diff/1000);if(s<60)return s+'s ago';const m=Math.floor(s/60);if(m<60)return m+'m ago';const h=Math.floor(m/60);if(h<24)return h+'h ago';return Math.floor(h/24)+'d ago'};
+  const methodBadge=(m)=>{const c={GET:'var(--green)',POST:'var(--accent)',PUT:'var(--orange)',DELETE:'var(--red)',PATCH:'var(--purple)'};return m?<span style={{background:c[m]||'var(--bg-hover)',color:'#fff',padding:'1px 6px',borderRadius:3,fontSize:10,fontWeight:700,fontFamily:'monospace'}}>{m}</span>:null};
+  const statusBadge=(s)=>{if(!s)return null;const c=s<300?'var(--green)':s<400?'var(--orange)':'var(--red)';return<span style={{color:c,fontWeight:600,fontSize:12,fontFamily:'monospace'}}>{s}</span>};
+  return(<div className="fade-in" style={{paddingTop:20}}>
+    <div className="flex items-center gap-3 mb-4"><h2 style={{fontSize:18,fontWeight:700,flex:1}}>Audit Log</h2>
+    <div style={{display:'flex',gap:0,borderBottom:'2px solid var(--border)'}}><span className={`detail-tab${tab==='log'?' active':''}`} onClick={()=>setTab('log')}>Log</span><span className={`detail-tab${tab==='stats'?' active':''}`} onClick={()=>{setTab('stats');loadStats()}}>Stats</span></div></div>
+
+    {tab==='stats'&&stats&&<div>
+      <div className="stats-grid"><div className="stat-card"><div className="stat-card-value">{stats.total}</div><div className="stat-card-label">Total Entries</div></div>
+      <div className="stat-card"><div className="stat-card-value" style={{color:'var(--accent)'}}>{stats.today}</div><div className="stat-card-label">Today</div></div>
+      <div className="stat-card"><div className="stat-card-value" style={{color:'var(--red)'}}>{stats.errors}</div><div className="stat-card-label">Errors</div></div>
+      <div className="stat-card"><div className="stat-card-value">{stats.avg_duration_ms}ms</div><div className="stat-card-label">Avg Response</div></div></div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:16}}>
+        <div className="card"><h3 style={{fontSize:13,fontWeight:600,marginBottom:10}}>By Method</h3>{(stats.by_method||[]).map(m=><div key={m.method} style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>{methodBadge(m.method)}<div style={{flex:1,height:4,background:'var(--bg-hover)',borderRadius:2}}><div style={{width:`${(m.count/Math.max(stats.total,1))*100}%`,height:'100%',background:'var(--accent)',borderRadius:2}}/></div><span style={{fontSize:12,fontWeight:600}}>{m.count}</span></div>)}</div>
+        <div className="card"><h3 style={{fontSize:13,fontWeight:600,marginBottom:10}}>By Category</h3>{(stats.by_category||[]).map(c=><div key={c.category} style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}><span style={{fontSize:12,flex:1}}>{c.category}</span><span style={{fontSize:12,fontWeight:600}}>{c.count}</span></div>)}</div>
+        <div className="card"><h3 style={{fontSize:13,fontWeight:600,marginBottom:10}}>Top Users</h3>{(stats.by_user||[]).map(u=><div key={u.user_id} style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}><Avatar name={u.user_name} color={u.avatar_color} size="sm"/><span style={{fontSize:12,flex:1}}>{u.user_name}</span><span style={{fontSize:12,fontWeight:600}}>{u.count}</span></div>)}</div>
+      </div>
+      {stats.recent_errors&&stats.recent_errors.length>0&&<div className="card" style={{marginTop:16}}><h3 style={{fontSize:13,fontWeight:600,marginBottom:10,color:'var(--red)'}}>Recent Errors</h3>{stats.recent_errors.map(e=><div key={e.id} style={{padding:'6px 0',borderBottom:'1px solid var(--border-light)',fontSize:12}}><div className="flex items-center gap-2">{methodBadge(e.method)}{statusBadge(e.status_code)}<span style={{color:'var(--text-muted)',fontFamily:'monospace',fontSize:11}}>{e.path}</span><span style={{color:'var(--text-faint)',fontSize:11,marginLeft:'auto'}}>{timeAgo(e.created_at)}</span></div></div>)}</div>}
+    </div>}
+
+    {tab==='log'&&<div>
+      <div className="flex gap-2 mb-4" style={{flexWrap:'wrap'}}><div className="board-search" style={{width:220}}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{position:'absolute',left:8,top:'50%',transform:'translateY(-50%)',color:'var(--text-faint)',width:14,height:14}}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input placeholder="Search logs..." value={filters.search} onChange={e=>setFilters({...filters,search:e.target.value})} onKeyDown={e=>e.key==='Enter'&&applyFilters()} style={{padding:'6px 8px 6px 30px',border:'2px solid var(--border)',borderRadius:'var(--radius)',background:'var(--bg)',fontSize:13,width:'100%',outline:'none'}}/></div>
+      <select className="input" style={{width:100,fontSize:12}} value={filters.method} onChange={e=>setFilters({...filters,method:e.target.value})}><option value="">Method</option><option>POST</option><option>PUT</option><option>DELETE</option><option>PATCH</option></select>
+      <select className="input" style={{width:110,fontSize:12}} value={filters.category} onChange={e=>setFilters({...filters,category:e.target.value})}><option value="">Category</option><option value="api">API</option><option value="business">Business</option><option value="system">System</option></select>
+      <input className="input" type="date" style={{width:140,fontSize:12}} value={filters.from_date} onChange={e=>setFilters({...filters,from_date:e.target.value})} title="From date"/>
+      <input className="input" type="date" style={{width:140,fontSize:12}} value={filters.to_date} onChange={e=>setFilters({...filters,to_date:e.target.value})} title="To date"/>
+      <button className="btn btn-primary btn-sm" onClick={applyFilters}>Filter</button>
+      {(filters.search||filters.method||filters.category||filters.from_date||filters.to_date)&&<button className="btn btn-ghost btn-sm" onClick={clearFilters}>Clear</button>}
+      <span style={{marginLeft:'auto',fontSize:12,color:'var(--text-faint)'}}>{total} entries</span></div>
+
+      {loading?<div style={{textAlign:'center',padding:40,color:'var(--text-muted)'}}>Loading...</div>:
+      <table className="data-table"><thead><tr><th style={{width:90}}>Time</th><th style={{width:55}}>Method</th><th style={{width:50}}>Status</th><th>Path / Action</th><th style={{width:120}}>User</th><th style={{width:60}}>Duration</th></tr></thead>
+      <tbody>{entries.map(e=><tr key={e.id} style={{cursor:'default'}}><td style={{fontSize:11,color:'var(--text-faint)',whiteSpace:'nowrap'}} title={e.created_at}>{timeAgo(e.created_at)}</td><td>{methodBadge(e.method)}</td><td>{statusBadge(e.status_code)}</td><td style={{fontFamily:'monospace',fontSize:11,color:'var(--text-muted)',maxWidth:300,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={e.path||e.action}>{e.path||e.action}{e.entity_name&&<span style={{color:'var(--text-faint)',marginLeft:6}}>({e.entity_name})</span>}</td><td>{e.user_name?<span className="flex items-center gap-2"><Avatar name={e.user_name} color={e.avatar_color} size="sm"/><span style={{fontSize:11}}>{e.user_name}</span></span>:<span style={{fontSize:11,color:'var(--text-faint)'}}>System</span>}</td><td style={{fontSize:11,color:'var(--text-faint)',fontFamily:'monospace'}}>{e.duration_ms!=null?e.duration_ms+'ms':'—'}</td></tr>)}</tbody></table>}
+
+      {totalPages>1&&<div className="flex items-center gap-2" style={{marginTop:12,justifyContent:'center'}}><button className="btn btn-sm" onClick={()=>load(page-1)} disabled={page<=1}>Prev</button><span style={{fontSize:12,color:'var(--text-muted)'}}>Page {page} of {totalPages}</span><button className="btn btn-sm" onClick={()=>load(page+1)} disabled={page>=totalPages}>Next</button></div>}
+    </div>}
+  </div>);
+}
+
+// ===== ATTACHMENTS =====
+function AttachmentsSection({issueId}){
+  const api=useApi();const{currentUser}=useContext(AppContext);const perms=usePerms();
+  const[atts,setAtts]=useState([]);const[uploading,setUploading]=useState(false);const[dragActive,setDragActive]=useState(false);const fileRef=useRef(null);
+  useEffect(()=>{if(issueId)loadAtts()},[issueId]);
+  const loadAtts=()=>{
+    const h={'x-user-id':String(currentUser.id),'x-user-role':currentUser.role||''};
+    if(currentUser.token)h['x-auth-token']=currentUser.token;
+    fetch(`${API}/issues/${issueId}/attachments`,{headers:h}).then(r=>r.json()).then(d=>{if(Array.isArray(d))setAtts(d)}).catch(()=>{})};
+  const upload=async(files)=>{
+    if(!files||files.length===0)return;setUploading(true);
+    const fd=new FormData();for(const f of files)fd.append('files',f);
+    const h={'x-user-id':String(currentUser.id),'x-user-role':currentUser.role||''};
+    if(currentUser.token)h['x-auth-token']=currentUser.token;
+    try{const r=await fetch(`${API}/issues/${issueId}/attachments`,{method:'POST',headers:h,body:fd});
+      if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error||'Upload failed')}
+      loadAtts()}catch(e){alert('Upload failed: '+e.message)}finally{setUploading(false)}};
+  const deleteAtt=async(id)=>{
+    if(!confirm('Delete this attachment?'))return;
+    const h={'x-user-id':String(currentUser.id),'x-user-role':currentUser.role||''};
+    if(currentUser.token)h['x-auth-token']=currentUser.token;
+    await fetch(`${API}/attachments/${id}`,{method:'DELETE',headers:h});loadAtts()};
+  const fmtSize=(b)=>{if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(1)+'KB';return(b/1048576).toFixed(1)+'MB'};
+  const isImg=(m)=>m&&m.startsWith('image/');
+  const isVid=(m)=>m&&m.startsWith('video/');
+  const isPdf=(m)=>m==='application/pdf';
+  const fileIcon=(m)=>{if(isImg(m))return<I.Image/>;if(isVid(m))return<I.Film/>;return<I.FileText/>};
+  const onDrop=(e)=>{e.preventDefault();setDragActive(false);upload(e.dataTransfer.files)};
+  const onDragOver=(e)=>{e.preventDefault();setDragActive(true)};
+  const onDragLeave=()=>setDragActive(false);
+  return(
+    <div className="attach-section">
+      <div className="attach-header"><span style={{display:'flex',width:16,height:16,flexShrink:0}}><I.Attach/></span><h3>Attachments ({atts.length})</h3>
+        {perms.canEditIssue&&<button className="btn btn-sm" onClick={()=>fileRef.current&&fileRef.current.click()} disabled={uploading}><I.Plus/>{uploading?'Uploading...':'Add'}</button>}
+      </div>
+      {perms.canEditIssue&&<div className={`attach-drop${dragActive?' drag-active':''}`} onDrop={onDrop} onDragOver={onDragOver} onDragLeave={onDragLeave} onClick={()=>fileRef.current&&fileRef.current.click()}>
+        <span style={{display:'flex',justifyContent:'center',width:'100%'}}><span style={{width:24,height:24}}><I.Attach/></span></span><div>Drop files here or <strong>click to browse</strong></div>
+        <div style={{fontSize:11,marginTop:4}}>PDF, Images, Videos, Excel, Word — up to 50MB</div>
+      </div>}
+      <input ref={fileRef} type="file" multiple className="attach-hidden" onChange={e=>upload(e.target.files)} accept="image/*,video/*,.pdf,.xlsx,.xls,.docx,.doc,.pptx,.txt,.csv,.json,.zip"/>
+      {atts.length>0&&<div className="attach-grid">{atts.map(a=>(
+        <div key={a.id} className="attach-card">
+          <a href={`${API}/attachments/${a.id}/download`} target="_blank" style={{textDecoration:'none',color:'inherit'}}>
+            <div className="attach-preview">
+              {isImg(a.mime_type)?<img src={`${API}/attachments/${a.id}/preview`} alt={a.original_name}/>
+              :isVid(a.mime_type)?<video src={`${API}/attachments/${a.id}/preview`}/>
+              :<div className="attach-preview-icon">{fileIcon(a.mime_type)}<span>{(a.original_name||'').split('.').pop().toUpperCase()}</span></div>}
+            </div>
+            <div className="attach-info">
+              <div className="attach-name" title={a.original_name}>{a.original_name}</div>
+              <div className="attach-meta">{fmtSize(a.size)} &bull; {a.uploader_name}</div>
+            </div>
+          </a>
+          {perms.canEditIssue&&<button className="attach-delete" onClick={(e)=>{e.preventDefault();e.stopPropagation();deleteAtt(a.id)}} title="Delete">&times;</button>}
+        </div>
+      ))}</div>}
+    </div>
+  );
+}
+
+// ===== LABELS SECTION =====
+const LABEL_COLORS=[{name:'blue',bg:'#deebff',fg:'#0747a6'},{name:'green',bg:'#dffcf0',fg:'#006644'},{name:'orange',bg:'#fff7d6',fg:'#974f0c'},{name:'red',bg:'#ffedeb',fg:'#ae2a19'},{name:'purple',bg:'#f3f0ff',fg:'#403294'},{name:'teal',bg:'#e6fcff',fg:'#008da6'},{name:'yellow',bg:'#fff7d6',fg:'#7f5f01'},{name:'grey',bg:'#f1f2f4',fg:'#626f86'}];
+function LabelsEditor({labels,onChange,canEdit}){
+  const[adding,setAdding]=useState(false);const[newLabel,setNewLabel]=useState('');const[selColor,setSelColor]=useState(0);
+  const parsed=Array.isArray(labels)?labels:(()=>{try{return JSON.parse(labels||'[]')}catch(e){return[]}})();
+  const addLabel=()=>{if(!newLabel.trim())return;const l={text:newLabel.trim(),color:LABEL_COLORS[selColor].name};onChange([...parsed,l]);setNewLabel('');setAdding(false)};
+  const removeLabel=(idx)=>{const n=[...parsed];n.splice(idx,1);onChange(n)};
+  return(<div>
+    <div style={{display:'flex',flexWrap:'wrap',gap:2}}>{parsed.map((l,i)=>{const c=LABEL_COLORS.find(x=>x.name===l.color)||LABEL_COLORS[0];return<span key={i} className="label-tag" style={{background:c.bg,color:c.fg}}>{l.text}{canEdit&&<span className="label-x" onClick={()=>removeLabel(i)}>&times;</span>}</span>})}
+    {canEdit&&!adding&&<button className="btn btn-ghost btn-sm" onClick={()=>setAdding(true)} style={{fontSize:11,padding:'2px 6px'}}><span style={{display:'flex',width:12,height:12}}><I.Plus/></span></button>}</div>
+    {adding&&<div className="label-input-wrap"><input value={newLabel} onChange={e=>setNewLabel(e.target.value)} placeholder="Label name" autoFocus onKeyDown={e=>{if(e.key==='Enter')addLabel();if(e.key==='Escape')setAdding(false)}}/><button className="btn btn-primary btn-sm" onClick={addLabel} style={{padding:'2px 8px',fontSize:11}}>Add</button><button className="btn btn-sm" onClick={()=>setAdding(false)} style={{padding:'2px 6px',fontSize:11}}>Cancel</button></div>}
+    {adding&&<div className="label-colors">{LABEL_COLORS.map((c,i)=><span key={i} className={`label-color-dot${selColor===i?' sel':''}`} style={{background:c.bg}} onClick={()=>setSelColor(i)}/>)}</div>}
+  </div>);
+}
+
+// ===== ACTIVITY SECTION =====
+function ActivitySection({issueId}){
+  const api=useApi();const[activities,setActivities]=useState([]);const[show,setShow]=useState(false);
+  useEffect(()=>{if(issueId&&show)api(`/issues/${issueId}/activity`).then(d=>{if(Array.isArray(d))setActivities(d)}).catch(()=>{})},[issueId,show]);
+  const fieldLabel={title:'Title',description:'Description',status:'Status',priority:'Priority',assignee_id:'Assignee',type:'Type',sprint_id:'Sprint',story_points:'Points',labels:'Labels',due_date:'Due Date',original_estimate:'Estimate',time_spent:'Time Spent'};
+  const statusLabel={todo:'To Do',in_progress:'In Progress',in_review:'In Review',done:'Done'};
+  const fmtVal=(field,val)=>{if(!val||val==='null')return'None';if(field==='status')return statusLabel[val]||val;return val};
+  const timeAgo=(d)=>{const diff=Date.now()-new Date(d).getTime();const m=Math.floor(diff/60000);if(m<1)return'just now';if(m<60)return m+'m ago';const h=Math.floor(m/60);if(h<24)return h+'h ago';return Math.floor(h/24)+'d ago'};
+  if(!show)return<div style={{marginTop:16}}><button className="btn btn-ghost btn-sm" onClick={()=>setShow(true)} style={{fontSize:12}}><span style={{display:'flex',width:14,height:14}}><I.Activity/></span> Show Activity</button></div>;
+  return(<div style={{marginTop:16,borderTop:'1px solid var(--border-light)',paddingTop:12}}>
+    <div className="flex items-center gap-2" style={{marginBottom:8}}><span style={{display:'flex',width:14,height:14,flexShrink:0}}><I.Activity/></span><h3 style={{fontSize:13,fontWeight:600,flex:1}}>Activity</h3><button className="btn btn-ghost btn-sm" onClick={()=>setShow(false)} style={{fontSize:11}}>Hide</button></div>
+    {activities.length===0?<p style={{color:'var(--text-faint)',fontSize:12}}>No activity yet</p>:
+    activities.map(a=><div key={a.id} className="activity-item"><div className="activity-dot"/><div style={{flex:1}}>
+      <div><strong style={{fontSize:12}}>{a.user_name}</strong> <span style={{color:'var(--text-muted)'}}>changed</span> <strong style={{fontSize:12}}>{fieldLabel[a.field]||a.field}</strong></div>
+      <div style={{fontSize:12,color:'var(--text-muted)'}}><span style={{textDecoration:'line-through'}}>{fmtVal(a.field,a.old_value)}</span> → <span style={{fontWeight:500,color:'var(--text)'}}>{fmtVal(a.field,a.new_value)}</span></div>
+      <div className="activity-time">{timeAgo(a.created_at)}</div>
+    </div></div>)}
+  </div>);
+}
+
+// ===== WATCHERS SECTION =====
+function WatchersSection({issueId}){
+  const api=useApi();const{currentUser}=useContext(AppContext);
+  const[watchers,setWatchers]=useState([]);const[isWatching,setIsWatching]=useState(false);
+  useEffect(()=>{if(!issueId)return;api(`/issues/${issueId}/watchers`).then(d=>{if(Array.isArray(d)){setWatchers(d);setIsWatching(d.some(w=>w.user_id===currentUser.id))}}).catch(()=>{})},[issueId]);
+  const toggle=async()=>{if(isWatching){await api(`/issues/${issueId}/watchers/${currentUser.id}`,{method:'DELETE'});setWatchers(watchers.filter(w=>w.user_id!==currentUser.id));setIsWatching(false)}else{await api(`/issues/${issueId}/watchers`,{method:'POST',body:{user_id:currentUser.id}});setWatchers([...watchers,{user_id:currentUser.id,name:currentUser.name,avatar_color:currentUser.avatar_color}]);setIsWatching(true)}};
+  return(<div><button className={`watcher-btn${isWatching?' watching':''}`} onClick={toggle}><span style={{display:'flex',width:14,height:14,flexShrink:0}}><I.Eye/></span>{isWatching?'Watching':'Watch'}<span style={{background:'var(--bg-hover)',padding:'0 5px',borderRadius:10,fontSize:11,fontWeight:600}}>{watchers.length}</span></button>
+    {watchers.length>0&&<div style={{marginTop:6,display:'flex',flexWrap:'wrap',gap:2}}>{watchers.map(w=><Avatar key={w.user_id} name={w.name} color={w.avatar_color} size="sm"/>)}</div>}
+  </div>);
+}
+
+// ===== LINKED ISSUES SECTION =====
+function LinkedIssuesSection({issueId}){
+  const api=useApi();const{currentProject,setSelectedIssue}=useContext(AppContext);const perms=usePerms();
+  const[links,setLinks]=useState([]);const[adding,setAdding]=useState(false);const[allIssues,setAllIssues]=useState([]);const[linkType,setLinkType]=useState('relates_to');const[targetId,setTargetId]=useState('');const[search,setSearch]=useState('');
+  useEffect(()=>{if(issueId)load()},[issueId]);
+  const load=()=>api(`/issues/${issueId}/links`).then(d=>{if(Array.isArray(d))setLinks(d)}).catch(()=>{});
+  const startAdd=()=>{setAdding(true);if(currentProject)api(`/projects/${currentProject.id}/issues`).then(d=>{if(Array.isArray(d))setAllIssues(d.filter(i=>i.id!==issueId))}).catch(()=>{})};
+  const addLink=async()=>{if(!targetId)return;await api(`/issues/${issueId}/links`,{method:'POST',body:{target_issue_id:targetId,link_type:linkType}});setAdding(false);setTargetId('');load()};
+  const removeLink=async(id)=>{await api(`/issue-links/${id}`,{method:'DELETE'});load()};
+  const linkLabels={blocks:'blocks',is_blocked_by:'is blocked by',relates_to:'relates to',duplicates:'duplicates',is_duplicated_by:'is duplicated by',clones:'clones',is_cloned_by:'is cloned by'};
+  const filtered=search?allIssues.filter(i=>i.issue_key.toLowerCase().includes(search.toLowerCase())||i.title.toLowerCase().includes(search.toLowerCase())):allIssues;
+  return(<div style={{marginTop:12}}>
+    <div className="flex items-center gap-2" style={{marginBottom:6}}><span style={{display:'flex',width:16,height:16,flexShrink:0}}><I.Link2/></span><span style={{fontSize:12,fontWeight:600,flex:1}}>Linked Issues ({links.length})</span>{perms.canEditIssue&&!adding&&<button className="btn btn-ghost btn-sm" onClick={startAdd} style={{fontSize:11,padding:'2px 6px'}}><span style={{display:'flex',width:12,height:12}}><I.Plus/></span></button>}</div>
+    {links.map(l=>{const isSrc=l.source_issue_id===issueId;const otherKey=isSrc?l.target_key:l.source_key;const otherTitle=isSrc?l.target_title:l.source_title;const otherStatus=isSrc?l.target_status:l.source_status;const otherType=isSrc?l.target_type:l.source_type;const label=isSrc?linkLabels[l.link_type]:(linkLabels[{blocks:'is_blocked_by',is_blocked_by:'blocks',duplicates:'is_duplicated_by',is_duplicated_by:'duplicates',clones:'is_cloned_by',is_cloned_by:'clones'}[l.link_type]||l.link_type]||linkLabels[l.link_type]);
+      return<div key={l.id} className="link-item"><span className="link-type-label">{label}</span><TypeIcon type={otherType}/><span className="link-issue-key">{otherKey}</span><span style={{flex:1,fontSize:12,color:'var(--text-muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{otherTitle}</span><StatusBadge status={otherStatus}/>{perms.canEditIssue&&<span className="link-delete" onClick={()=>removeLink(l.id)} style={{display:'flex',width:14,height:14,flexShrink:0}}><I.Close/></span>}</div>})}
+    {adding&&<div style={{padding:8,background:'var(--bg-surface)',borderRadius:'var(--radius)',marginTop:4}}>
+      <div className="field" style={{marginBottom:8}}><label style={{fontSize:10}}>Link Type</label><select className="input" value={linkType} onChange={e=>setLinkType(e.target.value)} style={{fontSize:12,padding:'4px 8px'}}><option value="relates_to">Relates to</option><option value="blocks">Blocks</option><option value="is_blocked_by">Is blocked by</option><option value="duplicates">Duplicates</option><option value="is_duplicated_by">Is duplicated by</option></select></div>
+      <div className="field" style={{marginBottom:8}}><label style={{fontSize:10}}>Issue</label><input className="input" placeholder="Search issues..." value={search} onChange={e=>setSearch(e.target.value)} style={{fontSize:12,padding:'4px 8px',marginBottom:4}}/>
+        <div style={{maxHeight:120,overflowY:'auto'}}>{filtered.slice(0,10).map(i=><div key={i.id} style={{padding:'4px 6px',cursor:'pointer',fontSize:12,borderRadius:'var(--radius)',display:'flex',alignItems:'center',gap:6,background:targetId===i.id?'var(--accent-bg)':'transparent'}} onClick={()=>setTargetId(i.id)}><TypeIcon type={i.type}/><span style={{fontWeight:600,color:'var(--text-faint)'}}>{i.issue_key}</span><span style={{flex:1}}>{i.title}</span></div>)}</div>
+      </div>
+      <div className="flex gap-2"><button className="btn btn-primary btn-sm" onClick={addLink} disabled={!targetId} style={{fontSize:11}}>Link</button><button className="btn btn-sm" onClick={()=>setAdding(false)} style={{fontSize:11}}>Cancel</button></div>
+    </div>}
+  </div>);
+}
+
 // ===== ISSUE DETAIL =====
-function IssueDetailModal(){const{selectedIssue,setSelectedIssue,currentUser}=useContext(AppContext);const perms=usePerms();const api=useApi();const[issue,setIssue]=useState(null);const[comments,setComments]=useState([]);const[nc,setNc]=useState('');const[editing,setEditing]=useState(false);const[ef,setEf]=useState({});const[users,setUsers]=useState([]);const[editCmt,setEditCmt]=useState(null);const[editCmtBody,setEditCmtBody]=useState('');const[confirmDel,setConfirmDel]=useState(null);const[confirmDelCmt,setConfirmDelCmt]=useState(null);const[toast,setToast]=useState(null);
-  useEffect(()=>{if(!selectedIssue)return;api(`/issues/${selectedIssue.id}`).then(i=>{setIssue(i);setEf(i)});api(`/issues/${selectedIssue.id}/comments`).then(d=>{if(Array.isArray(d))setComments(d)});api('/users').then(d=>{if(Array.isArray(d))setUsers(d)})},[selectedIssue]);
+function IssueDetailModal(){const{selectedIssue,setSelectedIssue,currentUser}=useContext(AppContext);const perms=usePerms();const api=useApi();const[issue,setIssue]=useState(null);const[comments,setComments]=useState([]);const[nc,setNc]=useState('');const[editing,setEditing]=useState(false);const[ef,setEf]=useState({});const[users,setUsers]=useState([]);const[editCmt,setEditCmt]=useState(null);const[editCmtBody,setEditCmtBody]=useState('');const[confirmDel,setConfirmDel]=useState(null);const[confirmDelCmt,setConfirmDelCmt]=useState(null);const[toast,setToast]=useState(null);const[detailTab,setDetailTab]=useState('comments');
+  useEffect(()=>{if(!selectedIssue)return;setDetailTab('comments');api(`/issues/${selectedIssue.id}`).then(i=>{setIssue(i);setEf(i)});api(`/issues/${selectedIssue.id}/comments`).then(d=>{if(Array.isArray(d))setComments(d)});api('/users').then(d=>{if(Array.isArray(d))setUsers(d)})},[selectedIssue]);
   if(!selectedIssue||!issue)return null;const save=async(f,v)=>{const u=await api(`/issues/${issue.id}`,{method:'PUT',body:{[f]:v}});setIssue(u);setEf(u)};
   const canEdit=c=>c.author_id===currentUser?.id||perms.isAdmin;
   return(<div className="modal-overlay" onClick={()=>setSelectedIssue(null)}><div className="modal" onClick={e=>e.stopPropagation()}><div className="modal-header"><TypeIcon type={issue.type}/><span style={{color:'var(--text-faint)',fontSize:13,fontWeight:600,marginLeft:8}}>{issue.issue_key}</span><span style={{flex:1}}/>{perms.canDeleteIssue&&<button className="btn btn-danger btn-sm" style={{marginRight:8}} onClick={()=>setConfirmDel(true)}><I.Trash/></button>}<button className="btn btn-ghost btn-sm" onClick={()=>setSelectedIssue(null)}><I.Close/></button></div>
   <div className="modal-body"><div className="issue-detail"><div className="issue-detail-main">{editing&&perms.canEditIssue?(<div><div className="field"><input className="input" value={ef.title} onChange={e=>setEf({...ef,title:e.target.value})} style={{fontSize:18,fontWeight:700}}/></div><div className="field"><label>Description</label><textarea className="input" value={ef.description||''} onChange={e=>setEf({...ef,description:e.target.value})} rows={4}/></div><div className="flex gap-2"><button className="btn btn-primary" onClick={async()=>{await api(`/issues/${issue.id}`,{method:'PUT',body:{title:ef.title,description:ef.description}});const u=await api(`/issues/${issue.id}`);setIssue(u);setEditing(false)}}>Save</button><button className="btn" onClick={()=>{setEf(issue);setEditing(false)}}>Cancel</button></div></div>):(<div><h2 style={{fontSize:20,fontWeight:700,marginBottom:10,cursor:perms.canEditIssue?'pointer':'default'}} onClick={()=>perms.canEditIssue&&setEditing(true)}>{issue.title}</h2><p style={{color:'var(--text-muted)',marginBottom:20,cursor:perms.canEditIssue?'pointer':'default'}} onClick={()=>perms.canEditIssue&&setEditing(true)}>{issue.description||(perms.canEditIssue?'Click to add description...':'No description')}</p></div>)}
-  <div style={{marginTop:20}}><h3 style={{fontSize:13,fontWeight:600,marginBottom:10}}>Comments ({comments.length})</h3>{comments.map(c=><div key={c.id} className="comment"><Avatar name={c.author_name} color={c.author_color} size="sm"/><div className="comment-body">{editCmt===c.id?(<div><textarea className="input" value={editCmtBody} onChange={e=>setEditCmtBody(e.target.value)} rows={2}/><div className="flex gap-2" style={{marginTop:6}}><button className="btn btn-primary btn-sm" onClick={async()=>{const x=await api(`/comments/${c.id}`,{method:'PUT',body:{body:editCmtBody}});setComments(comments.map(y=>y.id===c.id?x:y));setEditCmt(null)}}>Save</button><button className="btn btn-sm" onClick={()=>setEditCmt(null)}>Cancel</button></div></div>):(<div><div className="comment-meta"><strong>{c.author_name}</strong> &bull; {new Date(c.created_at).toLocaleDateString()}{canEdit(c)&&<span style={{marginLeft:8}}><button className="btn btn-ghost btn-sm" onClick={()=>{setEditCmt(c.id);setEditCmtBody(c.body)}} style={{padding:'2px 4px'}}><I.Edit/></button><button className="btn btn-ghost btn-sm" onClick={()=>setConfirmDelCmt(c.id)} style={{padding:'2px 4px',color:'var(--red)'}}><I.Trash/></button></span>}</div><div className="comment-text">{c.body}</div></div>)}</div></div>)}<div className="flex gap-2" style={{marginTop:12}}><Avatar name={currentUser?.name} color={currentUser?.avatar_color} size="sm"/><div style={{flex:1}}><textarea className="input" placeholder="Add a comment..." value={nc} onChange={e=>setNc(e.target.value)} rows={2}/><button className="btn btn-primary btn-sm" style={{marginTop:6}} onClick={async()=>{if(!nc.trim())return;const c=await api(`/issues/${issue.id}/comments`,{method:'POST',body:{author_id:currentUser.id,body:nc}});setComments([...comments,c]);setNc('')}} disabled={!nc.trim()}>Save</button></div></div></div></div>
+  <AttachmentsSection issueId={issue.id}/>
+  <div className="detail-tabs"><span className={`detail-tab${detailTab==='comments'?' active':''}`} onClick={()=>setDetailTab('comments')}>Comments ({comments.length})</span><span className={`detail-tab${detailTab==='activity'?' active':''}`} onClick={()=>setDetailTab('activity')}>Activity</span><span className={`detail-tab${detailTab==='links'?' active':''}`} onClick={()=>setDetailTab('links')}>Linked Issues</span></div>
+  {detailTab==='comments'&&<div>{comments.map(c=><div key={c.id} className="comment"><Avatar name={c.author_name} color={c.author_color} size="sm"/><div className="comment-body">{editCmt===c.id?(<div><textarea className="input" value={editCmtBody} onChange={e=>setEditCmtBody(e.target.value)} rows={2}/><div className="flex gap-2" style={{marginTop:6}}><button className="btn btn-primary btn-sm" onClick={async()=>{const x=await api(`/comments/${c.id}`,{method:'PUT',body:{body:editCmtBody}});setComments(comments.map(y=>y.id===c.id?x:y));setEditCmt(null)}}>Save</button><button className="btn btn-sm" onClick={()=>setEditCmt(null)}>Cancel</button></div></div>):(<div><div className="comment-meta"><strong>{c.author_name}</strong> &bull; {new Date(c.created_at).toLocaleDateString()}{canEdit(c)&&<span style={{marginLeft:8}}><button className="btn btn-ghost btn-sm" onClick={()=>{setEditCmt(c.id);setEditCmtBody(c.body)}} style={{padding:'2px 4px'}}><I.Edit/></button><button className="btn btn-ghost btn-sm" onClick={()=>setConfirmDelCmt(c.id)} style={{padding:'2px 4px',color:'var(--red)'}}><I.Trash/></button></span>}</div><div className="comment-text">{c.body}</div></div>)}</div></div>)}<div className="flex gap-2" style={{marginTop:12}}><Avatar name={currentUser?.name} color={currentUser?.avatar_color} size="sm"/><div style={{flex:1}}><textarea className="input" placeholder="Add a comment..." value={nc} onChange={e=>setNc(e.target.value)} rows={2}/><button className="btn btn-primary btn-sm" style={{marginTop:6}} onClick={async()=>{if(!nc.trim())return;const c=await api(`/issues/${issue.id}/comments`,{method:'POST',body:{author_id:currentUser.id,body:nc}});setComments([...comments,c]);setNc('')}} disabled={!nc.trim()}>Save</button></div></div></div>}
+  {detailTab==='activity'&&<ActivitySection issueId={issue.id}/>}
+  {detailTab==='links'&&<LinkedIssuesSection issueId={issue.id}/>}
+  </div>
   <div className="issue-detail-sidebar"><div className="detail-field"><div className="detail-field-label">Status</div>{perms.canEditIssue?<select className="input" value={issue.status} onChange={e=>save('status',e.target.value)}><option value="todo">To Do</option><option value="in_progress">In Progress</option><option value="in_review">In Review</option><option value="done">Done</option></select>:<StatusBadge status={issue.status}/>}</div>
   <div className="detail-field"><div className="detail-field-label">Assignee</div>{perms.canEditIssue?<select className="input" value={issue.assignee_id||''} onChange={e=>save('assignee_id',e.target.value||null)}><option value="">Unassigned</option>{(users||[]).filter(u=>u.is_active).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select>:<span>{issue.assignee_name||'Unassigned'}</span>}</div>
   <div className="detail-field"><div className="detail-field-label">Priority</div>{perms.canEditIssue?<select className="input" value={issue.priority} onChange={e=>save('priority',e.target.value)}><option value="highest">Highest</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option><option value="lowest">Lowest</option></select>:<span>{issue.priority}</span>}</div>
   <div className="detail-field"><div className="detail-field-label">Story Points</div>{perms.canEditIssue?<select className="input" value={issue.story_points||''} onChange={e=>save('story_points',e.target.value?parseInt(e.target.value):null)}><option value="">None</option>{[1,2,3,5,8,13,21].map(n=><option key={n} value={n}>{n}</option>)}</select>:<span>{issue.story_points||'—'}</span>}</div>
-  <div className="detail-field"><div className="detail-field-label">Type</div><div className="flex items-center gap-2"><TypeIcon type={issue.type}/><span style={{fontSize:13,textTransform:'capitalize'}}>{issue.type}</span></div></div>
-  <div className="detail-field"><div className="detail-field-label">Reporter</div>{issue.reporter_name&&<span className="flex items-center gap-2"><Avatar name={issue.reporter_name} color={issue.reporter_color} size="sm"/><span style={{fontSize:13}}>{issue.reporter_name}</span></span>}</div></div></div></div>
+  <div className="detail-field"><div className="detail-field-label">Type</div>{perms.canEditIssue?<select className="input" value={issue.type} onChange={e=>save('type',e.target.value)}><option value="task">Task</option><option value="story">Story</option><option value="bug">Bug</option><option value="epic">Epic</option></select>:<div className="flex items-center gap-2"><TypeIcon type={issue.type}/><span style={{fontSize:13,textTransform:'capitalize'}}>{issue.type}</span></div>}</div>
+  <div className="detail-field"><div className="detail-field-label">Reporter</div>{issue.reporter_name&&<span className="flex items-center gap-2"><Avatar name={issue.reporter_name} color={issue.reporter_color} size="sm"/><span style={{fontSize:13}}>{issue.reporter_name}</span></span>}</div>
+  <div className="detail-field"><div className="detail-field-label"><I.Calendar/> Due Date</div>{perms.canEditIssue?<input className="input" type="date" value={issue.due_date||''} onChange={e=>save('due_date',e.target.value||null)} style={{fontSize:12}}/>:(issue.due_date?<span className={new Date(issue.due_date)<new Date()?'due-overdue':''}>{new Date(issue.due_date).toLocaleDateString()}</span>:<span style={{color:'var(--text-faint)',fontSize:12}}>None</span>)}{issue.due_date&&(()=>{const d=Math.ceil((new Date(issue.due_date)-new Date())/(864e5));return d<0?<span style={{fontSize:11,color:'var(--red)',fontWeight:600}}>{Math.abs(d)}d overdue</span>:d<=3?<span style={{fontSize:11,color:'var(--orange)',fontWeight:600}}>{d}d left</span>:null})()}</div>
+  <div className="detail-field"><div className="detail-field-label"><I.Tag/> Labels</div><LabelsEditor labels={issue.labels_parsed||issue.labels} onChange={async(l)=>{await save('labels',JSON.stringify(l));const u=await api(`/issues/${issue.id}`);setIssue(u);setEf(u)}} canEdit={perms.canEditIssue}/></div>
+  <div className="detail-field"><div className="detail-field-label"><I.Clock/> Time Tracking</div>{perms.canEditIssue?<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}><div><div style={{fontSize:10,color:'var(--text-faint)'}}>Estimate</div><input className="input" placeholder="e.g. 2h, 3d" value={issue.original_estimate||''} onChange={e=>save('original_estimate',e.target.value||null)} style={{fontSize:11,padding:'3px 6px'}}/></div><div><div style={{fontSize:10,color:'var(--text-faint)'}}>Logged</div><input className="input" placeholder="e.g. 1h 30m" value={issue.time_spent||''} onChange={e=>save('time_spent',e.target.value||null)} style={{fontSize:11,padding:'3px 6px'}}/></div></div>:<div style={{fontSize:12}}><div>Est: {issue.original_estimate||'—'}</div><div>Logged: {issue.time_spent||'—'}</div></div>}</div>
+  <div className="detail-field"><div className="detail-field-label"><I.Eye/> Watchers</div><WatchersSection issueId={issue.id}/></div>
+  </div></div></div>
   {confirmDel&&<ConfirmDialog title="Delete Issue?" message={`${issue.issue_key} will be permanently deleted.`} onCancel={()=>setConfirmDel(null)} onConfirm={async()=>{try{await api(`/issues/${issue.id}`,{method:'DELETE'});setConfirmDel(null);setSelectedIssue(null);window.location.reload()}catch(e){alert('Delete failed: '+e.message)}}} danger/>}
   {confirmDelCmt&&<ConfirmDialog title="Delete Comment?" message="This cannot be undone." onCancel={()=>setConfirmDelCmt(null)} onConfirm={async()=>{await api(`/comments/${confirmDelCmt}`,{method:'DELETE'});setComments(comments.filter(c=>c.id!==confirmDelCmt));setConfirmDelCmt(null)}} danger/>}
   {toast&&<Toast message={toast.msg} type={toast.type} onClose={()=>setToast(null)}/>}</div></div>);
 }
 
 // ===== CREATE ISSUE =====
-function CreateIssueModal(){const{showCreateIssue,setShowCreateIssue,currentProject,currentUser}=useContext(AppContext);const api=useApi();const[users,setUsers]=useState([]);const[form,setForm]=useState({title:'',description:'',type:'task',priority:'medium',assignee_id:'',story_points:''});
+function CreateIssueModal(){const{showCreateIssue,setShowCreateIssue,currentProject,currentUser}=useContext(AppContext);const api=useApi();const[users,setUsers]=useState([]);const[form,setForm]=useState({title:'',description:'',type:'task',priority:'medium',assignee_id:'',story_points:'',due_date:'',labels:'[]'});
   useEffect(()=>{api('/users').then(d=>{if(Array.isArray(d))setUsers(d)}).catch(()=>{})},[]);if(!showCreateIssue)return null;
-  return(<div className="modal-overlay" onClick={()=>setShowCreateIssue(false)}><div className="modal" style={{width:560}} onClick={e=>e.stopPropagation()}><div className="modal-header"><h2>Create Issue</h2><span style={{flex:1}}/><button className="btn btn-ghost btn-sm" onClick={()=>setShowCreateIssue(false)}><I.Close/></button></div><div className="modal-body"><div className="field"><label>Title</label><input className="input" value={form.title} onChange={e=>setForm({...form,title:e.target.value})} autoFocus/></div><div className="field"><label>Description</label><textarea className="input" value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/></div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}><div className="field"><label>Type</label><select className="input" value={form.type} onChange={e=>setForm({...form,type:e.target.value})}><option value="task">Task</option><option value="story">Story</option><option value="bug">Bug</option></select></div><div className="field"><label>Priority</label><select className="input" value={form.priority} onChange={e=>setForm({...form,priority:e.target.value})}><option value="highest">Highest</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></div><div className="field"><label>Assignee</label><select className="input" value={form.assignee_id} onChange={e=>setForm({...form,assignee_id:e.target.value})}><option value="">Unassigned</option>{(users||[]).filter(u=>u.is_active).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></div><div className="field"><label>Points</label><select className="input" value={form.story_points} onChange={e=>setForm({...form,story_points:e.target.value})}><option value="">None</option>{[1,2,3,5,8,13,21].map(n=><option key={n} value={n}>{n}</option>)}</select></div></div></div><div className="modal-footer"><button className="btn" onClick={()=>setShowCreateIssue(false)}>Cancel</button><button className="btn btn-primary" onClick={async()=>{if(!form.title.trim())return;try{const s=await api(`/projects/${currentProject.id}/sprints`);const a=(Array.isArray(s)?s:[]).find(x=>x.status==='active');await api(`/projects/${currentProject.id}/issues`,{method:'POST',body:{...form,reporter_id:currentUser.id,sprint_id:a?.id,assignee_id:form.assignee_id||null,story_points:form.story_points?parseInt(form.story_points):null}});setForm({title:'',description:'',type:'task',priority:'medium',assignee_id:'',story_points:''});setShowCreateIssue(false);window.location.reload()}catch(e){alert('Failed to create issue: '+e.message)}}} disabled={!form.title.trim()}>Create</button></div></div></div>);
+  return(<div className="modal-overlay" onClick={()=>setShowCreateIssue(false)}><div className="modal" style={{width:560}} onClick={e=>e.stopPropagation()}><div className="modal-header"><h2>Create Issue</h2><span style={{flex:1}}/><button className="btn btn-ghost btn-sm" onClick={()=>setShowCreateIssue(false)}><I.Close/></button></div><div className="modal-body"><div className="field"><label>Title</label><input className="input" value={form.title} onChange={e=>setForm({...form,title:e.target.value})} autoFocus/></div><div className="field"><label>Description</label><textarea className="input" value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/></div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}><div className="field"><label>Type</label><select className="input" value={form.type} onChange={e=>setForm({...form,type:e.target.value})}><option value="task">Task</option><option value="story">Story</option><option value="bug">Bug</option></select></div><div className="field"><label>Priority</label><select className="input" value={form.priority} onChange={e=>setForm({...form,priority:e.target.value})}><option value="highest">Highest</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></div><div className="field"><label>Assignee</label><select className="input" value={form.assignee_id} onChange={e=>setForm({...form,assignee_id:e.target.value})}><option value="">Unassigned</option>{(users||[]).filter(u=>u.is_active).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></div><div className="field"><label>Points</label><select className="input" value={form.story_points} onChange={e=>setForm({...form,story_points:e.target.value})}><option value="">None</option>{[1,2,3,5,8,13,21].map(n=><option key={n} value={n}>{n}</option>)}</select></div><div className="field"><label>Due Date</label><input className="input" type="date" value={form.due_date} onChange={e=>setForm({...form,due_date:e.target.value})}/></div></div>
+<div className="field"><label>Labels</label><LabelsEditor labels={form.labels} onChange={l=>setForm({...form,labels:JSON.stringify(l)})} canEdit={true}/></div></div><div className="modal-footer"><button className="btn" onClick={()=>setShowCreateIssue(false)}>Cancel</button><button className="btn btn-primary" onClick={async()=>{if(!form.title.trim())return;try{const s=await api(`/projects/${currentProject.id}/sprints`);const a=(Array.isArray(s)?s:[]).find(x=>x.status==='active');await api(`/projects/${currentProject.id}/issues`,{method:'POST',body:{...form,reporter_id:currentUser.id,sprint_id:a?.id,assignee_id:form.assignee_id||null,story_points:form.story_points?parseInt(form.story_points):null,due_date:form.due_date||null,labels:form.labels||'[]'}});setForm({title:'',description:'',type:'task',priority:'medium',assignee_id:'',story_points:'',due_date:'',labels:'[]'});setShowCreateIssue(false);window.location.reload()}catch(e){alert('Failed to create issue: '+e.message)}}} disabled={!form.title.trim()}>Create</button></div></div></div>);
 }
 
 // ===== SIDEBAR =====
 function Sidebar(){const{projects,currentProject,setCurrentProject,view,setView,currentUser,setCurrentUser}=useContext(AppContext);const perms=usePerms();const api=useApi();
   const pNav=[{key:'board',label:'Board',icon:<I.Board/>},{key:'backlog',label:'Backlog',icon:<I.List/>},{key:'sprints',label:'Sprints',icon:<I.Sprint/>},{key:'reports',label:'Reports',icon:<I.Report/>},{key:'dashboard',label:'Dashboard',icon:<I.Chart/>}];
-  const aNav=[{key:'admin-dashboard',label:'Overview',icon:<I.Chart/>},{key:'admin-users',label:'Users',icon:<I.Users/>},{key:'admin-projects',label:'Projects',icon:<I.Folder/>}];
+  const aNav=[{key:'admin-dashboard',label:'Overview',icon:<I.Chart/>},{key:'admin-users',label:'Users',icon:<I.Users/>},{key:'admin-projects',label:'Projects',icon:<I.Folder/>},{key:'admin-audit',label:'Audit Log',icon:<I.Activity/>}];
   const logout=async()=>{try{await api('/auth/logout',{method:'POST'})}catch(e){}setCurrentUser(null)};
   return(<div className="sidebar">
     <div className="sidebar-header"><div className="sidebar-project"><div className="sidebar-project-icon">{currentProject?.key?.slice(0,2)||'AT'}</div><div className="sidebar-project-name">{currentProject?.name||'Atlas'}</div></div><div className="sidebar-project-type">Software project</div></div>
@@ -661,15 +932,21 @@ function Sidebar(){const{projects,currentProject,setCurrentProject,view,setView,
 }
 
 // ===== APP =====
-function AppContent(){const{view,currentProject,currentUser}=useContext(AppContext);const views={board:BoardView,backlog:BacklogView,sprints:SprintView,reports:ReportsView,dashboard:DashboardView,profile:ProfileView,settings:SettingsView,'admin-dashboard':AdminDashboardView,'admin-users':AdminUsersView,'admin-projects':AdminProjectsView};const V=views[view]||BoardView;
-  const vl={board:'Board',backlog:'Backlog',sprints:'Sprints',reports:'Reports',dashboard:'Dashboard',profile:'My Profile',settings:'Settings','admin-dashboard':'Admin Overview','admin-users':'Users','admin-projects':'Projects'};const isA=view.startsWith('admin');const isAcc=view==='profile'||view==='settings';
+function AppContent(){const{view,currentProject,currentUser}=useContext(AppContext);const views={board:BoardView,backlog:BacklogView,sprints:SprintView,reports:ReportsView,dashboard:DashboardView,profile:ProfileView,settings:SettingsView,'admin-dashboard':AdminDashboardView,'admin-users':AdminUsersView,'admin-projects':AdminProjectsView,'admin-audit':AuditLogView};const V=views[view]||BoardView;
+  const vl={board:'Board',backlog:'Backlog',sprints:'Sprints',reports:'Reports',dashboard:'Dashboard',profile:'My Profile',settings:'Settings','admin-dashboard':'Admin Overview','admin-users':'Users','admin-projects':'Projects','admin-audit':'Audit Log'};const isA=view.startsWith('admin');const isAcc=view==='profile'||view==='settings';
   return(<div className="app"><Sidebar/><div className="main"><div className="topbar"><div className="topbar-breadcrumb">{isA?'Administration':isAcc?'Account':(currentProject?.name||'Projects')} / <span>{vl[view]}</span></div><div className="topbar-actions"><Avatar name={currentUser?.name} color={currentUser?.avatar_color} size="sm"/><span style={{fontSize:13,fontWeight:500}}>{currentUser?.name}</span><RoleBadge role={currentUser?.role}/></div></div><div className="content">{(isA||isAcc||currentProject)?<V/>:<div style={{textAlign:'center',padding:60,color:'var(--text-muted)'}}><h3 style={{color:'var(--text)',marginBottom:8}}>Select a project</h3><p>Choose a project from the sidebar.</p></div>}</div></div><IssueDetailModal/><CreateIssueModal/></div>);
 }
 
 function App(){
   const[currentUser,setCurrentUserRaw]=useState(()=>{try{const s=localStorage.getItem('atlas_user');return s?JSON.parse(s):null}catch(e){return null}});
   const setCurrentUser=useCallback((u)=>{setCurrentUserRaw(u);try{if(u)localStorage.setItem('atlas_user',JSON.stringify(u));else localStorage.removeItem('atlas_user')}catch(e){}},[]);
-  const[projects,setProjects]=useState([]);const[currentProject,setCurrentProject]=useState(null);const[users,setAllUsers]=useState([]);const[view,setView]=useState('board');const[selectedIssue,setSelectedIssue]=useState(null);const[showCreateIssue,setShowCreateIssue]=useState(false);
+  const[projects,setProjects]=useState([]);const[currentProject,setCurrentProject]=useState(null);const[users,setAllUsers]=useState([]);
+  const validViews=['board','backlog','sprints','reports','dashboard','profile','settings','admin-dashboard','admin-users','admin-projects','admin-audit'];
+  const getHashView=()=>{const h=window.location.hash.replace('#','');return validViews.includes(h)?h:'board'};
+  const[view,setViewRaw]=useState(getHashView);
+  const setView=useCallback((v)=>{setViewRaw(v);window.location.hash=v},[]);
+  useEffect(()=>{const onHash=()=>{const h=getHashView();setViewRaw(h)};window.addEventListener('hashchange',onHash);return()=>window.removeEventListener('hashchange',onHash)},[]);
+  const[selectedIssue,setSelectedIssue]=useState(null);const[showCreateIssue,setShowCreateIssue]=useState(false);
   useEffect(()=>{if(!currentUser){setProjects([]);setCurrentProject(null);return}const h={'x-user-id':currentUser.id,'x-user-role':currentUser.role};if(currentUser.token)h['x-auth-token']=currentUser.token;
     fetch(`${API}/auth/me`,{headers:h}).then(r=>{if(!r.ok){setCurrentUser(null);return null}return r.json()}).then(me=>{if(!me)return;
     fetch(`${API}/projects`,{headers:h}).then(r=>r.json()).then(p=>{if(Array.isArray(p)){setProjects(p);if(p.length)setCurrentProject(p[0])}});

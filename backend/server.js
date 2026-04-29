@@ -8,6 +8,7 @@ const cors = require('cors');
 const path = require('path');
 const { initDb } = require('./database');
 const { authMiddleware } = require('./middleware/auth');
+const { requestLogger } = require('./middleware/logger');
 
 // Route modules
 const authRoutes = require('./routes/auth');
@@ -21,6 +22,11 @@ const commentsRoutes = require('./routes/comments');
 const adminRoutes = require('./routes/admin');
 const reportsRoutes = require('./routes/reports');
 const wikiRoutes = require('./routes/wiki');
+const attachmentsRoutes = require('./routes/attachments');
+const activityRoutes = require('./routes/activity');
+const watchersRoutes = require('./routes/watchers');
+const linksRoutes = require('./routes/links');
+const auditLogRoutes = require('./routes/auditlog');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -29,6 +35,7 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 app.use(authMiddleware);
+app.use(requestLogger);
 
 // Serve frontend
 app.use(express.static(path.join(__dirname, '..', 'frontend', 'build')));
@@ -68,11 +75,26 @@ app.use('/api', commentsRoutes);
 // Admin Module — admin dashboard stats
 app.use('/api/admin', adminRoutes);
 
+// Audit Log Module — admin audit log viewer
+app.use('/api/admin', auditLogRoutes);
+
 // Reports Module — project reports, charts, CSV export
 app.use('/api', reportsRoutes);
 
 // Wiki (Confluence) Module — spaces, pages, comments, search
 app.use('/api', wikiRoutes);
+
+// Attachments Module — file upload/download for issues
+app.use('/api', attachmentsRoutes);
+
+// Activity Module — issue activity/history log
+app.use('/api', activityRoutes);
+
+// Watchers Module — issue watchers/followers
+app.use('/api', watchersRoutes);
+
+// Issue Links Module — linked issues
+app.use('/api', linksRoutes);
 
 // Wiki (Confluence) frontend
 app.get('/wiki', (req, res) => {
@@ -98,9 +120,15 @@ async function start() {
     console.log(`  Sprints   → /api/projects/:id/sprints, /api/sprints/:id (CRUD)`);
     console.log(`  Issues    → /api/projects/:id/issues, /api/issues/:id (CRUD + move)`);
     console.log(`  Comments  → /api/issues/:id/comments, /api/comments/:id (CRUD)`);
-    console.log(`  Admin     → /api/admin/stats`);
-    console.log(`  Reports   → /api/projects/:id/reports/* (sprint, velocity, workload, burndown, CSV)`);
-    console.log(`  Wiki      → /api/wiki/* (spaces, pages, comments, search, templates)`);
+    console.log(`  Admin       → /api/admin/stats`);
+    console.log(`  Reports     → /api/projects/:id/reports/* (sprint, velocity, workload, burndown, CSV)`);
+    console.log(`  Wiki        → /api/wiki/* (spaces, pages, comments, search, templates)`);
+    console.log(`  Attachments → /api/issues/:id/attachments, /api/attachments/:id (upload, download, delete)`);
+    console.log(`  Activity    → /api/issues/:id/activity (history log)`);
+    console.log(`  Watchers    → /api/issues/:id/watchers (watch/unwatch)`);
+    console.log(`  Links       → /api/issues/:id/links, /api/issue-links/:id (linked issues)`);
+    console.log(`  Audit Log   → /api/admin/audit-log (query, stats — admin only)`);
+    console.log(`  Logger      → Request logging middleware active`);
   });
 }
 
