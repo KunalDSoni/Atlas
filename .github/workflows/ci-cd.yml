@@ -1,6 +1,6 @@
 # ===== Atlas CI/CD Pipeline =====
-# Push to main: run tests, then trigger Render deploy if tests pass.
-# PRs: run tests only.
+# Runs tests on push to main and on PRs.
+# Deploys are handled by Render's GitHub auto-deploy (not this workflow).
 
 name: Atlas CI/CD
 
@@ -35,20 +35,3 @@ jobs:
       - name: Run frontend tests
         working-directory: backend
         run: npm run test:frontend
-
-  deploy:
-    name: Deploy to Render
-    runs-on: ubuntu-latest
-    needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
-    steps:
-      - name: Trigger Render deploy
-        env:
-          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
-        run: |
-          if [ -z "$RENDER_DEPLOY_HOOK" ]; then
-            echo "::error::RENDER_DEPLOY_HOOK secret is not set. Add it under Settings → Secrets and variables → Actions."
-            exit 1
-          fi
-          curl -fsSL "$RENDER_DEPLOY_HOOK"
