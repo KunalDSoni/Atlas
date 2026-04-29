@@ -8,7 +8,9 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { getDb, queryOne, queryAll, run } = require('../database');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireRole } = require('../middleware/auth');
+
+const requireBoardAdmin = requireRole('admin', 'board_admin');
 const { auditLog } = require('../middleware/logger');
 
 const router = express.Router();
@@ -34,7 +36,7 @@ router.get('/projects/:projectId/sprints', requireAuth, async (req, res) => {
 });
 
 // POST /api/projects/:projectId/sprints
-router.post('/projects/:projectId/sprints', requireAuth, async (req, res) => {
+router.post('/projects/:projectId/sprints', requireAuth, requireBoardAdmin, async (req, res) => {
   try {
     const { name, goal, start_date, end_date } = req.body;
     if (!name) return res.status(400).json({ error: 'Sprint name required' });
@@ -61,7 +63,7 @@ router.get('/sprints/:id', requireAuth, async (req, res) => {
 });
 
 // PUT /api/sprints/:id
-router.put('/sprints/:id', requireAuth, async (req, res) => {
+router.put('/sprints/:id', requireAuth, requireBoardAdmin, async (req, res) => {
   try {
     const db = await getDb();
     const sprint = await queryOne(db, 'SELECT * FROM sprints WHERE id = ?', [req.params.id]);
@@ -90,7 +92,7 @@ router.put('/sprints/:id', requireAuth, async (req, res) => {
 });
 
 // DELETE /api/sprints/:id
-router.delete('/sprints/:id', requireAuth, async (req, res) => {
+router.delete('/sprints/:id', requireAuth, requireBoardAdmin, async (req, res) => {
   try {
     const db = await getDb();
     const sprint = await queryOne(db, 'SELECT name FROM sprints WHERE id = ?', [req.params.id]);

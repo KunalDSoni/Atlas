@@ -10,7 +10,9 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { auditLog } = require('../middleware/logger');
 const { getDb, queryOne, queryAll, run } = require('../database');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireRole } = require('../middleware/auth');
+
+const requireBoardAdmin = requireRole('admin', 'board_admin');
 
 const router = express.Router();
 
@@ -59,7 +61,7 @@ router.get('/projects/:projectId/issues', requireAuth, async (req, res) => {
 });
 
 // POST /api/projects/:projectId/issues
-router.post('/projects/:projectId/issues', requireAuth, async (req, res) => {
+router.post('/projects/:projectId/issues', requireAuth, requireBoardAdmin, async (req, res) => {
   try {
     const db = await getDb();
     const project = await queryOne(db, 'SELECT * FROM projects WHERE id = ?', [req.params.projectId]);
@@ -138,7 +140,7 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
 });
 
 // DELETE /api/issues/:id
-router.delete('/issues/:id', requireAuth, async (req, res) => {
+router.delete('/issues/:id', requireAuth, requireBoardAdmin, async (req, res) => {
   try {
     const db = await getDb();
     const issue = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
