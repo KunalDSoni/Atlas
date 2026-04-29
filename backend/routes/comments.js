@@ -11,8 +11,8 @@ const { requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
 
-function enrichComment(db, comment) {
-  const author = queryOne(db, 'SELECT name, avatar_color FROM users WHERE id = ?', [comment.author_id]);
+async function enrichComment(db, comment) {
+  const author = await queryOne(db, 'SELECT name, avatar_color FROM users WHERE id = ?', [comment.author_id]);
   return {
     ...comment,
     author_name: author?.name || 'Unknown',
@@ -24,8 +24,8 @@ function enrichComment(db, comment) {
 router.get('/issues/:issueId/comments', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const comments = queryAll(db, 'SELECT * FROM comments WHERE issue_id = ? ORDER BY created_at', [req.params.issueId]);
-    res.json(comments.map(c => enrichComment(db, c)));
+    const comments = await queryAll(db, 'SELECT * FROM comments WHERE issue_id = ? ORDER BY created_at', [req.params.issueId]);
+    res.json(await Promise.all(comments.map(c => enrichComment(db, c))));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -38,11 +38,11 @@ router.post('/issues/:issueId/comments', requireAuth, async (req, res) => {
     const db = await getDb();
     const id = uuidv4();
     const authorId = author_id || req.userId;
-    run(db, 'INSERT INTO comments (id, issue_id, author_id, body) VALUES (?, ?, ?, ?)',
+    await run(db, 'INSERT INTO comments (id, issue_id, author_id, body) VALUES (?, ?, ?, ?)',
       [id, req.params.issueId, authorId, commentBody]);
 
-    const comment = queryOne(db, 'SELECT * FROM comments WHERE id = ?', [id]);
-    res.status(201).json(enrichComment(db, comment));
+    const comment = await queryOne(db, 'SELECT * FROM comments WHERE id = ?', [id]);
+    res.status(201).json(await enrichComment(db, comment));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -50,7 +50,7 @@ router.post('/issues/:issueId/comments', requireAuth, async (req, res) => {
 router.put('/comments/:id', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const comment = queryOne(db, 'SELECT * FROM comments WHERE id = ?', [req.params.id]);
+    const comment = await queryOne(db, 'SELECT * FROM comments WHERE id = ?', [req.params.id]);
     if (!comment) return res.status(404).json({ error: 'Comment not found' });
 
     // Only author or admin can edit
@@ -61,9 +61,9 @@ router.put('/comments/:id', requireAuth, async (req, res) => {
     const { body: commentBody } = req.body;
     if (!commentBody) return res.status(400).json({ error: 'Comment body required' });
 
-    run(db, "UPDATE comments SET body = ?, updated_at = datetime('now') WHERE id = ?", [commentBody, req.params.id]);
-    const updated = queryOne(db, 'SELECT * FROM comments WHERE id = ?', [req.params.id]);
-    res.json(enrichComment(db, updated));
+    await run(db, "UPDATE comments SET body = ?, updated_at = datetime('now') WHERE id = ?", [commentBody, req.params.id]);
+    const updated = await queryOne(db, 'SELECT * FROM comments WHERE id = ?', [req.params.id]);
+    res.json(await enrichComment(db, updated));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -71,7 +71,7 @@ router.put('/comments/:id', requireAuth, async (req, res) => {
 router.delete('/comments/:id', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const comment = queryOne(db, 'SELECT * FROM comments WHERE id = ?', [req.params.id]);
+    const comment = await queryOne(db, 'SELECT * FROM comments WHERE id = ?', [req.params.id]);
     if (!comment) return res.status(404).json({ error: 'Comment not found' });
 
     // Only author or admin can delete
@@ -79,7 +79,7 @@ router.delete('/comments/:id', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized to delete this comment' });
     }
 
-    run(db, 'DELETE FROM comments WHERE id = ?', [req.params.id]);
+    await run(db, 'DELETE FROM comments WHERE id = ?', [req.params.id]);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

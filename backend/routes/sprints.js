@@ -13,8 +13,8 @@ const { auditLog } = require('../middleware/logger');
 
 const router = express.Router();
 
-function enrichSprint(db, sprint) {
-  const stats = queryOne(db, `
+async function enrichSprint(db, sprint) {
+  const stats = await queryOne(db, `
     SELECT COUNT(*) as issue_count,
       SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as done_count,
       COALESCE(SUM(story_points), 0) as total_points,
@@ -28,8 +28,8 @@ function enrichSprint(db, sprint) {
 router.get('/projects/:projectId/sprints', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const sprints = queryAll(db, 'SELECT * FROM sprints WHERE project_id = ? ORDER BY created_at', [req.params.projectId]);
-    res.json(sprints.map(s => enrichSprint(db, s)));
+    const sprints = await queryAll(db, 'SELECT * FROM sprints WHERE project_id = ? ORDER BY created_at', [req.params.projectId]);
+    res.json(await Promise.all(sprints.map(s => enrichSprint(db, s))));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -41,12 +41,12 @@ router.post('/projects/:projectId/sprints', requireAuth, async (req, res) => {
 
     const db = await getDb();
     const id = uuidv4();
-    run(db, 'INSERT INTO sprints (id, project_id, name, goal, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?)',
+    await run(db, 'INSERT INTO sprints (id, project_id, name, goal, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?)',
       [id, req.params.projectId, name, goal || '', start_date || null, end_date || null]);
 
-    const sprint = queryOne(db, 'SELECT * FROM sprints WHERE id = ?', [id]);
+    const sprint = await queryOne(db, 'SELECT * FROM sprints WHERE id = ?', [id]);
     auditLog({ userId: req.userId, action: 'Created sprint', category: 'sprints', entityType: 'sprint', entityId: id, entityName: name });
-    res.status(201).json(enrichSprint(db, sprint));
+    res.status(201).json(await enrichSprint(db, sprint));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -54,9 +54,9 @@ router.post('/projects/:projectId/sprints', requireAuth, async (req, res) => {
 router.get('/sprints/:id', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const sprint = queryOne(db, 'SELECT * FROM sprints WHERE id = ?', [req.params.id]);
+    const sprint = await queryOne(db, 'SELECT * FROM sprints WHERE id = ?', [req.params.id]);
     if (!sprint) return res.status(404).json({ error: 'Sprint not found' });
-    res.json(enrichSprint(db, sprint));
+    res.json(await enrichSprint(db, sprint));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -64,7 +64,7 @@ router.get('/sprints/:id', requireAuth, async (req, res) => {
 router.put('/sprints/:id', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const sprint = queryOne(db, 'SELECT * FROM sprints WHERE id = ?', [req.params.id]);
+    const sprint = await queryOne(db, 'SELECT * FROM sprints WHERE id = ?', [req.params.id]);
     if (!sprint) return res.status(404).json({ error: 'Sprint not found' });
 
     const { name, goal, start_date, end_date, status } = req.body;
@@ -78,14 +78,14 @@ router.put('/sprints/:id', requireAuth, async (req, res) => {
 
     if (updates.length > 0) {
       params.push(req.params.id);
-      run(db, `UPDATE sprints SET ${updates.join(', ')} WHERE id = ?`, params);
+      await run(db, `UPDATE sprints SET ${updates.join(', ')} WHERE id = ?`, params);
     }
 
-    const updated = queryOne(db, 'SELECT * FROM sprints WHERE id = ?', [req.params.id]);
+    const updated = await queryOne(db, 'SELECT * FROM sprints WHERE id = ?', [req.params.id]);
     if (status && status !== sprint.status) {
       auditLog({ userId: req.userId, action: `Sprint ${status}`, category: 'sprints', entityType: 'sprint', entityId: req.params.id, entityName: updated.name, details: { from: sprint.status, to: status } });
     }
-    res.json(enrichSprint(db, updated));
+    res.json(await enrichSprint(db, updated));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -93,10 +93,10 @@ router.put('/sprints/:id', requireAuth, async (req, res) => {
 router.delete('/sprints/:id', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const sprint = queryOne(db, 'SELECT name FROM sprints WHERE id = ?', [req.params.id]);
+    const sprint = await queryOne(db, 'SELECT name FROM sprints WHERE id = ?', [req.params.id]);
     // Move issues back to backlog (null sprint_id)
-    run(db, 'UPDATE issues SET sprint_id = NULL WHERE sprint_id = ?', [req.params.id]);
-    run(db, 'DELETE FROM sprints WHERE id = ?', [req.params.id]);
+    await run(db, 'UPDATE issues SET sprint_id = NULL WHERE sprint_id = ?', [req.params.id]);
+    await run(db, 'DELETE FROM sprints WHERE id = ?', [req.params.id]);
     auditLog({ userId: req.userId, action: 'Deleted sprint', category: 'sprints', entityType: 'sprint', entityId: req.params.id, entityName: sprint ? sprint.name : req.params.id });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }

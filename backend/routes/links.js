@@ -15,7 +15,7 @@ router.get('/issues/:issueId/links', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
     // Get links where this issue is source or target
-    const links = queryAll(db,
+    const links = await queryAll(db,
       `SELECT l.*,
          si.issue_key as source_key, si.title as source_title, si.status as source_status, si.type as source_type,
          ti.issue_key as target_key, ti.title as target_title, ti.status as target_status, ti.type as target_type,
@@ -40,14 +40,14 @@ router.post('/issues/:issueId/links', requireAuth, async (req, res) => {
     if (!target_issue_id) return res.status(400).json({ error: 'target_issue_id required' });
 
     // Verify target exists
-    const target = queryOne(db, 'SELECT id FROM issues WHERE id = ?', [target_issue_id]);
+    const target = await queryOne(db, 'SELECT id FROM issues WHERE id = ?', [target_issue_id]);
     if (!target) return res.status(404).json({ error: 'Target issue not found' });
 
     const id = uuidv4();
-    run(db, `INSERT INTO issue_links (id, source_issue_id, target_issue_id, link_type, created_by) VALUES (?, ?, ?, ?, ?)`,
+    await run(db, `INSERT INTO issue_links (id, source_issue_id, target_issue_id, link_type, created_by) VALUES (?, ?, ?, ?, ?)`,
       [id, req.params.issueId, target_issue_id, link_type || 'relates_to', req.userId]);
 
-    const link = queryOne(db,
+    const link = await queryOne(db,
       `SELECT l.*,
          si.issue_key as source_key, si.title as source_title, si.status as source_status, si.type as source_type,
          ti.issue_key as target_key, ti.title as target_title, ti.status as target_status, ti.type as target_type
@@ -64,7 +64,7 @@ router.post('/issues/:issueId/links', requireAuth, async (req, res) => {
 router.delete('/issue-links/:id', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    run(db, 'DELETE FROM issue_links WHERE id = ?', [req.params.id]);
+    await run(db, 'DELETE FROM issue_links WHERE id = ?', [req.params.id]);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

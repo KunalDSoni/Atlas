@@ -49,11 +49,11 @@ router.get('/audit-log', requireAuth, requireAdmin, async (req, res) => {
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
     // Get total count
-    const countResult = queryOne(db, `SELECT COUNT(*) as total FROM audit_log a ${where}`, params);
+    const countResult = await queryOne(db, `SELECT COUNT(*) as total FROM audit_log a ${where}`, params);
     const total = countResult ? countResult.total : 0;
 
     // Get paginated results
-    const entries = queryAll(db,
+    const entries = await queryAll(db,
       `SELECT a.*, u.avatar_color
        FROM audit_log a
        LEFT JOIN users u ON a.user_id = u.id
@@ -78,12 +78,12 @@ router.get('/audit-log/stats', requireAuth, requireAdmin, async (req, res) => {
   try {
     const db = await getDb();
 
-    const total = queryOne(db, 'SELECT COUNT(*) as count FROM audit_log');
-    const today = queryOne(db, "SELECT COUNT(*) as count FROM audit_log WHERE created_at >= date('now')");
-    const errors = queryOne(db, 'SELECT COUNT(*) as count FROM audit_log WHERE status_code >= 400');
-    const byCategory = queryAll(db, 'SELECT category, COUNT(*) as count FROM audit_log GROUP BY category ORDER BY count DESC');
-    const byMethod = queryAll(db, 'SELECT method, COUNT(*) as count FROM audit_log WHERE method IS NOT NULL GROUP BY method ORDER BY count DESC');
-    const byUser = queryAll(db,
+    const total = await queryOne(db, 'SELECT COUNT(*) as count FROM audit_log');
+    const today = await queryOne(db, "SELECT COUNT(*) as count FROM audit_log WHERE created_at >= date('now')");
+    const errors = await queryOne(db, 'SELECT COUNT(*) as count FROM audit_log WHERE status_code >= 400');
+    const byCategory = await queryAll(db, 'SELECT category, COUNT(*) as count FROM audit_log GROUP BY category ORDER BY count DESC');
+    const byMethod = await queryAll(db, 'SELECT method, COUNT(*) as count FROM audit_log WHERE method IS NOT NULL GROUP BY method ORDER BY count DESC');
+    const byUser = await queryAll(db,
       `SELECT a.user_id, a.user_name, u.avatar_color, COUNT(*) as count
        FROM audit_log a
        LEFT JOIN users u ON a.user_id = u.id
@@ -92,10 +92,10 @@ router.get('/audit-log/stats', requireAuth, requireAdmin, async (req, res) => {
        ORDER BY count DESC
        LIMIT 10`
     );
-    const recentErrors = queryAll(db,
+    const recentErrors = await queryAll(db,
       `SELECT * FROM audit_log WHERE status_code >= 400 ORDER BY created_at DESC LIMIT 5`
     );
-    const avgDuration = queryOne(db, 'SELECT AVG(duration_ms) as avg_ms FROM audit_log WHERE duration_ms IS NOT NULL');
+    const avgDuration = await queryOne(db, 'SELECT AVG(duration_ms) as avg_ms FROM audit_log WHERE duration_ms IS NOT NULL');
 
     res.json({
       total: total.count,

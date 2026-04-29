@@ -285,12 +285,20 @@ async function initPostgres() {
   // Note: boolean-like INTEGER columns (is_active, notify_*, etc.) stay as
   // INTEGER in Postgres — route code uses `= 1` / `= 0` literals, which
   // work natively against integer columns but would fail against booleans.
-  const pgSchema = SCHEMA_SQL.map(sql =>
-    sql
+  // Date-like TEXT columns are upgraded to TIMESTAMPTZ so route SQL like
+  // `UPDATE users SET last_login = NOW()` doesn't hit a type mismatch.
+  const dateColumns = ['last_login', 'expires_at', 'start_date', 'end_date',
+                       'due_date', 'added_at', 'created_at', 'updated_at'];
+  const pgSchema = SCHEMA_SQL.map(sql => {
+    let out = sql
       .replace(/TEXT DEFAULT \(datetime\('now'\)\)/g, "TIMESTAMPTZ DEFAULT NOW()")
       .replace(/datetime\('now'\)/g, "NOW()")
-      .replace(/datetime\('now', '\+(\d+) days'\)/g, "NOW() + INTERVAL '$1 days'")
-  );
+      .replace(/datetime\('now', '\+(\d+) days'\)/g, "NOW() + INTERVAL '$1 days'");
+    for (const col of dateColumns) {
+      out = out.replace(new RegExp(`\\b${col}\\s+TEXT\\b`, 'g'), `${col} TIMESTAMPTZ`);
+    }
+    return out;
+  });
 
   for (const sql of pgSchema) {
     await pool.query(sql);
@@ -572,8 +580,31 @@ function saveDb() {
   }
 }
 
+// Translate SQLite-specific syntax in route SQL to Postgres equivalents.
+// Lets route code use one dialect and get the right execution on either driver.
+function translateForPg(sql) {
+  let i = 0;
+  return sql
+    // datetime('now', '+N days')  →  NOW() + INTERVAL 'N days'
+    .replace(/datetime\(\s*'now'\s*,\s*'\+(\d+)\s*days?'\s*\)/gi, "(NOW() + INTERVAL '$1 days')")
+    // datetime('now')  →  NOW()
+    .replace(/datetime\(\s*'now'\s*\)/gi, 'NOW()')
+    // julianday(x) - julianday(y)  →  EXTRACT(EPOCH FROM (x - y)) / 86400
+    .replace(/julianday\(([^)]+)\)\s*-\s*julianday\(([^)]+)\)/gi,
+             'EXTRACT(EPOCH FROM ($1::timestamp - $2::timestamp)) / 86400')
+    // ? placeholders  →  $1, $2, ...
+    .replace(/\?/g, () => `$${++i}`);
+}
+
 // ===== Query Helpers =====
-function queryAll(database, sql, params = []) {
+// All helpers are async so route code can `await` them uniformly.
+// SQLite path (sql.js) is truly synchronous internally — the async
+// wrapper is just there to give pg and sqlite the same call shape.
+async function queryAll(database, sql, params = []) {
+  if (database._isPg) {
+    const { rows } = await database._pool.query(translateForPg(sql), params);
+    return rows;
+  }
   const stmt = database.prepare(sql);
   stmt.bind(params);
   const results = [];
@@ -582,7 +613,11 @@ function queryAll(database, sql, params = []) {
   return results;
 }
 
-function queryOne(database, sql, params = []) {
+async function queryOne(database, sql, params = []) {
+  if (database._isPg) {
+    const { rows } = await database._pool.query(translateForPg(sql), params);
+    return rows[0] || null;
+  }
   const stmt = database.prepare(sql);
   stmt.bind(params);
   const result = stmt.step() ? stmt.getAsObject() : null;
@@ -590,7 +625,11 @@ function queryOne(database, sql, params = []) {
   return result;
 }
 
-function run(database, sql, params = []) {
+async function run(database, sql, params = []) {
+  if (database._isPg) {
+    await database._pool.query(translateForPg(sql), params);
+    return;
+  }
   database.run(sql, params);
   saveDb();
 }

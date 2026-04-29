@@ -13,11 +13,11 @@ const router = express.Router();
 router.get('/', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    let settings = queryOne(db, 'SELECT * FROM user_settings WHERE user_id = ?', [req.userId]);
+    let settings = await queryOne(db, 'SELECT * FROM user_settings WHERE user_id = ?', [req.userId]);
     if (!settings) {
       const id = uuidv4();
-      run(db, 'INSERT INTO user_settings (id, user_id) VALUES (?, ?)', [id, req.userId]);
-      settings = queryOne(db, 'SELECT * FROM user_settings WHERE id = ?', [id]);
+      await run(db, 'INSERT INTO user_settings (id, user_id) VALUES (?, ?)', [id, req.userId]);
+      settings = await queryOne(db, 'SELECT * FROM user_settings WHERE id = ?', [id]);
     }
     res.json(settings);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -27,9 +27,9 @@ router.get('/', requireAuth, async (req, res) => {
 router.put('/', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    let settings = queryOne(db, 'SELECT * FROM user_settings WHERE user_id = ?', [req.userId]);
+    let settings = await queryOne(db, 'SELECT * FROM user_settings WHERE user_id = ?', [req.userId]);
     if (!settings) {
-      run(db, 'INSERT INTO user_settings (id, user_id) VALUES (?, ?)', [uuidv4(), req.userId]);
+      await run(db, 'INSERT INTO user_settings (id, user_id) VALUES (?, ?)', [uuidv4(), req.userId]);
     }
 
     const allowed = ['theme', 'language', 'email_notifications', 'push_notifications', 'notify_assigned', 'notify_mentions', 'notify_comments', 'notify_status_changes', 'notify_sprint_updates', 'compact_view', 'default_project_id', 'items_per_page'];
@@ -45,10 +45,10 @@ router.put('/', requireAuth, async (req, res) => {
     if (updates.length > 0) {
       updates.push("updated_at = datetime('now')");
       params.push(req.userId);
-      run(db, `UPDATE user_settings SET ${updates.join(', ')} WHERE user_id = ?`, params);
+      await run(db, `UPDATE user_settings SET ${updates.join(', ')} WHERE user_id = ?`, params);
     }
 
-    settings = queryOne(db, 'SELECT * FROM user_settings WHERE user_id = ?', [req.userId]);
+    settings = await queryOne(db, 'SELECT * FROM user_settings WHERE user_id = ?', [req.userId]);
     res.json(settings);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

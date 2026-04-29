@@ -18,7 +18,7 @@ router.post('/login', async (req, res) => {
     if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
 
     const db = await getDb();
-    const user = queryOne(db, 'SELECT * FROM users WHERE email = ? AND is_active = 1', [email]);
+    const user = await queryOne(db, 'SELECT * FROM users WHERE email = ? AND is_active = 1', [email]);
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
     // Simple password check (plain text for demo)
@@ -26,8 +26,8 @@ router.post('/login', async (req, res) => {
 
     // Create session
     const token = uuidv4() + '-' + uuidv4();
-    run(db, "INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, datetime('now', '+7 days'))", [uuidv4(), user.id, token]);
-    run(db, "UPDATE users SET last_login = datetime('now') WHERE id = ?", [user.id]);
+    await run(db, "INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, datetime('now', '+7 days'))", [uuidv4(), user.id, token]);
+    await run(db, "UPDATE users SET last_login = datetime('now') WHERE id = ?", [user.id]);
 
     auditLog({ userId: user.id, action: 'User logged in', category: 'auth', entityType: 'user', entityId: user.id, entityName: user.name });
     res.json({
@@ -46,7 +46,7 @@ router.post('/logout', async (req, res) => {
     const token = req.headers['x-auth-token'];
     if (token) {
       const db = await getDb();
-      run(db, 'DELETE FROM sessions WHERE token = ?', [token]);
+      await run(db, 'DELETE FROM sessions WHERE token = ?', [token]);
     }
     auditLog({ userId: req.userId, action: 'User logged out', category: 'auth', entityType: 'user', entityId: req.userId });
     res.json({ ok: true });
@@ -57,7 +57,7 @@ router.post('/logout', async (req, res) => {
 router.get('/me', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const user = queryOne(db, 'SELECT id, name, email, role, avatar_color, avatar_url, phone, department, job_title, bio, timezone, is_active, last_login, created_at FROM users WHERE id = ?', [req.userId]);
+    const user = await queryOne(db, 'SELECT id, name, email, role, avatar_color, avatar_url, phone, department, job_title, bio, timezone, is_active, last_login, created_at FROM users WHERE id = ?', [req.userId]);
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json(user);
   } catch (e) { res.status(500).json({ error: e.message }); }

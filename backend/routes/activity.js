@@ -11,7 +11,7 @@ const router = express.Router();
 router.get('/issues/:issueId/activity', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const activities = queryAll(db,
+    const activities = await queryAll(db,
       `SELECT a.*, u.name as user_name, u.avatar_color as user_color
        FROM activity_log a
        LEFT JOIN users u ON a.user_id = u.id

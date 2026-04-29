@@ -19,10 +19,10 @@ const router = express.Router();
 router.get('/projects/:projectId/reports/sprint', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const sprints = queryAll(db, 'SELECT * FROM sprints WHERE project_id = ? ORDER BY created_at DESC', [req.params.projectId]);
+    const sprints = await queryAll(db, 'SELECT * FROM sprints WHERE project_id = ? ORDER BY created_at DESC', [req.params.projectId]);
 
-    const report = sprints.map(s => {
-      const issues = queryAll(db, 'SELECT * FROM issues WHERE sprint_id = ?', [s.id]);
+    const report = await Promise.all(sprints.map(async s => {
+      const issues = await queryAll(db, 'SELECT * FROM issues WHERE sprint_id = ?', [s.id]);
       const done = issues.filter(i => i.status === 'done');
       const notDone = issues.filter(i => i.status !== 'done');
       const totalPoints = issues.reduce((sum, i) => sum + (i.story_points || 0), 0);
@@ -46,7 +46,7 @@ router.get('/projects/:projectId/reports/sprint', requireAuth, async (req, res) 
         completed: done.map(i => ({ id: i.id, key: i.issue_key, title: i.title, type: i.type, points: i.story_points || 0 })),
         incomplete: notDone.map(i => ({ id: i.id, key: i.issue_key, title: i.title, type: i.type, status: i.status, points: i.story_points || 0 })),
       };
-    });
+    }));
 
     res.json(report);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -56,10 +56,10 @@ router.get('/projects/:projectId/reports/sprint', requireAuth, async (req, res) 
 router.get('/projects/:projectId/reports/velocity', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const sprints = queryAll(db, "SELECT * FROM sprints WHERE project_id = ? AND status IN ('active','completed') ORDER BY created_at", [req.params.projectId]);
+    const sprints = await queryAll(db, "SELECT * FROM sprints WHERE project_id = ? AND status IN ('active','completed') ORDER BY created_at", [req.params.projectId]);
 
-    const velocity = sprints.map(s => {
-      const stats = queryOne(db, `
+    const velocity = await Promise.all(sprints.map(async s => {
+      const stats = await queryOne(db, `
         SELECT COUNT(*) as total,
           SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as done,
           COALESCE(SUM(story_points), 0) as total_points,
@@ -75,7 +75,7 @@ router.get('/projects/:projectId/reports/velocity', requireAuth, async (req, res
         committed_issues: stats.total,
         completed_issues: stats.done,
       };
-    });
+    }));
 
     const avgVelocity = velocity.length > 0
       ? Math.round(velocity.reduce((s, v) => s + v.completed_points, 0) / velocity.length)
@@ -89,7 +89,7 @@ router.get('/projects/:projectId/reports/velocity', requireAuth, async (req, res
 router.get('/projects/:projectId/reports/workload', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const members = queryAll(db, `
+    const members = await queryAll(db, `
       SELECT u.id, u.name, u.avatar_color, u.job_title,
         COUNT(i.id) as total_issues,
         SUM(CASE WHEN i.status = 'todo' THEN 1 ELSE 0 END) as todo,
@@ -107,7 +107,7 @@ router.get('/projects/:projectId/reports/workload', requireAuth, async (req, res
     `, [req.params.projectId, req.params.projectId]);
 
     // Unassigned issues
-    const unassigned = queryOne(db, `
+    const unassigned = await queryOne(db, `
       SELECT COUNT(*) as total,
         COALESCE(SUM(story_points), 0) as points
       FROM issues WHERE project_id = ? AND assignee_id IS NULL
@@ -123,7 +123,7 @@ router.get('/projects/:projectId/reports/resolution', requireAuth, async (req, r
     const db = await getDb();
 
     // Issues resolved (done)
-    const resolved = queryAll(db, `
+    const resolved = await queryAll(db, `
       SELECT id, issue_key, title, type, priority, story_points,
         created_at, updated_at,
         ROUND(julianday(updated_at) - julianday(created_at), 1) as days_to_resolve
@@ -136,7 +136,7 @@ router.get('/projects/:projectId/reports/resolution', requireAuth, async (req, r
       : 0;
 
     // By priority
-    const byPriority = queryAll(db, `
+    const byPriority = await queryAll(db, `
       SELECT priority,
         COUNT(*) as total,
         SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as resolved,
@@ -146,7 +146,7 @@ router.get('/projects/:projectId/reports/resolution', requireAuth, async (req, r
     `, [req.params.projectId]);
 
     // By type
-    const byType = queryAll(db, `
+    const byType = await queryAll(db, `
       SELECT type,
         COUNT(*) as total,
         SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as resolved,
@@ -169,10 +169,10 @@ router.get('/projects/:projectId/reports/resolution', requireAuth, async (req, r
 router.get('/projects/:projectId/reports/burndown', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const sprint = queryOne(db, "SELECT * FROM sprints WHERE project_id = ? AND status = 'active'", [req.params.projectId]);
+    const sprint = await queryOne(db, "SELECT * FROM sprints WHERE project_id = ? AND status = 'active'", [req.params.projectId]);
     if (!sprint) return res.json({ sprint: null, data: [] });
 
-    const issues = queryAll(db, 'SELECT * FROM issues WHERE sprint_id = ?', [sprint.id]);
+    const issues = await queryAll(db, 'SELECT * FROM issues WHERE sprint_id = ?', [sprint.id]);
     const totalPoints = issues.reduce((s, i) => s + (i.story_points || 0), 0);
 
     // Generate daily burndown from sprint start to end
@@ -208,13 +208,13 @@ router.get('/projects/:projectId/reports/burndown', requireAuth, async (req, res
 router.get('/projects/:projectId/reports/created-vs-resolved', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const created = queryAll(db, `
+    const created = await queryAll(db, `
       SELECT date(created_at) as day, COUNT(*) as count
       FROM issues WHERE project_id = ?
       GROUP BY date(created_at) ORDER BY day
     `, [req.params.projectId]);
 
-    const resolved = queryAll(db, `
+    const resolved = await queryAll(db, `
       SELECT date(updated_at) as day, COUNT(*) as count
       FROM issues WHERE project_id = ? AND status = 'done'
       GROUP BY date(updated_at) ORDER BY day
@@ -228,7 +228,7 @@ router.get('/projects/:projectId/reports/created-vs-resolved', requireAuth, asyn
 router.get('/projects/:projectId/reports/type-distribution', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const data = queryAll(db, `
+    const data = await queryAll(db, `
       SELECT type, status, COUNT(*) as count, COALESCE(SUM(story_points),0) as points
       FROM issues WHERE project_id = ?
       GROUP BY type, status
@@ -241,7 +241,7 @@ router.get('/projects/:projectId/reports/type-distribution', requireAuth, async 
 router.get('/projects/:projectId/reports/priority-distribution', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const data = queryAll(db, `
+    const data = await queryAll(db, `
       SELECT priority, status, COUNT(*) as count, COALESCE(SUM(story_points),0) as points
       FROM issues WHERE project_id = ?
       GROUP BY priority, status
@@ -254,10 +254,10 @@ router.get('/projects/:projectId/reports/priority-distribution', requireAuth, as
 router.get('/projects/:projectId/reports/export/csv', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const project = queryOne(db, 'SELECT * FROM projects WHERE id = ?', [req.params.projectId]);
+    const project = await queryOne(db, 'SELECT * FROM projects WHERE id = ?', [req.params.projectId]);
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
-    const issues = queryAll(db, `
+    const issues = await queryAll(db, `
       SELECT i.issue_key, i.title, i.type, i.status, i.priority, i.story_points,
         i.created_at, i.updated_at,
         u1.name as assignee, u2.name as reporter,
