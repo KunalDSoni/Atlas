@@ -13,7 +13,21 @@ services:
       - key: PORT
         value: "3001"
       - key: DB_DRIVER
-        value: sqlite
+        value: mysql
+      # Point at your external MySQL. Either set DATABASE_URL...
+      - key: DATABASE_URL
+        sync: false
+      # ...or the discrete parts (MYSQL_HOST/PORT/USER/PASSWORD/DATABASE).
+      - key: MYSQL_HOST
+        sync: false
+      - key: MYSQL_PORT
+        value: "3306"
+      - key: MYSQL_USER
+        sync: false
+      - key: MYSQL_PASSWORD
+        sync: false
+      - key: MYSQL_DATABASE
+        value: atlas
       - key: SEED_DEMO_DATA
         value: "false"
       - key: ADMIN_NAME

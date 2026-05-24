@@ -14,7 +14,16 @@ const config = {
   db: {
     driver: process.env.DB_DRIVER || 'sqlite',
     sqlitePath: process.env.SQLITE_PATH || path.join(__dirname, 'data.db'),
-    postgresUrl: process.env.DATABASE_URL || null,
+    // MySQL: either a full DATABASE_URL (mysql://user:pass@host:port/db)
+    // or discrete connection parts below.
+    mysql: {
+      url: process.env.DATABASE_URL || null,
+      host: process.env.MYSQL_HOST || '127.0.0.1',
+      port: parseInt(process.env.MYSQL_PORT, 10) || 3306,
+      user: process.env.MYSQL_USER || 'root',
+      password: process.env.MYSQL_PASSWORD || '',
+      database: process.env.MYSQL_DATABASE || 'atlas',
+    },
   },
 
   // Auth
