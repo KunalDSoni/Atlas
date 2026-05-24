@@ -1,5 +1,5 @@
 // ===== ATLAS — Database Layer =====
-// Supports: SQLite (dev) and PostgreSQL (production)
+// Supports: SQLite (dev) and MySQL (production)
 // Controlled by DB_DRIVER in .env
 
 const path = require('path');
@@ -247,6 +247,249 @@ const SCHEMA_SQL = [
   )`
 ];
 
+// ===== MySQL SCHEMA =====
+// Hand-written MySQL dialect (the SQLite TEXT-everywhere approach is invalid in
+// MySQL: TEXT columns can't have DEFAULTs and can't be PRIMARY/UNIQUE keys
+// without a prefix length). All UUID id/FK columns -> VARCHAR(36); enum-ish
+// columns keep their CHECK constraints (enforced on MySQL 8.0.16+). utf8mb4 so
+// emoji icons/content store correctly. `key` is backticked (reserved word).
+const MYSQL_SCHEMA_SQL = [
+  `CREATE TABLE IF NOT EXISTS users (
+    id VARCHAR(36) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password VARCHAR(255) DEFAULT 'password123',
+    role VARCHAR(20) DEFAULT 'user' CHECK(role IN ('admin','board_admin','client','user')),
+    avatar_color VARCHAR(20) DEFAULT '#6366f1',
+    avatar_url VARCHAR(512),
+    phone VARCHAR(50),
+    department VARCHAR(120),
+    job_title VARCHAR(120),
+    bio TEXT,
+    timezone VARCHAR(64) DEFAULT 'UTC',
+    is_active TINYINT DEFAULT 1,
+    last_login DATETIME NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS sessions (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL,
+    token VARCHAR(255) UNIQUE NOT NULL,
+    expires_at DATETIME NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS user_settings (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) UNIQUE NOT NULL,
+    theme VARCHAR(10) DEFAULT 'dark' CHECK(theme IN ('dark','light','system')),
+    language VARCHAR(10) DEFAULT 'en',
+    email_notifications TINYINT DEFAULT 1,
+    push_notifications TINYINT DEFAULT 1,
+    notify_assigned TINYINT DEFAULT 1,
+    notify_mentions TINYINT DEFAULT 1,
+    notify_comments TINYINT DEFAULT 1,
+    notify_status_changes TINYINT DEFAULT 1,
+    notify_sprint_updates TINYINT DEFAULT 0,
+    compact_view TINYINT DEFAULT 0,
+    default_project_id VARCHAR(36),
+    items_per_page INT DEFAULT 25,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS projects (
+    id VARCHAR(36) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    \`key\` VARCHAR(50) UNIQUE NOT NULL,
+    description TEXT,
+    lead_id VARCHAR(36),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS project_members (
+    id VARCHAR(36) PRIMARY KEY,
+    project_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(36) NOT NULL,
+    role_in_project VARCHAR(20) DEFAULT 'member' CHECK(role_in_project IN ('lead','member','viewer')),
+    added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_id, user_id)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS sprints (
+    id VARCHAR(36) PRIMARY KEY,
+    project_id VARCHAR(36) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    goal TEXT,
+    status VARCHAR(20) DEFAULT 'planning' CHECK(status IN ('planning','active','completed')),
+    start_date DATETIME NULL,
+    end_date DATETIME NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS issues (
+    id VARCHAR(36) PRIMARY KEY,
+    project_id VARCHAR(36) NOT NULL,
+    sprint_id VARCHAR(36),
+    issue_key VARCHAR(50) NOT NULL,
+    issue_number INT NOT NULL,
+    title VARCHAR(512) NOT NULL,
+    description TEXT,
+    type VARCHAR(20) DEFAULT 'task' CHECK(type IN ('story','task','bug','epic','subtask')),
+    status VARCHAR(20) DEFAULT 'todo' CHECK(status IN ('todo','in_progress','in_review','done')),
+    priority VARCHAR(20) DEFAULT 'medium' CHECK(priority IN ('highest','high','medium','low','lowest')),
+    assignee_id VARCHAR(36),
+    reporter_id VARCHAR(36),
+    parent_id VARCHAR(36),
+    story_points INT,
+    labels VARCHAR(2000) DEFAULT '[]',
+    due_date DATETIME NULL,
+    original_estimate VARCHAR(50),
+    time_spent VARCHAR(50),
+    board_order INT DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS comments (
+    id VARCHAR(36) PRIMARY KEY,
+    issue_id VARCHAR(36) NOT NULL,
+    author_id VARCHAR(36) NOT NULL,
+    body TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS activity_log (
+    id VARCHAR(36) PRIMARY KEY,
+    issue_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(36) NOT NULL,
+    action VARCHAR(255) NOT NULL,
+    field VARCHAR(120),
+    old_value TEXT,
+    new_value TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS issue_watchers (
+    id VARCHAR(36) PRIMARY KEY,
+    issue_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(36) NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(issue_id, user_id)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS issue_links (
+    id VARCHAR(36) PRIMARY KEY,
+    source_issue_id VARCHAR(36) NOT NULL,
+    target_issue_id VARCHAR(36) NOT NULL,
+    link_type VARCHAR(30) NOT NULL DEFAULT 'relates_to' CHECK(link_type IN ('blocks','is_blocked_by','relates_to','duplicates','is_duplicated_by','clones','is_cloned_by')),
+    created_by VARCHAR(36) NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS attachments (
+    id VARCHAR(36) PRIMARY KEY,
+    issue_id VARCHAR(36) NOT NULL,
+    filename VARCHAR(255) NOT NULL,
+    original_name VARCHAR(255) NOT NULL,
+    mime_type VARCHAR(120) NOT NULL,
+    size INT NOT NULL,
+    uploaded_by VARCHAR(36) NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  // ===== CONFLUENCE TABLES =====
+  `CREATE TABLE IF NOT EXISTS wiki_spaces (
+    id VARCHAR(36) PRIMARY KEY,
+    space_key VARCHAR(50) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    icon VARCHAR(20) DEFAULT '📄',
+    color VARCHAR(20) DEFAULT '#0c66e4',
+    owner_id VARCHAR(36),
+    is_personal TINYINT DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS wiki_pages (
+    id VARCHAR(36) PRIMARY KEY,
+    space_id VARCHAR(36) NOT NULL,
+    parent_id VARCHAR(36),
+    title VARCHAR(512) NOT NULL,
+    slug VARCHAR(255) NOT NULL,
+    body LONGTEXT,
+    body_format VARCHAR(10) DEFAULT 'html' CHECK(body_format IN ('html','markdown')),
+    status VARCHAR(20) DEFAULT 'current' CHECK(status IN ('current','draft','archived','trashed')),
+    position INT DEFAULT 0,
+    author_id VARCHAR(36) NOT NULL,
+    last_editor_id VARCHAR(36),
+    version INT DEFAULT 1,
+    view_count INT DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS wiki_page_versions (
+    id VARCHAR(36) PRIMARY KEY,
+    page_id VARCHAR(36) NOT NULL,
+    version INT NOT NULL,
+    title VARCHAR(512) NOT NULL,
+    body LONGTEXT,
+    editor_id VARCHAR(36) NOT NULL,
+    change_message VARCHAR(512),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS wiki_page_comments (
+    id VARCHAR(36) PRIMARY KEY,
+    page_id VARCHAR(36) NOT NULL,
+    parent_id VARCHAR(36),
+    author_id VARCHAR(36) NOT NULL,
+    body TEXT NOT NULL,
+    resolved TINYINT DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS wiki_labels (
+    id VARCHAR(36) PRIMARY KEY,
+    page_id VARCHAR(36) NOT NULL,
+    label VARCHAR(120) NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(page_id, label)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS wiki_stars (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL,
+    page_id VARCHAR(36),
+    space_id VARCHAR(36),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, page_id),
+    UNIQUE(user_id, space_id)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS wiki_page_likes (
+    id VARCHAR(36) PRIMARY KEY,
+    page_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(36) NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(page_id, user_id)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS wiki_templates (
+    id VARCHAR(36) PRIMARY KEY,
+    space_id VARCHAR(36),
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    body LONGTEXT,
+    icon VARCHAR(20) DEFAULT '📝',
+    is_global TINYINT DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  // ===== AUDIT LOG TABLE =====
+  `CREATE TABLE IF NOT EXISTS audit_log (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36),
+    user_name VARCHAR(255),
+    action VARCHAR(255) NOT NULL,
+    category VARCHAR(50) NOT NULL DEFAULT 'system',
+    entity_type VARCHAR(50),
+    entity_id VARCHAR(36),
+    entity_name VARCHAR(255),
+    details TEXT,
+    ip_address VARCHAR(64),
+    method VARCHAR(10),
+    path VARCHAR(512),
+    status_code INT,
+    duration_ms INT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`
+];
+
 // ===== SQLite Init =====
 async function initSqlite() {
   const initSqlJs = require('sql.js');
@@ -276,87 +519,74 @@ async function initSqlite() {
   return db;
 }
 
-// ===== PostgreSQL Init =====
-async function initPostgres() {
-  const { Pool } = require('pg');
-  const pool = new Pool({ connectionString: config.db.postgresUrl });
+// ===== MySQL Init =====
+async function initMysql() {
+  const mysql = require('mysql2/promise');
+  const { url, host, port, user, password, database } = config.db.mysql;
 
-  // Convert SQLite schema to Postgres-compatible.
-  // Note: boolean-like INTEGER columns (is_active, notify_*, etc.) stay as
-  // INTEGER in Postgres — route code uses `= 1` / `= 0` literals, which
-  // work natively against integer columns but would fail against booleans.
-  // Date-like TEXT columns are upgraded to TIMESTAMPTZ so route SQL like
-  // `UPDATE users SET last_login = NOW()` doesn't hit a type mismatch.
-  const dateColumns = ['last_login', 'expires_at', 'start_date', 'end_date',
-                       'due_date', 'added_at', 'created_at', 'updated_at'];
-  const pgSchema = SCHEMA_SQL.map(sql => {
-    let out = sql
-      .replace(/TEXT DEFAULT \(datetime\('now'\)\)/g, "TIMESTAMPTZ DEFAULT NOW()")
-      .replace(/datetime\('now'\)/g, "NOW()")
-      .replace(/datetime\('now', '\+(\d+) days'\)/g, "NOW() + INTERVAL '$1 days'");
-    for (const col of dateColumns) {
-      out = out.replace(new RegExp(`\\b${col}\\s+TEXT\\b`, 'g'), `${col} TIMESTAMPTZ`);
-    }
-    return out;
-  });
-
-  for (const sql of pgSchema) {
-    await pool.query(sql);
+  // Ensure the target database exists, then connect to it.
+  // dateStrings: return DATETIME as 'YYYY-MM-DD HH:MM:SS' strings (not JS Date),
+  // matching SQLite's TEXT dates so route code that does string ops on dates
+  // (e.g. updated_at.split('T')) works identically on both drivers.
+  if (url) {
+    const pool = mysql.createPool({ uri: url, charset: 'utf8mb4', dateStrings: true, multipleStatements: false });
+    await initMysqlSchema(pool);
+    db = createMysqlWrapper(pool);
+    return db;
   }
 
-  // Check if users exist
-  const { rows } = await pool.query("SELECT COUNT(*) as c FROM users");
-  if (parseInt(rows[0].c) === 0) {
-    if (config.seedDemoData) {
-      await seedDemoDataPg(pool);
-    } else {
-      await seedAdminOnlyPg(pool);
-    }
+  // Best-effort: create the database if missing. This is skipped silently when
+  // the configured user lacks the global CREATE privilege (e.g. a scoped user
+  // against a pre-provisioned DB, as in docker-compose) — the schema step below
+  // still runs against the existing database.
+  try {
+    const bootstrap = await mysql.createConnection({ host, port, user, password, charset: 'utf8mb4' });
+    await bootstrap.query(
+      `CREATE DATABASE IF NOT EXISTS \`${database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
+    );
+    await bootstrap.end();
+  } catch (e) {
+    console.warn(`  ⚠ Could not auto-create database "${database}" (${e.code || e.message}). Assuming it already exists.`);
   }
 
-  // Return a db-like wrapper so route files work with both drivers
-  db = createPgWrapper(pool);
+  const pool = mysql.createPool({ host, port, user, password, database, charset: 'utf8mb4', dateStrings: true, multipleStatements: false });
+  await initMysqlSchema(pool);
+  db = createMysqlWrapper(pool);
   return db;
 }
 
-// ===== Pg Wrapper (makes pg look like sql.js to routes) =====
-function createPgWrapper(pool) {
+async function initMysqlSchema(pool) {
+  for (const sql of MYSQL_SCHEMA_SQL) {
+    await pool.query(sql);
+  }
+
+  const [rows] = await pool.query('SELECT COUNT(*) as c FROM users');
+  if (parseInt(rows[0].c, 10) === 0) {
+    if (config.seedDemoData) {
+      await seedDemoDataMysql(pool);
+    } else {
+      await seedAdminOnlyMysql(pool);
+    }
+  }
+}
+
+// ===== MySQL Wrapper (makes mysql2 look like sql.js to routes) =====
+// Routes only touch the db through queryAll/queryOne/run helpers, so the
+// wrapper just needs to carry the pool + a driver flag.
+function createMysqlWrapper(pool) {
   return {
     _pool: pool,
-    _isPg: true,
+    _isMysql: true,
     exec: async (sql) => {
-      const res = await pool.query(sql);
-      return [{ columns: res.fields.map(f => f.name), values: res.rows.map(r => Object.values(r)) }];
-    },
-    prepare: (sql) => {
-      // Convert ? placeholders to $1, $2, ... for pg
-      let idx = 0;
-      const pgSql = sql.replace(/\?/g, () => `$${++idx}`);
-      return {
-        _sql: pgSql,
-        _params: [],
-        _results: null,
-        _cursor: 0,
-        bind(params) { this._params = params; },
-        async step() {
-          if (!this._results) {
-            const res = await pool.query(this._sql, this._params);
-            this._results = res.rows;
-            this._cursor = 0;
-          }
-          return this._cursor < this._results.length;
-        },
-        getAsObject() {
-          return this._results[this._cursor++];
-        },
-        free() { this._results = null; }
-      };
+      const [rows, fields] = await pool.query(sql);
+      return [{
+        columns: (fields || []).map(f => f.name),
+        values: Array.isArray(rows) ? rows.map(r => Object.values(r)) : [],
+      }];
     },
     run: async (sql, params = []) => {
-      let idx = 0;
-      const pgSql = sql.replace(/\?/g, () => `$${++idx}`);
-      await pool.query(pgSql, params);
-    }
+      await pool.query(translateForMysql(sql), params);
+    },
   };
 }
 
@@ -378,15 +608,15 @@ function seedAdminOnly() {
   saveDb();
 }
 
-async function seedAdminOnlyPg(pool) {
+async function seedAdminOnlyMysql(pool) {
   const { v4: uuid } = require('uuid');
   const adminId = uuid();
 
   await pool.query(
-    "INSERT INTO users (id, name, email, password, role, avatar_color, department, job_title) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+    "INSERT INTO users (id, name, email, password, role, avatar_color, department, job_title) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     [adminId, config.admin.name, config.admin.email, config.admin.password, 'admin', '#0c66e4', 'Engineering', 'Administrator']
   );
-  await pool.query("INSERT INTO user_settings (id, user_id) VALUES ($1, $2)", [uuid(), adminId]);
+  await pool.query("INSERT INTO user_settings (id, user_id) VALUES (?, ?)", [uuid(), adminId]);
 
   console.log(`\n  ✓ Admin account created:`);
   console.log(`    Email:    ${config.admin.email}`);
@@ -559,41 +789,43 @@ function seedDemoData() {
   console.log('\n  ✓ Demo data seeded (5 users, 2 projects, 13 issues, 2 wiki spaces, 7 pages)\n');
 }
 
-async function seedDemoDataPg(pool) {
-  // For now, Pg demo seed is minimal — users can add real data via UI
+async function seedDemoDataMysql(pool) {
+  // MySQL demo seed is minimal — production users add real data via the UI,
+  // or migrate an existing SQLite DB with scripts/export-to-mysql.js.
   const { v4: uuid } = require('uuid');
   const adminId = uuid();
   await pool.query(
-    "INSERT INTO users (id, name, email, password, role, avatar_color) VALUES ($1, $2, $3, $4, $5, $6)",
+    "INSERT INTO users (id, name, email, password, role, avatar_color) VALUES (?, ?, ?, ?, ?, ?)",
     [adminId, config.admin.name, config.admin.email, config.admin.password, 'admin', '#0c66e4']
   );
-  await pool.query("INSERT INTO user_settings (id, user_id) VALUES ($1, $2)", [uuid(), adminId]);
-  console.log('\n  ✓ Admin account created for PostgreSQL\n');
+  await pool.query("INSERT INTO user_settings (id, user_id) VALUES (?, ?)", [uuid(), adminId]);
+  console.log('\n  ✓ Admin account created for MySQL\n');
 }
 
 // ===== Save (SQLite only) =====
 function saveDb() {
-  if (db && !db._isPg) {
+  if (db && !db._isMysql) {
     const data = db.export();
     const buffer = Buffer.from(data);
     fs.writeFileSync(DB_PATH, buffer);
   }
 }
 
-// Translate SQLite-specific syntax in route SQL to Postgres equivalents.
-// Lets route code use one dialect and get the right execution on either driver.
-function translateForPg(sql) {
-  let i = 0;
+// Translate SQLite-specific syntax in route SQL to MySQL equivalents.
+// Lets route code use the SQLite dialect and run correctly on MySQL too.
+// Note: mysql2 uses `?` placeholders (same as sql.js), so those are left alone.
+function translateForMysql(sql) {
   return sql
-    // datetime('now', '+N days')  →  NOW() + INTERVAL 'N days'
-    .replace(/datetime\(\s*'now'\s*,\s*'\+(\d+)\s*days?'\s*\)/gi, "(NOW() + INTERVAL '$1 days')")
+    // datetime('now', '+N days')  →  (NOW() + INTERVAL N DAY)
+    .replace(/datetime\(\s*'now'\s*,\s*'\+(\d+)\s*days?'\s*\)/gi, '(NOW() + INTERVAL $1 DAY)')
     // datetime('now')  →  NOW()
     .replace(/datetime\(\s*'now'\s*\)/gi, 'NOW()')
-    // julianday(x) - julianday(y)  →  EXTRACT(EPOCH FROM (x - y)) / 86400
+    // julianday(a) - julianday(b)  →  (TIMESTAMPDIFF(SECOND, b, a) / 86400)
     .replace(/julianday\(([^)]+)\)\s*-\s*julianday\(([^)]+)\)/gi,
-             'EXTRACT(EPOCH FROM ($1::timestamp - $2::timestamp)) / 86400')
-    // ? placeholders  →  $1, $2, ...
-    .replace(/\?/g, () => `$${++i}`);
+             '(TIMESTAMPDIFF(SECOND, $2, $1) / 86400)')
+    // `key` is a MySQL reserved word — backtick the standalone column token
+    // (won't match issue_key / space_key thanks to the \w lookarounds).
+    .replace(/(?<![\w.`])key(?![\w`])/gi, '`key`');
 }
 
 // ===== Query Helpers =====
@@ -601,8 +833,8 @@ function translateForPg(sql) {
 // SQLite path (sql.js) is truly synchronous internally — the async
 // wrapper is just there to give pg and sqlite the same call shape.
 async function queryAll(database, sql, params = []) {
-  if (database._isPg) {
-    const { rows } = await database._pool.query(translateForPg(sql), params);
+  if (database._isMysql) {
+    const [rows] = await database._pool.query(translateForMysql(sql), params);
     return rows;
   }
   const stmt = database.prepare(sql);
@@ -614,8 +846,8 @@ async function queryAll(database, sql, params = []) {
 }
 
 async function queryOne(database, sql, params = []) {
-  if (database._isPg) {
-    const { rows } = await database._pool.query(translateForPg(sql), params);
+  if (database._isMysql) {
+    const [rows] = await database._pool.query(translateForMysql(sql), params);
     return rows[0] || null;
   }
   const stmt = database.prepare(sql);
@@ -626,8 +858,8 @@ async function queryOne(database, sql, params = []) {
 }
 
 async function run(database, sql, params = []) {
-  if (database._isPg) {
-    await database._pool.query(translateForPg(sql), params);
+  if (database._isMysql) {
+    await database._pool.query(translateForMysql(sql), params);
     return;
   }
   database.run(sql, params);
@@ -638,8 +870,8 @@ async function run(database, sql, params = []) {
 async function getDb() {
   if (db) return db;
 
-  if (config.db.driver === 'postgres') {
-    return initPostgres();
+  if (config.db.driver === 'mysql') {
+    return initMysql();
   } else {
     return initSqlite();
   }
@@ -649,4 +881,4 @@ async function initDb() {
   return getDb();
 }
 
-module.exports = { getDb, saveDb, initDb, queryAll, queryOne, run };
+module.exports = { getDb, saveDb, initDb, queryAll, queryOne, run, translateForMysql, MYSQL_SCHEMA_SQL };

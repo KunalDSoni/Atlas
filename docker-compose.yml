@@ -1,0 +1,57 @@
+# ===== Atlas — Self-hosted stack (app + MySQL) =====
+# Usage:
+#   cp .env.example .env   # then edit the MYSQL_* values
+#   docker compose up -d --build
+# The app waits for MySQL to be healthy, creates the schema on first boot,
+# and (with SEED_DEMO_DATA=false) provisions a single admin account.
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-atlas}
+      MYSQL_USER: ${MYSQL_USER:-atlas}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-change-me}
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD:-change-me-root}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      DB_DRIVER: mysql
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_USER: ${MYSQL_USER:-atlas}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-change-me}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-atlas}
+      SEED_DEMO_DATA: "false"
+      SESSION_SECRET: ${SESSION_SECRET:-change-this-to-a-random-64-char-string}
+      ADMIN_NAME: ${ADMIN_NAME:-Atlas Admin}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@atlas.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme123}
+    ports:
+      - "3001:3001"
+    volumes:
+      - uploads_data:/app/backend/uploads
+
+volumes:
+  mysql_data:
+  uploads_data:
