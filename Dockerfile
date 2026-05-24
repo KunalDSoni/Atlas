@@ -21,9 +21,11 @@ WORKDIR /app
 # Copy dependencies from builder
 COPY --from=deps /app/backend/node_modules ./backend/node_modules
 
-# Copy application code
-COPY backend/ ./backend/
-COPY frontend/build/ ./frontend/build/
+# Copy application code (some source files are mode 0600 on the host —
+# --chown + a normalizing chmod ensure the non-root atlas user can read them)
+COPY --chown=atlas:atlas backend/ ./backend/
+COPY --chown=atlas:atlas frontend/build/ ./frontend/build/
+RUN chmod -R u+rwX,go+rX /app/backend /app/frontend
 
 # Create writable directories for SQLite + uploads
 RUN mkdir -p /app/data /app/backend/uploads && \
