@@ -4,19 +4,16 @@
  * They are written to fail against the vulnerable implementations.
  */
 const request = require('supertest');
+// setup.js pins the test DB path at module load, so importing backend modules here is
+// safe — see the comment there.
 const { createTestApp, adminHeaders } = require('./setup');
-
-// Required lazily inside tests: importing backend modules at the top level loads
-// config.js (and therefore dotenv) before setup.js can point the DB at :memory:,
-// which makes the suite write to the real dev database.
-let hashPassword, verifyPassword, isHashed, signedFileUrl, verifyFileSig;
+const { hashPassword, verifyPassword, isHashed } = require('../../utils/password');
+const { signedFileUrl, verifyFileSig } = require('../../utils/signing');
 
 let app;
 
 beforeAll(async () => {
   app = await createTestApp();
-  ({ hashPassword, verifyPassword, isHashed } = require('../../utils/password'));
-  ({ signedFileUrl, verifyFileSig } = require('../../utils/signing'));
 });
 
 describe('Unauthenticated access', () => {

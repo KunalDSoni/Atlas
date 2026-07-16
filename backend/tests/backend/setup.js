@@ -3,15 +3,33 @@
  */
 const request = require('supertest');
 const path = require('path');
+const os = require('os');
+const fs = require('fs');
+const crypto = require('crypto');
+
+// Set at MODULE LOAD, not inside createTestApp(). Test files require this module at the
+// top, but any backend module they also import at the top (directly or transitively)
+// loads config.js — and dotenv — the moment it is required. If the DB path is only set
+// later, config has already resolved SQLITE_PATH from .env and the suite silently writes
+// to the real dev database.
+process.env.NODE_ENV = 'test';
+process.env.SEED_DEMO_DATA = 'true';
+process.env.DB_DRIVER = 'sqlite';
+// sql.js has no true in-memory mode here — database.js persists to whatever path it is
+// given. Point each run at a throwaway file so tests never touch data.db (or leave a
+// stray file literally named ':memory:' in the repo).
+process.env.SQLITE_PATH = path.join(os.tmpdir(), `atlas-test-${process.pid}.db`);
+
+const tempDbs = [];
 
 let app;
 
 async function createTestApp() {
-  // Force test environment
-  process.env.NODE_ENV = 'test';
-  process.env.SEED_DEMO_DATA = 'true';
-  process.env.DB_DRIVER = 'sqlite';
-  process.env.SQLITE_PATH = ':memory:';
+  // A fresh path per app: database.js loads an existing file if it finds one, so a
+  // shared path would let one suite inherit another's rows.
+  const dbPath = path.join(os.tmpdir(), `atlas-test-${process.pid}-${crypto.randomUUID()}.db`);
+  process.env.SQLITE_PATH = dbPath;
+  tempDbs.push(dbPath);
 
   // Clear ALL backend modules from require cache to get fresh DB
   const backendDir = path.resolve(__dirname, '..', '..');
@@ -73,5 +91,12 @@ async function loginAs(email = 'kunal@example.com', password = 'password123') {
 async function adminHeaders() { return loginAs('kunal@example.com', 'password123'); }
 async function userHeaders() { return loginAs('priya@example.com', 'password123'); }
 function getApp() { return app; }
+
+// Jest runs this after every suite in the file.
+afterAll(() => {
+  for (const f of tempDbs) {
+    try { fs.unlinkSync(f); } catch { /* already gone */ }
+  }
+});
 
 module.exports = { createTestApp, getApp, loginAs, adminHeaders, userHeaders };

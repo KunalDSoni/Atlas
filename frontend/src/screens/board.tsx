@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Columns3, Plus, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -8,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
 import { useProjects } from '@/hooks/use-projects';
+import { useSettings } from '@/hooks/use-settings';
 import { STATUS_LABEL, STATUSES, canCreateIssues, canDragIssues } from '@/lib/domain';
 import type { Issue, IssueStatus, Sprint } from '@/lib/types';
 import { EmptyState, ErrorState, LabelChip, PageHeader, PriorityIcon, TypeIcon, UserAvatar } from '@/components/app/primitives';
@@ -22,6 +24,7 @@ function IssueCard({
   onDragStart,
   onDragEnd,
   dragging,
+  compact,
 }: {
   issue: Issue;
   draggable: boolean;
@@ -29,6 +32,7 @@ function IssueCard({
   onDragStart: () => void;
   onDragEnd: () => void;
   dragging: boolean;
+  compact: boolean;
 }) {
   return (
     <article
@@ -50,15 +54,16 @@ function IssueCard({
       tabIndex={0}
       aria-label={`${issue.issue_key}: ${issue.title}`}
       className={cn(
-        'group cursor-pointer rounded-md border border-border bg-card p-2.5 shadow-card transition-all',
+        'group cursor-pointer rounded-md border border-border bg-card shadow-card transition-all',
+        compact ? 'p-1.5' : 'p-2.5',
         'hover:border-primary/40 hover:shadow-raised focus-visible:outline-2 focus-visible:outline-ring',
         draggable && 'active:cursor-grabbing',
         dragging && 'opacity-40',
       )}
     >
-      <p className="mb-2 line-clamp-3 text-sm leading-snug">{issue.title}</p>
+      <p className={cn('line-clamp-3 text-sm leading-snug', compact ? 'mb-1.5' : 'mb-2')}>{issue.title}</p>
 
-      {issue.labels_parsed?.length > 0 && (
+      {!compact && issue.labels_parsed?.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-1">
           {issue.labels_parsed.slice(0, 3).map((l) => (
             <LabelChip key={l}>{l}</LabelChip>
@@ -88,6 +93,7 @@ function IssueCard({
 
 export default function BoardScreen() {
   const { user } = useAuth();
+  const { compact } = useSettings();
   const { currentProject, currentProjectId, loading: projectsLoading } = useProjects();
   const [issues, setIssues] = useState<Issue[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
@@ -99,8 +105,23 @@ export default function BoardScreen() {
   const [dragOver, setDragOver] = useState<IssueStatus | null>(null);
   const [openIssueId, setOpenIssueId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const canDrag = canDragIssues(user?.role);
+
+  // ?issue=<id> deep-links an issue open (used by the command palette).
+  useEffect(() => {
+    const target = searchParams.get('issue');
+    if (target) setOpenIssueId(target);
+  }, [searchParams]);
+
+  function closeIssue() {
+    setOpenIssueId(null);
+    if (searchParams.has('issue')) {
+      searchParams.delete('issue');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }
 
   const load = useCallback(async () => {
     if (!currentProjectId) return;
@@ -273,6 +294,7 @@ export default function BoardScreen() {
                   onOpen={() => setOpenIssueId(issue.id)}
                   onDragStart={() => setDraggingId(issue.id)}
                   onDragEnd={() => setDraggingId(null)}
+                  compact={compact}
                 />
               ))}
               {columns[status].length === 0 && (
@@ -287,8 +309,9 @@ export default function BoardScreen() {
 
       <IssueDetailSheet
         issueId={openIssueId}
-        onOpenChange={(open) => !open && setOpenIssueId(null)}
+        onOpenChange={(open) => !open && closeIssue()}
         onChanged={load}
+        onOpenIssue={setOpenIssueId}
       />
       <CreateIssueDialog
         open={createOpen}

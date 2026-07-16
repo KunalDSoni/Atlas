@@ -213,3 +213,133 @@ export function GroupedColumns({
     </div>
   );
 }
+
+/**
+ * Two-series line chart for change-over-time (burndown: ideal vs actual).
+ * Single y-scale — never a second axis. 2px strokes, recessive grid, hover crosshair.
+ */
+export function LineChart({
+  points,
+  series,
+  formatValue = (n: number) => String(n),
+}: {
+  points: { label: string; values: (number | null)[] }[];
+  series: string[];
+  formatValue?: (n: number) => string;
+}) {
+  const [hover, setHover] = useState<number | null>(null);
+  const W = 560;
+  const H = 180;
+  const PAD = { top: 8, right: 8, bottom: 22, left: 32 };
+
+  if (points.length < 2) return <p className="py-8 text-center text-sm text-muted-foreground">Not enough data.</p>;
+
+  const all = points.flatMap((p) => p.values).filter((v): v is number => v != null);
+  const max = Math.max(1, ...all);
+  const plotW = W - PAD.left - PAD.right;
+  const plotH = H - PAD.top - PAD.bottom;
+
+  const x = (i: number) => PAD.left + (i / (points.length - 1)) * plotW;
+  const y = (v: number) => PAD.top + plotH - (v / max) * plotH;
+
+  const path = (si: number) =>
+    points
+      .map((p, i) => {
+        const v = p.values[si];
+        if (v == null) return null;
+        return `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(v).toFixed(1)}`;
+      })
+      .filter(Boolean)
+      .join(' ');
+
+  const ticks = [0, 0.5, 1].map((f) => Math.round(max * f));
+
+  return (
+    <div>
+      <Legend items={series.map((s, i) => ({ label: s, color: seriesColor(i) }))} />
+      <div className="overflow-x-auto">
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          className="h-44 w-full min-w-[420px]"
+          role="img"
+          aria-label={`${series.join(' and ')} over time`}
+          onMouseLeave={() => setHover(null)}
+        >
+          {/* Recessive gridlines + y ticks */}
+          {ticks.map((t) => (
+            <g key={t}>
+              <line x1={PAD.left} x2={W - PAD.right} y1={y(t)} y2={y(t)} stroke="var(--border)" strokeWidth="1" />
+              <text x={PAD.left - 6} y={y(t) + 3} textAnchor="end" fontSize="9" fill="var(--muted-foreground)">
+                {t}
+              </text>
+            </g>
+          ))}
+
+          {series.map((_, si) => (
+            <path
+              key={si}
+              d={path(si)}
+              fill="none"
+              stroke={seriesColor(si)}
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeDasharray={si === 0 ? '4 3' : undefined}
+              opacity={si === 0 ? 0.7 : 1}
+            />
+          ))}
+
+          {/* Hover crosshair + markers */}
+          {hover != null && (
+            <line x1={x(hover)} x2={x(hover)} y1={PAD.top} y2={PAD.top + plotH} stroke="var(--faint)" strokeWidth="1" />
+          )}
+          {hover != null &&
+            series.map((_, si) => {
+              const v = points[hover].values[si];
+              if (v == null) return null;
+              return (
+                <circle
+                  key={si}
+                  cx={x(hover)}
+                  cy={y(v)}
+                  r="4"
+                  fill={seriesColor(si)}
+                  stroke="var(--card)"
+                  strokeWidth="2"
+                />
+              );
+            })}
+
+          {/* Invisible hit targets, wider than the marks */}
+          {points.map((p, i) => (
+            <rect
+              key={i}
+              x={x(i) - plotW / points.length / 2}
+              y={PAD.top}
+              width={plotW / points.length}
+              height={plotH}
+              fill="transparent"
+              onMouseEnter={() => setHover(i)}
+            >
+              <title>{`${p.label}: ${p.values.map((v, si) => `${series[si]} ${v == null ? '—' : formatValue(v)}`).join(', ')}`}</title>
+            </rect>
+          ))}
+
+          {/* First/last x labels only — a label per point would collide */}
+          <text x={PAD.left} y={H - 6} fontSize="9" fill="var(--muted-foreground)">{points[0].label}</text>
+          <text x={W - PAD.right} y={H - 6} textAnchor="end" fontSize="9" fill="var(--muted-foreground)">
+            {points[points.length - 1].label}
+          </text>
+        </svg>
+      </div>
+      {hover != null && (
+        <p className="mt-1 text-center text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">{points[hover].label}</span>
+          {points[hover].values.map((v, si) => (
+            <span key={si}> · {series[si]}: <span className="tabular-nums text-foreground">{v == null ? '—' : formatValue(v)}</span></span>
+          ))}
+        </p>
+      )}
+    </div>
+  );
+}

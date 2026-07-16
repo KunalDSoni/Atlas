@@ -1,12 +1,10 @@
-import { useEffect, useState } from 'react';
-import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { api } from '@/lib/api';
 import { useTheme } from '@/context/theme-provider';
+import { useSettings } from '@/hooks/use-settings';
 import type { Settings } from '@/lib/types';
 import { ErrorState, PageHeader, RowsSkeleton } from '@/components/app/primitives';
 
@@ -21,34 +19,9 @@ const NOTIFICATION_TOGGLES: { key: keyof Settings; label: string; hint: string }
 
 export default function SettingsScreen() {
   const { theme, setTheme } = useTheme();
-  const [settings, setSettings] = useState<Settings | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        setSettings(await api.settings.get());
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Failed to load settings');
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
-
-  /** Optimistic: flip the control immediately, roll back if the server rejects it. */
-  async function patch(body: Partial<Settings>) {
-    if (!settings) return;
-    const previous = settings;
-    setSettings({ ...settings, ...body });
-    try {
-      await api.settings.update(body);
-    } catch (e) {
-      setSettings(previous);
-      toast.error('Could not save setting', { description: e instanceof Error ? e.message : undefined });
-    }
-  }
+  // Shared with the rest of the app, so these controls actually take effect.
+  const { settings, loading, patch } = useSettings();
+  const error = !loading && !settings ? 'Failed to load settings' : null;
 
   if (loading) {
     return (
@@ -80,7 +53,7 @@ export default function SettingsScreen() {
             <div className="flex items-center justify-between gap-4">
               <div>
                 <Label>Theme</Label>
-                <p className="mt-0.5 text-xs text-muted-foreground">Applies to this browser.</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">Saved to your account and applied wherever you sign in.</p>
               </div>
               <Select
                 value={theme}

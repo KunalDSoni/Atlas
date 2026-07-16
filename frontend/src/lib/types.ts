@@ -5,6 +5,7 @@ export type IssueStatus = 'todo' | 'in_progress' | 'in_review' | 'done';
 export type IssueType = 'story' | 'bug' | 'task';
 export type Priority = 'highest' | 'high' | 'medium' | 'low';
 export type SprintStatus = 'planned' | 'active' | 'completed';
+export type LinkType = 'relates_to' | 'blocks' | 'is_blocked_by' | 'duplicates' | 'is_duplicated_by';
 
 export interface User {
   id: string;
@@ -280,4 +281,22 @@ export interface WikiTemplate {
   icon: string | null;
   is_global: number;
   created_at: string;
+}
+
+export interface IssueLink {
+  id: string;
+  source_issue_id: string;
+  target_issue_id: string;
+  link_type: LinkType;
+  created_by: string | null;
+  created_at: string;
+  source_key: string;
+  source_title: string;
+  source_status: IssueStatus;
+  source_type: IssueType;
+  target_key: string;
+  target_title: string;
+  target_status: IssueStatus;
+  target_type: IssueType;
+  created_by_name?: string | null;
 }

@@ -18,7 +18,9 @@ import { useAuth } from '@/context/auth-provider';
 import { PRIORITIES, PRIORITY_LABEL, STATUSES, STATUS_LABEL, TYPE_LABEL, canCreateIssues, isAdmin } from '@/lib/domain';
 import type { ActivityEntry, Attachment, Comment, Issue, IssueStatus, Priority, Sprint, User } from '@/lib/types';
 import { formatBytes, timeAgo } from '@/lib/format';
-import { LabelChip, PriorityIcon, TypeIcon, UserAvatar } from './primitives';
+import { PriorityIcon, TypeIcon, UserAvatar } from './primitives';
+import { LabelsEditor } from './labels-editor';
+import { LinkedIssues } from './linked-issues';
 
 const UNASSIGNED = '__unassigned__';
 const NO_SPRINT = '__backlog__';
@@ -27,10 +29,13 @@ export function IssueDetailSheet({
   issueId,
   onOpenChange,
   onChanged,
+  onOpenIssue,
 }: {
   issueId: string | null;
   onOpenChange: (open: boolean) => void;
   onChanged?: () => void;
+  /** Navigate the sheet to another issue (used by linked issues). */
+  onOpenIssue?: (id: string) => void;
 }) {
   const { user } = useAuth();
   const [issue, setIssue] = useState<Issue | null>(null);
@@ -205,18 +210,29 @@ export function IssueDetailSheet({
                   </p>
                 </section>
 
-                {issue.labels_parsed?.length > 0 && (
-                  <section>
-                    <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Labels
-                    </h3>
-                    <div className="flex flex-wrap gap-1">
-                      {issue.labels_parsed.map((l) => (
-                        <LabelChip key={l}>{l}</LabelChip>
-                      ))}
-                    </div>
-                  </section>
-                )}
+                <section>
+                  <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Labels
+                  </h3>
+                  <LabelsEditor
+                    labels={issue.labels_parsed ?? []}
+                    canEdit={canEdit}
+                    // The column stores JSON; labels_parsed is the decoded view.
+                    onChange={(next) => patch({ labels: JSON.stringify(next) })}
+                  />
+                </section>
+
+                <section>
+                  <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Linked issues
+                  </h3>
+                  <LinkedIssues
+                    issueId={issue.id}
+                    projectId={issue.project_id}
+                    canEdit={canEdit}
+                    onOpenIssue={onOpenIssue}
+                  />
+                </section>
 
                 <Tabs defaultValue="comments">
                   <TabsList>

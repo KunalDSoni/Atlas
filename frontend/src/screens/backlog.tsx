@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
 import { useProjects } from '@/hooks/use-projects';
+import { useSettings } from '@/hooks/use-settings';
 import { STATUSES, STATUS_LABEL, canCreateIssues } from '@/lib/domain';
 import type { Issue, Sprint } from '@/lib/types';
 import {
@@ -14,9 +15,11 @@ import {
 } from '@/components/app/primitives';
 import { IssueDetailSheet } from '@/components/app/issue-detail-sheet';
 import { CreateIssueDialog } from '@/components/app/create-issue-dialog';
+import { cn } from '@/lib/utils';
 
 export default function BacklogScreen() {
   const { user } = useAuth();
+  const { compact } = useSettings();
   const { currentProject, currentProjectId, loading: projectsLoading } = useProjects();
   const [issues, setIssues] = useState<Issue[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
@@ -137,7 +140,7 @@ export default function BacklogScreen() {
               <li key={issue.id}>
                 <button
                   onClick={() => setOpenIssueId(issue.id)}
-                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-muted/60"
+                  className={cn('flex w-full items-center gap-3 px-4 text-left transition-colors hover:bg-muted/60', compact ? 'py-1.5' : 'py-2.5')}
                 >
                   <TypeIcon type={issue.type} />
                   <span className="w-16 shrink-0 font-mono text-xs text-muted-foreground">{issue.issue_key}</span>
@@ -166,7 +169,12 @@ export default function BacklogScreen() {
         </Card>
       )}
 
-      <IssueDetailSheet issueId={openIssueId} onOpenChange={(o) => !o && setOpenIssueId(null)} onChanged={load} />
+      <IssueDetailSheet
+        issueId={openIssueId}
+        onOpenChange={(o) => !o && setOpenIssueId(null)}
+        onChanged={load}
+        onOpenIssue={setOpenIssueId}
+      />
       <CreateIssueDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
