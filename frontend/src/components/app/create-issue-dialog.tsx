@@ -16,7 +16,7 @@ import { PriorityIcon, TypeIcon } from './primitives';
 
 const UNASSIGNED = '__unassigned__';
 const NO_SPRINT = '__backlog__';
-const TYPES: IssueType[] = ['story', 'task', 'bug'];
+const TYPES: IssueType[] = ['story', 'task', 'bug', 'epic'];
 
 export function CreateIssueDialog({
   open,
@@ -24,6 +24,7 @@ export function CreateIssueDialog({
   projectId,
   sprints,
   defaultSprintId,
+  defaultType = 'task',
   onCreated,
 }: {
   open: boolean;
@@ -31,6 +32,7 @@ export function CreateIssueDialog({
   projectId: string | null;
   sprints: Sprint[];
   defaultSprintId?: string | null;
+  defaultType?: IssueType;
   onCreated?: () => void;
 }) {
   const [title, setTitle] = useState('');
@@ -49,14 +51,14 @@ export function CreateIssueDialog({
     if (!open) return;
     setTitle('');
     setDescription('');
-    setType('task');
+    setType(defaultType);
     setStatus('todo');
     setPriority('medium');
     setAssigneeId(UNASSIGNED);
     setSprintId(defaultSprintId ?? NO_SPRINT);
     setPoints('');
     api.users.list().then((u) => setUsers(u.filter((x) => x.is_active))).catch(() => setUsers([]));
-  }, [open, defaultSprintId]);
+  }, [open, defaultSprintId, defaultType]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -70,7 +72,7 @@ export function CreateIssueDialog({
         status,
         priority,
         assignee_id: assigneeId === UNASSIGNED ? null : assigneeId,
-        sprint_id: sprintId === NO_SPRINT ? null : sprintId,
+        sprint_id: type === 'epic' || sprintId === NO_SPRINT ? null : sprintId,
         story_points: points ? Number(points) : null,
       });
       toast.success('Issue created');
@@ -183,18 +185,20 @@ export function CreateIssueDialog({
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <Label>Sprint</Label>
-                <Select value={sprintId} onValueChange={setSprintId}>
-                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NO_SPRINT}>Backlog</SelectItem>
-                    {sprints.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {type !== 'epic' && (
+                <div className="space-y-2">
+                  <Label>Sprint</Label>
+                  <Select value={sprintId} onValueChange={setSprintId}>
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NO_SPRINT}>Backlog</SelectItem>
+                      {sprints.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
           </div>
 
