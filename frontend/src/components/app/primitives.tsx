@@ -59,7 +59,7 @@ export function EpicBadge({
   className?: string;
 }) {
   return (
-    <span className={cn('max-w-32 truncate rounded px-1.5 py-0.5 text-[10px] font-semibold', epicColor(color).chip, className)}>
+    <span className={cn('inline-block max-w-32 truncate rounded px-1.5 py-0.5 text-[10px] font-semibold', epicColor(color).chip, className)}>
       {name}
     </span>
   );

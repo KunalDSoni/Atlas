@@ -91,8 +91,16 @@ export interface Issue {
   labels_parsed: string[];
 }
 
-/** Epic row with child rollups, from GET /projects/:id/epics. */
-export interface EpicSummary extends Issue {
+/**
+ * Epic row with child rollups, from GET /projects/:id/epics.
+ * Raw DB row + assignee join + rollups — NOT enriched like Issue
+ * (no labels_parsed, comment_count, epic_key, watcher/link counts).
+ */
+export interface EpicSummary extends Pick<Issue,
+  | 'id' | 'project_id' | 'sprint_id' | 'issue_key' | 'issue_number' | 'title' | 'description'
+  | 'type' | 'status' | 'priority' | 'assignee_id' | 'reporter_id' | 'parent_id'
+  | 'story_points' | 'labels' | 'due_date' | 'board_order' | 'created_at' | 'updated_at'
+  | 'epic_color' | 'assignee_name' | 'assignee_color'> {
   child_count: number;
   done_count: number;
   total_points: number;
