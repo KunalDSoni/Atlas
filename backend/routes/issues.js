@@ -15,6 +15,27 @@ const { serverError } = require('../utils/errors');
 
 const requireBoardAdmin = requireRole('admin', 'board_admin');
 
+// Hierarchy rules: an issue's parent must be an epic in the same project;
+// epics themselves take no parent and no sprint. Returns an error message or null.
+async function validateHierarchy(db, { id, projectId, type, parentId, sprintId }) {
+  if (type === 'epic') {
+    if (parentId) return 'An epic cannot have a parent';
+    if (sprintId) return 'An epic cannot be assigned to a sprint';
+    if (id) return null;
+  }
+  if (id && type !== 'epic') {
+    const children = await queryOne(db, 'SELECT COUNT(*) as count FROM issues WHERE parent_id = ?', [id]);
+    if (children.count > 0) return 'Cannot change type: this epic still has child issues';
+  }
+  if (parentId) {
+    const parent = await queryOne(db, 'SELECT id, type, project_id FROM issues WHERE id = ?', [parentId]);
+    if (!parent) return 'Parent issue not found';
+    if (parent.type !== 'epic') return 'Parent must be an epic';
+    if (parent.project_id !== projectId) return 'Parent epic must be in the same project';
+  }
+  return null;
+}
+
 const router = express.Router();
 
 async function enrichIssue(db, issue) {
@@ -23,6 +44,9 @@ async function enrichIssue(db, issue) {
     : null;
   const reporter = issue.reporter_id
     ? await queryOne(db, 'SELECT name, avatar_color FROM users WHERE id = ?', [issue.reporter_id])
+    : null;
+  const parent = issue.parent_id
+    ? await queryOne(db, 'SELECT issue_key, title, epic_color FROM issues WHERE id = ?', [issue.parent_id])
     : null;
   const commentCount = await queryOne(db, 'SELECT COUNT(*) as count FROM comments WHERE issue_id = ?', [issue.id]);
   const attachmentCount = await queryOne(db, 'SELECT COUNT(*) as count FROM attachments WHERE issue_id = ?', [issue.id]);
@@ -35,6 +59,9 @@ async function enrichIssue(db, issue) {
     assignee_color: assignee?.avatar_color || null,
     reporter_name: reporter?.name || null,
     reporter_color: reporter?.avatar_color || null,
+    epic_key: parent?.issue_key || null,
+    epic_title: parent?.title || null,
+    epic_badge_color: parent?.epic_color || null,
     comment_count: commentCount.count,
     attachment_count: attachmentCount.count,
     watcher_count: watcherCount.count,
@@ -72,15 +99,24 @@ router.post('/projects/:projectId/issues', requireAuth, requireBoardAdmin, async
     const issueNumber = issueCount.count + 1;
     const id = uuidv4();
 
-    const { title, description, type, priority, assignee_id, reporter_id, sprint_id, story_points, due_date, labels, original_estimate } = req.body;
+    const { title, description, type, priority, assignee_id, reporter_id, sprint_id, story_points, due_date, labels, original_estimate, parent_id, epic_color } = req.body;
     if (!title) return res.status(400).json({ error: 'Title required' });
 
-    await run(db, `INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, assignee_id, reporter_id, sprint_id, story_points, due_date, labels, original_estimate, board_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+    const hierarchyError = await validateHierarchy(db, {
+      projectId: req.params.projectId,
+      type: type || 'task',
+      parentId: parent_id || null,
+      sprintId: sprint_id || null,
+    });
+    if (hierarchyError) return res.status(400).json({ error: hierarchyError });
+
+    await run(db, `INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, assignee_id, reporter_id, sprint_id, story_points, due_date, labels, original_estimate, parent_id, epic_color, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
       [id, req.params.projectId, `${project.key}-${issueNumber}`, issueNumber,
        title, description || '', type || 'task', priority || 'medium',
        assignee_id || null, reporter_id || req.userId, sprint_id || null,
-       story_points || null, due_date || null, labels || '[]', original_estimate || null]);
+       story_points || null, due_date || null, labels || '[]', original_estimate || null,
+       parent_id || null, epic_color || 'purple']);
 
     const issue = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [id]);
     auditLog({ userId: req.userId, action: 'Created issue', category: 'issues', entityType: 'issue', entityId: id, entityName: issue.issue_key, details: { title, type: type || 'task', priority: priority || 'medium' } });
@@ -105,7 +141,19 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
     const issue = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
     if (!issue) return res.status(404).json({ error: 'Issue not found' });
 
-    const allowed = ['title', 'description', 'type', 'status', 'priority', 'assignee_id', 'sprint_id', 'story_points', 'board_order', 'labels', 'due_date', 'original_estimate', 'time_spent'];
+    const nextType = req.body.type !== undefined ? req.body.type : issue.type;
+    const nextParent = req.body.parent_id !== undefined ? req.body.parent_id : issue.parent_id;
+    const nextSprint = req.body.sprint_id !== undefined ? req.body.sprint_id : issue.sprint_id;
+    const hierarchyError = await validateHierarchy(db, {
+      id: issue.id,
+      projectId: issue.project_id,
+      type: nextType,
+      parentId: nextParent,
+      sprintId: nextSprint,
+    });
+    if (hierarchyError) return res.status(400).json({ error: hierarchyError });
+
+    const allowed = ['title', 'description', 'type', 'status', 'priority', 'assignee_id', 'sprint_id', 'story_points', 'board_order', 'labels', 'due_date', 'original_estimate', 'time_spent', 'parent_id', 'epic_color'];
     const updates = [];
     const params = [];
     const activityEntries = [];
@@ -117,7 +165,7 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
         params.push(newVal);
         // Log activity for meaningful field changes
         if (key !== 'board_order' && String(oldVal) !== String(newVal)) {
-          activityEntries.push({ field: key, old_value: oldVal, new_value: String(newVal) });
+          activityEntries.push({ field: key === 'parent_id' ? 'epic' : key, old_value: oldVal, new_value: String(newVal) });
         }
       }
     }
@@ -162,6 +210,10 @@ router.put('/issues/:id/move', requireAuth, async (req, res) => {
     const db = await getDb();
     const issue = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
     if (!issue) return res.status(404).json({ error: 'Issue not found' });
+
+    if (issue.type === 'epic' && req.body.sprint_id) {
+      return res.status(400).json({ error: 'An epic cannot be assigned to a sprint' });
+    }
 
     const { status, sprint_id, board_order } = req.body;
     const updates = [];
