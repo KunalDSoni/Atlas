@@ -29,6 +29,9 @@ npm-debug.log*
 dist/
 *.tgz
 
+# TypeScript incremental build cache
+*.tsbuildinfo
+
 # Coverage
 coverage/
 

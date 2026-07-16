@@ -5,7 +5,7 @@ services:
   - type: web
     name: atlas
     runtime: node
-    buildCommand: cd backend && npm install
+    buildCommand: cd frontend && npm ci && npm run build && cd ../backend && npm install
     startCommand: cd backend && node server.js
     envVars:
       - key: NODE_ENV

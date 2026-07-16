@@ -9,11 +9,16 @@ Open `atlas.html` directly in your browser. All data is in-memory and resets on 
 
 **Option B: Full-stack with database**
 ```bash
-cd backend
-npm install
-node server.js
+# 1. Build the frontend (Vite + React + TypeScript + Tailwind + shadcn/ui)
+cd frontend && npm install && npm run build
+
+# 2. Run the backend, which serves the built app
+cd ../backend && npm install && node server.js
 # Open http://localhost:3001
 ```
+
+For frontend development with hot reload, run the backend and then
+`cd frontend && npm run dev` — Vite proxies `/api` to port 3001.
 
 ## Default Credentials
 
@@ -41,7 +46,7 @@ atlas/
 │   ├── database.js         # SQLite schema + seed data
 │   ├── package.json
 │   ├── middleware/
-│   │   └── auth.js         # Auth middleware (session token + legacy headers)
+│   │   └── auth.js         # Auth middleware (session token only)
 │   └── routes/
 │       ├── auth.js          # POST /login, /logout, GET /me
 │       ├── users.js         # CRUD user management (admin)
@@ -52,9 +57,21 @@ atlas/
 │       ├── issues.js        # CRUD issues + move (drag & drop)
 │       ├── comments.js      # CRUD comments (author/admin permissions)
 │       └── admin.js         # Admin dashboard stats
-└── frontend/
-    └── build/
-        └── index.html       # React SPA (served by backend)
+└── frontend/               # Vite + React + TypeScript + Tailwind + shadcn/ui
+    ├── components.json     # shadcn/ui config
+    ├── public/
+    │   └── wiki.html       # Wiki app (copied into build/, served at /wiki)
+    ├── src/
+    │   ├── main.tsx        # entry
+    │   ├── App.tsx         # routing + providers
+    │   ├── index.css       # design tokens (light + dark)
+    │   ├── components/ui/  # shadcn/ui components
+    │   ├── components/app/ # Atlas components (shell, charts, dialogs)
+    │   ├── context/        # auth + theme providers
+    │   ├── hooks/          # shared data hooks
+    │   ├── lib/            # api client, types, domain, formatting
+    │   └── screens/        # one file per screen
+    └── build/              # Vite output — served by the backend
 ```
 
 ## API Reference
@@ -136,7 +153,7 @@ atlas/
 
 ## Tech Stack
 
-- **Frontend**: React 18 + Babel (single HTML, no build step)
+- **Frontend**: React 18 + TypeScript + Vite + Tailwind CSS v4 + shadcn/ui (light & dark)
 - **Backend**: Node.js + Express 5
 - **Database**: sql.js (SQLite) for local dev, MySQL for production — set `DB_DRIVER`
 - **Auth**: Session tokens (`x-auth-token`), scrypt-hashed passwords
