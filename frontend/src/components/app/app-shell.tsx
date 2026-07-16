@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   ChevronsUpDown, Columns3, FileClock, Gauge, LayoutDashboard, ListTodo, LogOut, Menu,
-  Monitor, Moon, Rocket, Settings as SettingsIcon, Shield, Sun, User as UserIcon, Users, BookOpen,
+  Monitor, Moon, Rocket, Search, Settings as SettingsIcon, Shield, Sun, User as UserIcon, Users, BookOpen,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -18,6 +18,7 @@ import { useProjects } from '@/hooks/use-projects';
 import { isAdmin } from '@/lib/domain';
 import { cn } from '@/lib/utils';
 import { UserAvatar } from './primitives';
+import { CommandPalette } from './command-palette';
 
 interface NavItem {
   to: string;
@@ -235,12 +236,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </SheetContent>
           </Sheet>
 
+          {/* Announce ⌘K rather than hiding it behind a shortcut nobody discovers. */}
+          <button
+            onClick={() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))}
+            className="hidden items-center gap-2 rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground sm:flex"
+            aria-label="Open command palette"
+          >
+            <Search className="size-3.5" />
+            <span>Search…</span>
+            <kbd className="rounded border border-border bg-background px-1 font-mono text-[10px]">⌘K</kbd>
+          </button>
+
           <div className="flex-1" />
           <ThemeToggle />
           <UserMenu />
         </header>
 
         <main className="min-w-0 flex-1 p-4 sm:p-6">{children}</main>
+        <CommandPalette />
       </div>
     </div>
   );

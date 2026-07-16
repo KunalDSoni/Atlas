@@ -4,7 +4,7 @@
 import {
   ArrowDown, ArrowUp, Bug, ChevronsUp, Bookmark, CheckSquare, Minus,
 } from 'lucide-react';
-import type { IssueStatus, IssueType, Priority, Role, SprintStatus } from './types';
+import type { IssueStatus, IssueType, LinkType, Priority, Role, SprintStatus } from './types';
 
 export const STATUSES: IssueStatus[] = ['todo', 'in_progress', 'in_review', 'done'];
 
@@ -89,3 +89,14 @@ export function canDragIssues(role?: Role) {
 export function isAdmin(role?: Role) {
   return role === 'admin';
 }
+
+export const LINK_TYPES: LinkType[] = ['relates_to', 'blocks', 'is_blocked_by', 'duplicates', 'is_duplicated_by'];
+
+/** A link row is shared by both issues, so each type reads differently per side. */
+export const LINK_TYPE_LABEL: Record<LinkType, { out: string; in: string }> = {
+  relates_to: { out: 'relates to', in: 'relates to' },
+  blocks: { out: 'blocks', in: 'is blocked by' },
+  is_blocked_by: { out: 'is blocked by', in: 'blocks' },
+  duplicates: { out: 'duplicates', in: 'is duplicated by' },
+  is_duplicated_by: { out: 'is duplicated by', in: 'duplicates' },
+};

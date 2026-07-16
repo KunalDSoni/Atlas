@@ -6,6 +6,7 @@
 import type {
   ActivityEntry, AdminStats, Attachment, AuditLogPage, AuthUser, Comment, Issue,
   ProfileResponse, Project, ProjectMember, ProjectStats, Settings, Sprint, User,
+  IssueLink, LinkType,
   WikiComment, WikiPage, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
 } from './types';
 
@@ -176,6 +177,13 @@ export const api = {
     unwatch: (issueId: string) => del<{ ok: boolean }>(`/issues/${issueId}/watchers`),
   },
 
+  links: {
+    list: (issueId: string) => get<IssueLink[]>(`/issues/${issueId}/links`),
+    create: (issueId: string, target_issue_id: string, link_type: LinkType) =>
+      post<IssueLink>(`/issues/${issueId}/links`, { target_issue_id, link_type }),
+    remove: (linkId: string) => del<{ ok: boolean }>(`/issue-links/${linkId}`),
+  },
+
   admin: {
     stats: () => get<AdminStats>('/admin/stats'),
     auditLog: (params: { page?: number; limit?: number; category?: string; q?: string } = {}) => {
@@ -218,6 +226,9 @@ export const api = {
 
   reports: {
     velocity: (projectId: string) => get<unknown>(`/projects/${projectId}/reports/velocity`),
+    sprint: (projectId: string) => get<unknown>(`/projects/${projectId}/reports/sprint`),
+    burndown: (projectId: string) => get<unknown>(`/projects/${projectId}/reports/burndown`),
+    resolution: (projectId: string) => get<unknown>(`/projects/${projectId}/reports/resolution`),
     workload: (projectId: string) => get<unknown>(`/projects/${projectId}/reports/workload`),
     typeDistribution: (projectId: string) => get<unknown>(`/projects/${projectId}/reports/type-distribution`),
     priorityDistribution: (projectId: string) => get<unknown>(`/projects/${projectId}/reports/priority-distribution`),

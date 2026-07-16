@@ -5,6 +5,7 @@ import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider, useAuth } from '@/context/auth-provider';
 import { ThemeProvider } from '@/context/theme-provider';
 import { ProjectsProvider } from '@/hooks/use-projects';
+import { SettingsProvider } from '@/hooks/use-settings';
 import { AppShell } from '@/components/app/app-shell';
 import LoginScreen from '@/screens/login';
 
@@ -49,6 +50,7 @@ function RequireAdmin({ children }: { children: React.ReactNode }) {
 function ProtectedLayout() {
   return (
     <RequireAuth>
+      <SettingsProvider>
       <ProjectsProvider>
         <AppShell>
           <Suspense fallback={<div className="grid h-64 place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>}>
@@ -72,6 +74,7 @@ function ProtectedLayout() {
           </Suspense>
         </AppShell>
       </ProjectsProvider>
+      </SettingsProvider>
     </RequireAuth>
   );
 }

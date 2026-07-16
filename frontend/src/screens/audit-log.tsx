@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { api } from '@/lib/api';
+import { useSettings } from '@/hooks/use-settings';
 import type { AuditLogPage } from '@/lib/types';
 import { EmptyState, ErrorState, PageHeader, RowsSkeleton, UserAvatar } from '@/components/app/primitives';
 import { timeAgo } from '@/lib/format';
@@ -13,6 +14,7 @@ const CATEGORIES = ['auth', 'users', 'projects', 'sprints', 'issues', 'comments'
 const ALL = '__all__';
 
 export default function AuditLogScreen() {
+  const { pageSize } = useSettings();
   const [data, setData] = useState<AuditLogPage | null>(null);
   const [page, setPage] = useState(1);
   const [category, setCategory] = useState(ALL);
@@ -37,7 +39,7 @@ export default function AuditLogScreen() {
       setData(
         await api.admin.auditLog({
           page,
-          limit: 25,
+          limit: pageSize,
           category: category === ALL ? undefined : category,
           q: debounced || undefined,
         }),
@@ -47,11 +49,16 @@ export default function AuditLogScreen() {
     } finally {
       setLoading(false);
     }
-  }, [page, category, debounced]);
+  }, [page, category, debounced, pageSize]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // A smaller page size can leave the current page out of range.
+  useEffect(() => {
+    setPage(1);
+  }, [pageSize]);
 
   return (
     <>

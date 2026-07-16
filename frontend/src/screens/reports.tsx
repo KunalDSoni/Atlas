@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Download, Gauge, Table2 } from 'lucide-react';
+import { CheckCircle2, Clock, Download, Gauge, Table2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { api, getToken } from '@/lib/api';
 import { useProjects } from '@/hooks/use-projects';
 import { PRIORITIES, PRIORITY_LABEL, STATUS_LABEL, STATUSES, TYPE_LABEL } from '@/lib/domain';
 import type { IssueStatus, IssueType, Priority } from '@/lib/types';
 import { EmptyState, ErrorState, PageHeader, UserAvatar } from '@/components/app/primitives';
-import { DataTable, GroupedColumns, HBarChart, Legend, StackedBar, seriesColor } from '@/components/app/charts';
+import { DataTable, GroupedColumns, HBarChart, Legend, LineChart, StackedBar, seriesColor } from '@/components/app/charts';
 import { toast } from 'sonner';
 
 /** Story → Task → Bug reads as a workflow; alphabetical does not. */
@@ -40,6 +41,29 @@ interface WorkloadResponse {
 }
 
 type DistRow<K extends string> = Record<K, string> & { status: IssueStatus; count: number; points: number };
+
+interface SprintReportRow {
+  id: string;
+  name: string;
+  status: string;
+  total_issues: number;
+  completed_issues: number;
+  incomplete_issues: number;
+  total_points: number;
+  completed_points: number;
+  completion_rate: number;
+}
+
+interface BurndownResponse {
+  sprint: { id: string; name: string; start_date: string; end_date: string; total_points: number } | null;
+  data: { date: string; ideal: number; actual: number }[];
+}
+
+interface ResolutionResponse {
+  total_resolved: number;
+  avg_resolution_days: number;
+  by_priority: { priority: string; total: number; resolved: number; avg_days: number | null }[];
+}
 
 /**
  * Collapse a status-split distribution into totals per key, in a caller-supplied
@@ -102,6 +126,9 @@ export default function ReportsScreen() {
   const [workload, setWorkload] = useState<WorkloadResponse | null>(null);
   const [types, setTypes] = useState<DistRow<'type'>[] | null>(null);
   const [priorities, setPriorities] = useState<DistRow<'priority'>[] | null>(null);
+  const [sprintReport, setSprintReport] = useState<SprintReportRow[] | null>(null);
+  const [burndown, setBurndown] = useState<BurndownResponse | null>(null);
+  const [resolution, setResolution] = useState<ResolutionResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -110,16 +137,22 @@ export default function ReportsScreen() {
     setLoading(true);
     setError(null);
     try {
-      const [v, w, t, p] = await Promise.all([
+      const [v, w, t, p, sr, bd, rs] = await Promise.all([
         api.reports.velocity(currentProjectId),
         api.reports.workload(currentProjectId),
         api.reports.typeDistribution(currentProjectId),
         api.reports.priorityDistribution(currentProjectId),
+        api.reports.sprint(currentProjectId).catch(() => null),
+        api.reports.burndown(currentProjectId).catch(() => null),
+        api.reports.resolution(currentProjectId).catch(() => null),
       ]);
       setVelocity(v as VelocityResponse);
       setWorkload(w as WorkloadResponse);
       setTypes(t as DistRow<'type'>[]);
       setPriorities(p as DistRow<'priority'>[]);
+      setSprintReport(sr as SprintReportRow[] | null);
+      setBurndown(bd as BurndownResponse | null);
+      setResolution(rs as ResolutionResponse | null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load reports');
     } finally {
@@ -197,7 +230,60 @@ export default function ReportsScreen() {
         }
       />
 
+      {/* Resolution headline — a hero number reads better than a chart for one value. */}
+      {resolution && (
+        <div className="mb-4 grid gap-3 sm:grid-cols-2">
+          <Card>
+            <CardContent className="flex items-center gap-3 px-4 py-3.5">
+              <span className="grid size-9 shrink-0 place-items-center rounded-md bg-success-muted text-success">
+                <CheckCircle2 className="size-4.5" />
+              </span>
+              <span>
+                <span className="block text-2xl font-semibold leading-none tabular-nums">
+                  {resolution.total_resolved}
+                </span>
+                <span className="mt-1 block text-xs text-muted-foreground">Issues resolved</span>
+              </span>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="flex items-center gap-3 px-4 py-3.5">
+              <span className="grid size-9 shrink-0 place-items-center rounded-md bg-primary-muted text-accent-foreground">
+                <Clock className="size-4.5" />
+              </span>
+              <span>
+                <span className="block text-2xl font-semibold leading-none tabular-nums">
+                  {resolution.avg_resolution_days ?? 0}
+                  <span className="ml-1 text-sm font-normal text-muted-foreground">days</span>
+                </span>
+                <span className="mt-1 block text-xs text-muted-foreground">Average resolution time</span>
+              </span>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       <div className="grid gap-4 lg:grid-cols-2">
+        {burndown?.sprint && burndown.data.length > 1 && (
+          <ChartCard
+            title="Sprint burndown"
+            description={`${burndown.sprint.name} · ${burndown.sprint.total_points} points committed`}
+            table={
+              <DataTable
+                caption="Ideal versus actual remaining points per day"
+                columns={['Date', 'Ideal', 'Actual']}
+                rows={burndown.data.map((d) => [d.date, d.ideal, d.actual])}
+              />
+            }
+          >
+            <LineChart
+              series={['Ideal', 'Actual']}
+              points={burndown.data.map((d) => ({ label: d.date.slice(5), values: [d.ideal, d.actual] }))}
+              formatValue={(n) => `${n} pts`}
+            />
+          </ChartCard>
+        )}
+
         <ChartCard
           title="Sprint velocity"
           description={`Average ${velocity?.average_velocity ?? 0} points completed per sprint`}
@@ -272,6 +358,65 @@ export default function ReportsScreen() {
             data={typeTotals.map(([k, v]) => ({ label: TYPE_LABEL[k as IssueType] ?? k, value: v }))}
           />
         </ChartCard>
+
+        {sprintReport && sprintReport.length > 0 && (
+          <ChartCard
+            title="Sprint report"
+            description="Completion rate per sprint"
+            table={
+              <DataTable
+                caption="Sprint completion"
+                columns={['Sprint', 'Done', 'Total', 'Rate']}
+                rows={sprintReport.map((r) => [r.name, r.completed_issues, r.total_issues, `${r.completion_rate}%`])}
+              />
+            }
+          >
+            <ul className="space-y-3">
+              {sprintReport.map((r) => (
+                <li key={r.id} className="space-y-1.5">
+                  <div className="flex items-baseline justify-between gap-2 text-xs">
+                    <span className="min-w-0 truncate font-medium">{r.name}</span>
+                    <span className="shrink-0 tabular-nums text-muted-foreground">
+                      {r.completed_issues}/{r.total_issues} · {r.completion_rate}%
+                    </span>
+                  </div>
+                  <Progress value={r.completion_rate} className="h-2" />
+                  <p className="text-[11px] text-muted-foreground">
+                    {r.completed_points}/{r.total_points} points · {r.status}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </ChartCard>
+        )}
+
+        {resolution && resolution.by_priority.length > 0 && (
+          <ChartCard
+            title="Resolution time by priority"
+            description="Average days from created to done"
+            table={
+              <DataTable
+                caption="Resolution time by priority"
+                columns={['Priority', 'Resolved', 'Total', 'Avg days']}
+                rows={resolution.by_priority.map((r) => [
+                  PRIORITY_LABEL[r.priority as Priority] ?? r.priority,
+                  r.resolved,
+                  r.total,
+                  r.avg_days ?? '—',
+                ])}
+              />
+            }
+          >
+            <HBarChart
+              colorIndex={1}
+              formatValue={(n) => `${n}d`}
+              data={PRIORITIES.filter((p) => resolution.by_priority.some((r) => r.priority === p)).map((p) => ({
+                label: PRIORITY_LABEL[p],
+                value: resolution.by_priority.find((r) => r.priority === p)?.avg_days ?? 0,
+              }))}
+            />
+          </ChartCard>
+        )}
 
         <ChartCard
           title="Issues by priority"
