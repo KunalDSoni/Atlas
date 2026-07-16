@@ -3,6 +3,7 @@ import { Eye, EyeOff, Loader2, Paperclip, Send, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -15,15 +16,17 @@ import {
 } from '@/components/ui/alert-dialog';
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
-import { PRIORITIES, PRIORITY_LABEL, STATUSES, STATUS_LABEL, TYPE_LABEL, canCreateIssues, isAdmin } from '@/lib/domain';
-import type { ActivityEntry, Attachment, Comment, Issue, IssueStatus, Priority, Sprint, User } from '@/lib/types';
+import { EPIC_COLORS, PRIORITIES, PRIORITY_LABEL, STATUSES, STATUS_LABEL, TYPE_LABEL, canCreateIssues, epicColor, isAdmin } from '@/lib/domain';
+import type { ActivityEntry, Attachment, Comment, EpicSummary, Issue, IssueStatus, Priority, Sprint, User } from '@/lib/types';
 import { formatBytes, timeAgo } from '@/lib/format';
-import { PriorityIcon, TypeIcon, UserAvatar } from './primitives';
+import { cn } from '@/lib/utils';
+import { PriorityIcon, StatusPill, TypeIcon, UserAvatar } from './primitives';
 import { LabelsEditor } from './labels-editor';
 import { LinkedIssues } from './linked-issues';
 
 const UNASSIGNED = '__unassigned__';
 const NO_SPRINT = '__backlog__';
+const NO_EPIC = '__no_epic__';
 
 export function IssueDetailSheet({
   issueId,
@@ -45,6 +48,9 @@ export function IssueDetailSheet({
   const [watchers, setWatchers] = useState<User[]>([]);
   const [members, setMembers] = useState<User[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
+  const [epics, setEpics] = useState<EpicSummary[]>([]);
+  const [children, setChildren] = useState<Issue[]>([]);
+  const [candidates, setCandidates] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(false);
   const [commentBody, setCommentBody] = useState('');
   const [posting, setPosting] = useState(false);
@@ -57,13 +63,16 @@ export function IssueDetailSheet({
     try {
       const detail = await api.issues.get(issueId);
       setIssue(detail);
-      const [c, a, act, w, u, sp] = await Promise.all([
+      const [c, a, act, w, u, sp, ep, ch, all] = await Promise.all([
         api.comments.list(issueId).catch(() => []),
         api.attachments.list(issueId).catch(() => []),
         api.activity.list(issueId).catch(() => []),
         api.watchers.list(issueId).catch(() => []),
         api.users.list().catch(() => []),
         api.sprints.list(detail.project_id).catch(() => []),
+        api.epics.list(detail.project_id).catch(() => []),
+        detail.type === 'epic' ? api.epics.children(detail.id).catch(() => []) : Promise.resolve([]),
+        detail.type === 'epic' ? api.issues.list(detail.project_id).catch(() => []) : Promise.resolve([]),
       ]);
       setComments(c);
       setAttachments(a);
@@ -71,6 +80,9 @@ export function IssueDetailSheet({
       setWatchers(w);
       setMembers(u.filter((x) => x.is_active));
       setSprints(sp);
+      setEpics(ep.filter((e) => e.id !== detail.id));
+      setChildren(ch);
+      setCandidates(all.filter((i) => i.type !== 'epic' && !i.parent_id));
     } catch (e) {
       toast.error('Could not load issue', { description: e instanceof Error ? e.message : undefined });
     } finally {
@@ -209,6 +221,74 @@ export function IssueDetailSheet({
                     {issue.description || <span className="text-faint">No description.</span>}
                   </p>
                 </section>
+
+                {issue.type === 'epic' && (
+                  <section>
+                    <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Child issues ({children.length})
+                    </h3>
+                    {children.length > 0 && (
+                      <div className="mb-2 flex items-center gap-2">
+                        <Progress
+                          value={children.length === 0 ? 0 : Math.round((children.filter((c) => c.status === 'done').length / children.length) * 100)}
+                          className="h-1.5"
+                        />
+                        <span className="whitespace-nowrap text-[11px] tabular-nums text-muted-foreground">
+                          {children.filter((c) => c.status === 'done').length}/{children.length} done
+                        </span>
+                      </div>
+                    )}
+                    <ul className="divide-y divide-border-light rounded-md border border-border">
+                      {children.map((c) => (
+                        <li key={c.id}>
+                          <button
+                            onClick={() => onOpenIssue?.(c.id)}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted/60"
+                          >
+                            <TypeIcon type={c.type} />
+                            <span className="font-mono text-xs text-muted-foreground">{c.issue_key}</span>
+                            <span className="min-w-0 flex-1 truncate">{c.title}</span>
+                            <StatusPill status={c.status} className="shrink-0" />
+                            {c.assignee_name && <UserAvatar name={c.assignee_name} color={c.assignee_color} className="size-5" />}
+                          </button>
+                        </li>
+                      ))}
+                      {children.length === 0 && (
+                        <li className="px-3 py-3 text-sm text-muted-foreground">No child issues yet.</li>
+                      )}
+                    </ul>
+                    {canEdit && candidates.length > 0 && (
+                      <div className="mt-2">
+                        <Select
+                          value=""
+                          onValueChange={async (childId) => {
+                            try {
+                              await api.issues.update(childId, { parent_id: issue.id });
+                              onChanged?.();
+                              void load();
+                            } catch (e) {
+                              toast.error('Could not add issue to epic', { description: e instanceof Error ? e.message : undefined });
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="w-full text-muted-foreground">
+                            <SelectValue placeholder="Add an existing issue…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {candidates.map((c) => (
+                              <SelectItem key={c.id} value={c.id}>
+                                <span className="flex items-center gap-2">
+                                  <TypeIcon type={c.type} />
+                                  <span className="font-mono text-xs">{c.issue_key}</span> {c.title}
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </section>
+                )}
 
                 <section>
                   <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -394,22 +474,70 @@ export function IssueDetailSheet({
                   </Select>
                 </div>
 
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Sprint</Label>
-                  <Select
-                    value={issue.sprint_id ?? NO_SPRINT}
-                    onValueChange={(v) => patch({ sprint_id: v === NO_SPRINT ? null : v })}
-                    disabled={!canEdit}
-                  >
-                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={NO_SPRINT}>Backlog</SelectItem>
-                      {sprints.map((s) => (
-                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                {issue.type !== 'epic' && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Sprint</Label>
+                    <Select
+                      value={issue.sprint_id ?? NO_SPRINT}
+                      onValueChange={(v) => patch({ sprint_id: v === NO_SPRINT ? null : v })}
+                      disabled={!canEdit}
+                    >
+                      <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NO_SPRINT}>Backlog</SelectItem>
+                        {sprints.map((s) => (
+                          <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {issue.type !== 'epic' && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Epic</Label>
+                    <Select
+                      value={issue.parent_id ?? NO_EPIC}
+                      onValueChange={(v) => patch({ parent_id: v === NO_EPIC ? null : v })}
+                      disabled={!canEdit}
+                    >
+                      <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NO_EPIC}>No epic</SelectItem>
+                        {epics.map((e) => (
+                          <SelectItem key={e.id} value={e.id}>
+                            <span className="flex items-center gap-2">
+                              <span className={cn('size-2.5 rounded-sm', epicColor(e.epic_color).swatch)} />
+                              {e.title}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {issue.type === 'epic' && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Epic color</Label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {Object.entries(EPIC_COLORS).map(([name, c]) => (
+                        <button
+                          key={name}
+                          type="button"
+                          disabled={!canEdit}
+                          onClick={() => patch({ epic_color: name })}
+                          aria-label={c.label}
+                          className={cn(
+                            'size-5 rounded-full transition-transform hover:scale-110',
+                            c.swatch,
+                            issue.epic_color === name && 'ring-2 ring-ring ring-offset-2 ring-offset-background',
+                          )}
+                        />
                       ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                    </div>
+                  </div>
+                )}
 
                 <Separator />
 
