@@ -19,6 +19,9 @@ const AdminOverview = lazy(() => import('@/screens/admin-overview'));
 const AdminUsers = lazy(() => import('@/screens/admin-users'));
 const AdminProjects = lazy(() => import('@/screens/admin-projects'));
 const AuditLog = lazy(() => import('@/screens/audit-log'));
+const WikiHome = lazy(() => import('@/screens/wiki-home'));
+const WikiSpace = lazy(() => import('@/screens/wiki-space'));
+const WikiPage = lazy(() => import('@/screens/wiki-page'));
 
 function FullPageSpinner() {
   return (
@@ -55,6 +58,9 @@ function ProtectedLayout() {
               <Route path="/backlog" element={<Backlog />} />
               <Route path="/sprints" element={<Sprints />} />
               <Route path="/reports" element={<Reports />} />
+              <Route path="/wiki" element={<WikiHome />} />
+              <Route path="/wiki/space/:spaceId" element={<WikiSpace />} />
+              <Route path="/wiki/page/:pageId" element={<WikiPage />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/admin" element={<RequireAdmin><AdminOverview /></RequireAdmin>} />

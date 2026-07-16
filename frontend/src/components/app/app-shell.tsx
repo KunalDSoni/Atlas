@@ -33,6 +33,8 @@ const PROJECT_NAV: NavItem[] = [
   { to: '/reports', label: 'Reports', icon: Gauge },
 ];
 
+const WIKI_NAV: NavItem[] = [{ to: '/wiki', label: 'Wiki', icon: BookOpen }];
+
 const ADMIN_NAV: NavItem[] = [
   { to: '/admin', label: 'Overview', icon: Shield },
   { to: '/admin/users', label: 'Users', icon: Users },
@@ -49,7 +51,7 @@ function NavSection({ title, items, onNavigate }: { title: string; items: NavIte
           <NavLink
             key={to}
             to={to}
-            end={to === '/admin'}
+            end={to === '/admin' || to === '/wiki'}
             onClick={onNavigate}
             className={({ isActive }) =>
               cn(
@@ -135,15 +137,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             <NavSection title="Administration" items={ADMIN_NAV} onNavigate={onNavigate} />
           </>
         )}
-        <div className="px-3 py-2">
-          <a
-            href="/wiki"
-            className="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <BookOpen className="size-4 shrink-0" />
-            <span>Wiki</span>
-          </a>
-        </div>
+        <Separator className="my-2" />
+        <NavSection title="Knowledge" items={WIKI_NAV} onNavigate={onNavigate} />
       </ScrollArea>
     </div>
   );

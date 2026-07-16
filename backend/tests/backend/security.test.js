@@ -5,13 +5,18 @@
  */
 const request = require('supertest');
 const { createTestApp, adminHeaders } = require('./setup');
-const { hashPassword, verifyPassword, isHashed } = require('../../utils/password');
-const { signedFileUrl, verifyFileSig } = require('../../utils/signing');
+
+// Required lazily inside tests: importing backend modules at the top level loads
+// config.js (and therefore dotenv) before setup.js can point the DB at :memory:,
+// which makes the suite write to the real dev database.
+let hashPassword, verifyPassword, isHashed, signedFileUrl, verifyFileSig;
 
 let app;
 
 beforeAll(async () => {
   app = await createTestApp();
+  ({ hashPassword, verifyPassword, isHashed } = require('../../utils/password'));
+  ({ signedFileUrl, verifyFileSig } = require('../../utils/signing'));
 });
 
 describe('Unauthenticated access', () => {
@@ -94,6 +99,69 @@ describe('Attachment access control', () => {
   test('download without a signature or session is rejected', async () => {
     const res = await request(app).get('/api/attachments/some-id/download');
     expect(res.status).toBe(401);
+  });
+});
+
+describe('Wiki HTML sanitisation', () => {
+  const { sanitizeRichText } = require('../../utils/sanitize');
+
+  test('strips <script> tags', () => {
+    expect(sanitizeRichText('<p>ok</p><script>alert(1)</script>')).toBe('<p>ok</p>');
+  });
+
+  test('strips inline event handlers', () => {
+    const out = sanitizeRichText('<img src="x" onerror="steal()">');
+    expect(out).not.toContain('onerror');
+    expect(out).not.toContain('steal');
+  });
+
+  test('strips javascript: URLs', () => {
+    const out = sanitizeRichText('<a href="javascript:evil()">click</a>');
+    expect(out).not.toContain('javascript:');
+  });
+
+  test('strips javascript inside inline styles', () => {
+    const out = sanitizeRichText('<div style="background:url(javascript:x);color:#0c66e4">hi</div>');
+    expect(out).not.toContain('javascript');
+    expect(out).toContain('color');
+  });
+
+  test('keeps legitimate formatting', () => {
+    const out = sanitizeRichText('<h2>Title</h2><p><strong>bold</strong> <em>italic</em></p><ul><li>item</li></ul>');
+    expect(out).toContain('<h2>Title</h2>');
+    expect(out).toContain('<strong>bold</strong>');
+    expect(out).toContain('<li>item</li>');
+  });
+
+  test('keeps external links but adds rel=noopener', () => {
+    const out = sanitizeRichText('<a href="https://example.com">link</a>');
+    expect(out).toContain('https://example.com');
+    expect(out).toContain('noopener');
+  });
+
+  test('handles empty and non-string input', () => {
+    expect(sanitizeRichText('')).toBe('');
+    expect(sanitizeRichText(null)).toBe('');
+    expect(sanitizeRichText(undefined)).toBe('');
+  });
+
+  test('a page body is sanitised on write, not just on render', async () => {
+    const headers = await adminHeaders();
+    const spaces = await request(app).get('/api/wiki/spaces').set(headers);
+    const spaceId = spaces.body[0]?.id;
+    if (!spaceId) return;
+
+    const created = await request(app)
+      .post(`/api/wiki/spaces/${spaceId}/pages`)
+      .set(headers)
+      .send({ title: 'XSS test', body: '<p>hi</p><script>alert(1)</script><img src=x onerror=go()>' });
+
+    expect(created.status).toBe(201);
+
+    const page = await request(app).get(`/api/wiki/pages/${created.body.id}`).set(headers);
+    expect(page.body.body).not.toContain('<script');
+    expect(page.body.body).not.toContain('onerror');
+    expect(page.body.body).toContain('<p>hi</p>');
   });
 });
 

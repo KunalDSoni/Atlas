@@ -120,11 +120,6 @@ app.use('/api', watchersRoutes);
 // Issue Links Module — linked issues
 app.use('/api', linksRoutes);
 
-// Wiki (Confluence) frontend
-app.get('/wiki', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'frontend', 'build', 'wiki.html'));
-});
-
 // SPA fallback (Express 5 compatible)
 app.get('/{*splat}', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'frontend', 'build', 'index.html'));

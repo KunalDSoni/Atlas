@@ -57,10 +57,20 @@ describeIfBuilt('Built SPA shell', () => {
 });
 
 describeIfBuilt('Served artifacts', () => {
-  test('the wiki app is still published alongside the SPA', () => {
-    // server.js serves GET /wiki from frontend/build/wiki.html — the Vite build must
-    // not wipe it (it is kept in frontend/public and copied through).
-    expect(fs.existsSync(path.join(BUILD_DIR, 'wiki.html'))).toBe(true);
+  test('the wiki is part of the SPA, not a separate page', () => {
+    // The wiki used to be a standalone frontend/build/wiki.html served by its own
+    // Express route. It is now /wiki inside the SPA, so that file must be gone and
+    // the route must fall through to the SPA's index.html.
+    expect(fs.existsSync(path.join(BUILD_DIR, 'wiki.html'))).toBe(false);
+
+    const server = fs.readFileSync(path.join(__dirname, '..', '..', 'server.js'), 'utf8');
+    expect(server).not.toContain('wiki.html');
+  });
+
+  test('the wiki screens are code-split into their own chunks', () => {
+    const assets = fs.readdirSync(path.join(BUILD_DIR, 'assets'));
+    expect(assets.some((f) => /^wiki-home-.*\.js$/.test(f))).toBe(true);
+    expect(assets.some((f) => /^wiki-page-.*\.js$/.test(f))).toBe(true);
   });
 });
 

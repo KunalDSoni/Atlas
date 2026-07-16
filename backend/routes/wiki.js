@@ -4,6 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
+const { sanitizeRichText } = require('../utils/sanitize');
 const router = express.Router();
 
 // ===== SPACES =====
@@ -136,7 +137,9 @@ router.get('/wiki/pages/starred', requireAuth, async (req, res) => {
 router.post('/wiki/spaces/:spaceId/pages', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const { title, body, parent_id, body_format, labels } = req.body;
+    const { title, parent_id, body_format, labels } = req.body;
+    // User-authored HTML is rendered into other users' browsers — clean it on write.
+    const body = sanitizeRichText(req.body.body);
     if (!title) return res.status(400).json({ error: 'Title required' });
     const id = uuidv4();
     const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
@@ -197,7 +200,8 @@ router.put('/wiki/pages/:id', requireAuth, async (req, res) => {
     const db = await getDb();
     const page = await queryOne(db, 'SELECT * FROM wiki_pages WHERE id = ?', [req.params.id]);
     if (!page) return res.status(404).json({ error: 'Page not found' });
-    const { title, body, parent_id, status, position, change_message } = req.body;
+    const { title, parent_id, status, position, change_message } = req.body;
+    const body = req.body.body === undefined ? undefined : sanitizeRichText(req.body.body);
     const updates = []; const params = [];
     if (title !== undefined) { updates.push('title = ?'); params.push(title); }
     if (body !== undefined) { updates.push('body = ?'); params.push(body); }
@@ -264,7 +268,8 @@ router.get('/wiki/pages/:id/comments', requireAuth, async (req, res) => {
 router.post('/wiki/pages/:id/comments', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const { body, parent_id } = req.body;
+    const { parent_id } = req.body;
+    const body = sanitizeRichText(req.body.body);
     if (!body) return res.status(400).json({ error: 'Comment body required' });
     const id = uuidv4();
     await run(db, "INSERT INTO wiki_page_comments (id, page_id, parent_id, author_id, body) VALUES (?,?,?,?,?)",

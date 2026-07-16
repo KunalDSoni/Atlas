@@ -69,6 +69,21 @@ Four roles — `admin`, `board_admin`, `user`, `client` — are enforced by
 role from the session. The frontend hides controls a user cannot use, but that is a UX
 affordance and **not** a security boundary.
 
+### User-authored HTML
+
+Wiki pages and wiki comments are stored as HTML written by users and rendered into other
+users' browsers. Unsanitised, any author could run script on the app's origin and read
+every viewer's session token.
+
+Bodies are sanitised **on write** (`backend/utils/sanitize.js`) so what is stored is
+already safe, and sanitised **again on render** (`frontend/src/components/app/rich-text.tsx`)
+as defence in depth — which also covers rows written before that fix. `<script>`, inline
+event handlers (`onerror=`), `javascript:` URLs, and script inside inline styles are all
+stripped; headings, lists, tables, links, and formatting survive, and external links get
+`rel="noopener noreferrer"`.
+
+Never render a wiki body with a bare `dangerouslySetInnerHTML` — use `RichTextView`.
+
 ### File access
 
 Browsers cannot attach an `x-auth-token` header to `<img src>`, `<video src>`, or an
@@ -162,6 +177,8 @@ Deliberate trade-offs you should know about:
   can steal them.
 - **`atlas.html`** is a self-contained demo with in-memory data and no server-side
   authorisation. It is a UI prototype — do not deploy it as a real application.
+- **Wiki HTML is sanitised, not escaped.** Formatting tags are allowed by design, so the
+  sanitiser's allow-list is the security boundary. Widen it carefully.
 
 ## Dependencies
 

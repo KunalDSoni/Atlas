@@ -192,3 +192,92 @@ export interface ProfileResponse extends User {
   projects: { id: string; name: string; key: string; role_in_project: string }[];
   stats: { assigned: number; completed: number; comments: number };
 }
+
+// ===== Wiki =====
+
+export interface WikiSpace {
+  id: string;
+  space_key: string;
+  name: string;
+  description: string | null;
+  icon: string | null;
+  color: string | null;
+  owner_id: string;
+  is_personal: number;
+  created_at: string;
+  updated_at: string;
+  owner_name: string | null;
+  owner_color: string | null;
+  page_count: number;
+  starred: number;
+}
+
+export interface WikiPage {
+  id: string;
+  space_id: string;
+  parent_id: string | null;
+  title: string;
+  slug: string;
+  body: string;
+  body_format: string;
+  status: string;
+  position: number;
+  author_id: string;
+  last_editor_id: string;
+  version: number;
+  view_count: number;
+  created_at: string;
+  updated_at: string;
+  author_name: string | null;
+  author_color: string | null;
+  editor_name: string | null;
+  comment_count: number;
+  like_count: number;
+  labels: string[];
+  space_name?: string;
+  space_key?: string;
+  space_icon?: string;
+}
+
+export interface WikiTreeNode {
+  id: string;
+  title: string;
+  parent_id: string | null;
+  position: number;
+  slug: string;
+  children: WikiTreeNode[];
+}
+
+export interface WikiComment {
+  id: string;
+  page_id: string;
+  parent_id: string | null;
+  author_id: string;
+  body: string;
+  created_at: string;
+  author_name: string;
+  author_color: string;
+}
+
+export interface WikiVersion {
+  id: string;
+  page_id: string;
+  version: number;
+  title: string;
+  body: string;
+  editor_id: string;
+  change_message: string | null;
+  created_at: string;
+  editor_name: string | null;
+}
+
+export interface WikiTemplate {
+  id: string;
+  space_id: string | null;
+  name: string;
+  description: string | null;
+  body: string;
+  icon: string | null;
+  is_global: number;
+  created_at: string;
+}

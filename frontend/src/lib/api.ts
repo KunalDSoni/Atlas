@@ -6,6 +6,7 @@
 import type {
   ActivityEntry, AdminStats, Attachment, AuditLogPage, AuthUser, Comment, Issue,
   ProfileResponse, Project, ProjectMember, ProjectStats, Settings, Sprint, User,
+  WikiComment, WikiPage, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
 } from './types';
 
 const TOKEN_KEY = 'atlas_token';
@@ -182,6 +183,37 @@ export const api = {
       Object.entries(params).forEach(([k, v]) => v !== undefined && v !== '' && qs.set(k, String(v)));
       return get<AuditLogPage>(`/admin/audit-log${qs.toString() ? `?${qs}` : ''}`);
     },
+  },
+
+  wiki: {
+    spaces: () => get<WikiSpace[]>('/wiki/spaces'),
+    space: (id: string) => get<WikiSpace>(`/wiki/spaces/${id}`),
+    createSpace: (body: { name: string; space_key: string; description?: string; icon?: string; color?: string }) =>
+      post<WikiSpace>('/wiki/spaces', body),
+    deleteSpace: (id: string) => del<{ ok: boolean }>(`/wiki/spaces/${id}`),
+
+    pages: (spaceId: string) => get<WikiPage[]>(`/wiki/spaces/${spaceId}/pages`),
+    tree: (spaceId: string) => get<WikiTreeNode[]>(`/wiki/spaces/${spaceId}/tree`),
+    recent: () => get<WikiPage[]>('/wiki/pages/recent'),
+    starred: () => get<WikiPage[]>('/wiki/pages/starred'),
+
+    page: (id: string) => get<WikiPage>(`/wiki/pages/${id}`),
+    createPage: (spaceId: string, body: Partial<WikiPage>) =>
+      post<WikiPage>(`/wiki/spaces/${spaceId}/pages`, body),
+    updatePage: (id: string, body: Partial<WikiPage> & { change_message?: string }) =>
+      put<WikiPage>(`/wiki/pages/${id}`, body),
+    deletePage: (id: string) => del<{ ok: boolean }>(`/wiki/pages/${id}`),
+
+    versions: (id: string) => get<WikiVersion[]>(`/wiki/pages/${id}/versions`),
+    comments: (id: string) => get<WikiComment[]>(`/wiki/pages/${id}/comments`),
+    addComment: (id: string, body: string) => post<WikiComment>(`/wiki/pages/${id}/comments`, { body }),
+    deleteComment: (id: string) => del<{ ok: boolean }>(`/wiki/comments/${id}`),
+
+    like: (id: string) => post<{ liked: boolean; like_count: number }>(`/wiki/pages/${id}/like`),
+    star: (body: { space_id?: string; page_id?: string }) => post<{ starred: boolean }>('/wiki/star', body),
+
+    search: (q: string) => get<WikiPage[]>(`/wiki/search?q=${encodeURIComponent(q)}`),
+    templates: () => get<WikiTemplate[]>('/wiki/templates'),
   },
 
   reports: {

@@ -59,8 +59,6 @@ atlas/
 │       └── admin.js         # Admin dashboard stats
 └── frontend/               # Vite + React + TypeScript + Tailwind + shadcn/ui
     ├── components.json     # shadcn/ui config
-    ├── public/
-    │   └── wiki.html       # Wiki app (copied into build/, served at /wiki)
     ├── src/
     │   ├── main.tsx        # entry
     │   ├── App.tsx         # routing + providers
