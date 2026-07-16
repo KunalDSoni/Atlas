@@ -7,6 +7,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { getDb, queryAll, queryOne, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
+const { serverError } = require('../utils/errors');
 
 const router = express.Router();
 
@@ -23,7 +24,7 @@ router.get('/issues/:issueId/watchers', requireAuth, async (req, res) => {
       [req.params.issueId]
     );
     res.json(watchers);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // POST /api/issues/:issueId/watchers
@@ -44,7 +45,7 @@ router.post('/issues/:issueId/watchers', requireAuth, async (req, res) => {
       [id, req.params.issueId, userId]);
 
     res.status(201).json({ ok: true, id });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // DELETE /api/issues/:issueId/watchers/:userId
@@ -54,7 +55,7 @@ router.delete('/issues/:issueId/watchers/:userId', requireAuth, async (req, res)
     await run(db, 'DELETE FROM issue_watchers WHERE issue_id = ? AND user_id = ?',
       [req.params.issueId, req.params.userId]);
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 module.exports = router;

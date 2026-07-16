@@ -5,6 +5,7 @@
 const express = require('express');
 const { getDb, queryAll, queryOne } = require('../database');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { serverError } = require('../utils/errors');
 
 const router = express.Router();
 
@@ -70,7 +71,7 @@ router.get('/audit-log', requireAuth, requireAdmin, async (req, res) => {
       limit: parseInt(limit),
       total_pages: Math.ceil(total / parseInt(limit))
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // GET /api/admin/audit-log/stats — Summary statistics
@@ -107,7 +108,7 @@ router.get('/audit-log/stats', requireAuth, requireAdmin, async (req, res) => {
       by_user: byUser,
       recent_errors: recentErrors,
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 module.exports = router;

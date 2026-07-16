@@ -12,6 +12,7 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 
 const requireBoardAdmin = requireRole('admin', 'board_admin');
 const { auditLog } = require('../middleware/logger');
+const { serverError } = require('../utils/errors');
 
 const router = express.Router();
 
@@ -32,7 +33,7 @@ router.get('/projects/:projectId/sprints', requireAuth, async (req, res) => {
     const db = await getDb();
     const sprints = await queryAll(db, 'SELECT * FROM sprints WHERE project_id = ? ORDER BY created_at', [req.params.projectId]);
     res.json(await Promise.all(sprints.map(s => enrichSprint(db, s))));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // POST /api/projects/:projectId/sprints
@@ -49,7 +50,7 @@ router.post('/projects/:projectId/sprints', requireAuth, requireBoardAdmin, asyn
     const sprint = await queryOne(db, 'SELECT * FROM sprints WHERE id = ?', [id]);
     auditLog({ userId: req.userId, action: 'Created sprint', category: 'sprints', entityType: 'sprint', entityId: id, entityName: name });
     res.status(201).json(await enrichSprint(db, sprint));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // GET /api/sprints/:id
@@ -59,7 +60,7 @@ router.get('/sprints/:id', requireAuth, async (req, res) => {
     const sprint = await queryOne(db, 'SELECT * FROM sprints WHERE id = ?', [req.params.id]);
     if (!sprint) return res.status(404).json({ error: 'Sprint not found' });
     res.json(await enrichSprint(db, sprint));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // PUT /api/sprints/:id
@@ -88,7 +89,7 @@ router.put('/sprints/:id', requireAuth, requireBoardAdmin, async (req, res) => {
       auditLog({ userId: req.userId, action: `Sprint ${status}`, category: 'sprints', entityType: 'sprint', entityId: req.params.id, entityName: updated.name, details: { from: sprint.status, to: status } });
     }
     res.json(await enrichSprint(db, updated));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // DELETE /api/sprints/:id
@@ -101,7 +102,7 @@ router.delete('/sprints/:id', requireAuth, requireBoardAdmin, async (req, res) =
     await run(db, 'DELETE FROM sprints WHERE id = ?', [req.params.id]);
     auditLog({ userId: req.userId, action: 'Deleted sprint', category: 'sprints', entityType: 'sprint', entityId: req.params.id, entityName: sprint ? sprint.name : req.params.id });
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 module.exports = router;

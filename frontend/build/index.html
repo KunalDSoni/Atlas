@@ -788,10 +788,10 @@ function AttachmentsSection({issueId}){
       <input ref={fileRef} type="file" multiple className="attach-hidden" onChange={e=>upload(e.target.files)} accept="image/*,video/*,.pdf,.xlsx,.xls,.docx,.doc,.pptx,.txt,.csv,.json,.zip"/>
       {atts.length>0&&<div className="attach-grid">{atts.map(a=>(
         <div key={a.id} className="attach-card">
-          <a href={`${API}/attachments/${a.id}/download`} target="_blank" style={{textDecoration:'none',color:'inherit'}}>
+          <a href={a.download_url} target="_blank" style={{textDecoration:'none',color:'inherit'}}>
             <div className="attach-preview">
-              {isImg(a.mime_type)?<img src={`${API}/attachments/${a.id}/preview`} alt={a.original_name}/>
-              :isVid(a.mime_type)?<video src={`${API}/attachments/${a.id}/preview`}/>
+              {isImg(a.mime_type)?<img src={a.preview_url} alt={a.original_name}/>
+              :isVid(a.mime_type)?<video src={a.preview_url}/>
               :<div className="attach-preview-icon">{fileIcon(a.mime_type)}<span>{(a.original_name||'').split('.').pop().toUpperCase()}</span></div>}
             </div>
             <div className="attach-info">

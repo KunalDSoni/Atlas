@@ -12,6 +12,7 @@
 const express = require('express');
 const { getDb, queryAll, queryOne } = require('../database');
 const { requireAuth } = require('../middleware/auth');
+const { serverError } = require('../utils/errors');
 
 const router = express.Router();
 
@@ -49,7 +50,7 @@ router.get('/projects/:projectId/reports/sprint', requireAuth, async (req, res) 
     }));
 
     res.json(report);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // ===== VELOCITY CHART =====
@@ -82,7 +83,7 @@ router.get('/projects/:projectId/reports/velocity', requireAuth, async (req, res
       : 0;
 
     res.json({ sprints: velocity, average_velocity: avgVelocity });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // ===== TEAM WORKLOAD =====
@@ -114,7 +115,7 @@ router.get('/projects/:projectId/reports/workload', requireAuth, async (req, res
     `, [req.params.projectId]);
 
     res.json({ members, unassigned: { total: unassigned.total, points: unassigned.points } });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // ===== RESOLUTION METRICS =====
@@ -162,7 +163,7 @@ router.get('/projects/:projectId/reports/resolution', requireAuth, async (req, r
       by_type: byType,
       recent_resolved: resolved.slice(0, 10),
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // ===== BURNDOWN =====
@@ -201,7 +202,7 @@ router.get('/projects/:projectId/reports/burndown', requireAuth, async (req, res
     }
 
     res.json({ sprint: { id: sprint.id, name: sprint.name, start_date: sprint.start_date, end_date: sprint.end_date, total_points: totalPoints }, data });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // ===== CREATED vs RESOLVED TREND =====
@@ -221,7 +222,7 @@ router.get('/projects/:projectId/reports/created-vs-resolved', requireAuth, asyn
     `, [req.params.projectId]);
 
     res.json({ created, resolved });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // ===== TYPE DISTRIBUTION =====
@@ -234,7 +235,7 @@ router.get('/projects/:projectId/reports/type-distribution', requireAuth, async 
       GROUP BY type, status
     `, [req.params.projectId]);
     res.json(data);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // ===== PRIORITY DISTRIBUTION =====
@@ -247,7 +248,7 @@ router.get('/projects/:projectId/reports/priority-distribution', requireAuth, as
       GROUP BY priority, status
     `, [req.params.projectId]);
     res.json(data);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // ===== CSV EXPORT =====
@@ -289,7 +290,7 @@ router.get('/projects/:projectId/reports/export/csv', requireAuth, async (req, r
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${project.key}-issues.csv"`);
     res.send(rows.join('\n'));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 module.exports = router;

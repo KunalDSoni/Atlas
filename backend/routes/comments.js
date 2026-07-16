@@ -8,6 +8,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
+const { serverError } = require('../utils/errors');
 
 const router = express.Router();
 
@@ -26,7 +27,7 @@ router.get('/issues/:issueId/comments', requireAuth, async (req, res) => {
     const db = await getDb();
     const comments = await queryAll(db, 'SELECT * FROM comments WHERE issue_id = ? ORDER BY created_at', [req.params.issueId]);
     res.json(await Promise.all(comments.map(c => enrichComment(db, c))));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // POST /api/issues/:issueId/comments
@@ -43,7 +44,7 @@ router.post('/issues/:issueId/comments', requireAuth, async (req, res) => {
 
     const comment = await queryOne(db, 'SELECT * FROM comments WHERE id = ?', [id]);
     res.status(201).json(await enrichComment(db, comment));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // PUT /api/comments/:id
@@ -64,7 +65,7 @@ router.put('/comments/:id', requireAuth, async (req, res) => {
     await run(db, "UPDATE comments SET body = ?, updated_at = datetime('now') WHERE id = ?", [commentBody, req.params.id]);
     const updated = await queryOne(db, 'SELECT * FROM comments WHERE id = ?', [req.params.id]);
     res.json(await enrichComment(db, updated));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // DELETE /api/comments/:id
@@ -81,7 +82,7 @@ router.delete('/comments/:id', requireAuth, async (req, res) => {
 
     await run(db, 'DELETE FROM comments WHERE id = ?', [req.params.id]);
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 module.exports = router;

@@ -4,6 +4,7 @@
 const express = require('express');
 const { getDb, queryOne, queryAll } = require('../database');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { serverError } = require('../utils/errors');
 
 const router = express.Router();
 
@@ -17,7 +18,7 @@ router.get('/stats', requireAuth, requireAdmin, async (req, res) => {
     const byRole = await queryAll(db, 'SELECT role, COUNT(*) as count FROM users WHERE is_active = 1 GROUP BY role');
 
     res.json({ users, projects, issues, byRole });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 module.exports = router;

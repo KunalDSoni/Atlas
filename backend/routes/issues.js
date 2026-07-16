@@ -11,6 +11,7 @@ const { v4: uuidv4 } = require('uuid');
 const { auditLog } = require('../middleware/logger');
 const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { serverError } = require('../utils/errors');
 
 const requireBoardAdmin = requireRole('admin', 'board_admin');
 
@@ -57,7 +58,7 @@ router.get('/projects/:projectId/issues', requireAuth, async (req, res) => {
     query += ' ORDER BY board_order, created_at';
     const issues = await queryAll(db, query, params);
     res.json(await Promise.all(issues.map(i => enrichIssue(db, i))));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // POST /api/projects/:projectId/issues
@@ -84,7 +85,7 @@ router.post('/projects/:projectId/issues', requireAuth, requireBoardAdmin, async
     const issue = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [id]);
     auditLog({ userId: req.userId, action: 'Created issue', category: 'issues', entityType: 'issue', entityId: id, entityName: issue.issue_key, details: { title, type: type || 'task', priority: priority || 'medium' } });
     res.status(201).json(await enrichIssue(db, issue));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // GET /api/issues/:id
@@ -94,7 +95,7 @@ router.get('/issues/:id', requireAuth, async (req, res) => {
     const issue = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
     if (!issue) return res.status(404).json({ error: 'Issue not found' });
     res.json(await enrichIssue(db, issue));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // PUT /api/issues/:id
@@ -136,7 +137,7 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
 
     const updated = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
     res.json(await enrichIssue(db, updated));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // DELETE /api/issues/:id
@@ -152,7 +153,7 @@ router.delete('/issues/:id', requireAuth, requireBoardAdmin, async (req, res) =>
     await run(db, 'DELETE FROM issues WHERE id = ?', [req.params.id]);
     auditLog({ userId: req.userId, action: 'Deleted issue', category: 'issues', entityType: 'issue', entityId: req.params.id, entityName: issue ? issue.issue_key : req.params.id });
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // PUT /api/issues/:id/move
@@ -175,7 +176,7 @@ router.put('/issues/:id/move', requireAuth, async (req, res) => {
 
     const updated = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
     res.json(await enrichIssue(db, updated));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 module.exports = router;

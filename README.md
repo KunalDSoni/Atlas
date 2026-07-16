@@ -17,7 +17,11 @@ node server.js
 
 ## Default Credentials
 
-All accounts use password: `password123`
+⚠️ **Demo data only.** These accounts are seeded when `SEED_DEMO_DATA=true` and all share
+a published password. Set `SEED_DEMO_DATA=false` for any real deployment — see
+[SECURITY.md](SECURITY.md).
+
+All demo accounts use password: `password123`
 
 | Name | Email | Role |
 |------|-------|------|
@@ -134,8 +138,16 @@ atlas/
 
 - **Frontend**: React 18 + Babel (single HTML, no build step)
 - **Backend**: Node.js + Express 5
-- **Database**: sql.js (SQLite in-memory with file persistence)
-- **Auth**: Session-based with token headers
+- **Database**: sql.js (SQLite) for local dev, MySQL for production — set `DB_DRIVER`
+- **Auth**: Session tokens (`x-auth-token`), scrypt-hashed passwords
+
+## Security
+
+Authenticate by sending the token from `POST /api/auth/login` as `x-auth-token`.
+Identity and role come from that session only — `x-user-id` / `x-user-role` are ignored.
+
+Read [SECURITY.md](SECURITY.md) before deploying: it covers the security model, a
+deployment hardening checklist, how to report a vulnerability, and known limitations.
 
 ## Roles & Permissions
 

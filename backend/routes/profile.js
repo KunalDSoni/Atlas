@@ -7,6 +7,8 @@
 const express = require('express');
 const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
+const { verifyPassword, hashPassword } = require('../utils/password');
+const { serverError } = require('../utils/errors');
 
 const router = express.Router();
 
@@ -30,7 +32,7 @@ router.get('/', requireAuth, async (req, res) => {
       ...user, projects,
       stats: { assigned: assigned.count, completed: completed.count, comments: comments.count }
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // PUT /api/profile
@@ -55,7 +57,7 @@ router.put('/', requireAuth, async (req, res) => {
 
     const user = await queryOne(db, 'SELECT id, name, email, role, avatar_color, avatar_url, phone, department, job_title, bio, timezone, is_active, last_login, created_at FROM users WHERE id = ?', [req.userId]);
     res.json(user);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // PUT /api/profile/password
@@ -67,11 +69,14 @@ router.put('/password', requireAuth, async (req, res) => {
 
     const db = await getDb();
     const user = await queryOne(db, 'SELECT password FROM users WHERE id = ?', [req.userId]);
-    if (user.password !== current_password) return res.status(400).json({ error: 'Current password is incorrect' });
+    const { ok } = await verifyPassword(current_password, user.password);
+    if (!ok) return res.status(400).json({ error: 'Current password is incorrect' });
 
-    await run(db, 'UPDATE users SET password = ? WHERE id = ?', [new_password, req.userId]);
+    await run(db, 'UPDATE users SET password = ? WHERE id = ?', [await hashPassword(new_password), req.userId]);
+    // Changing a password invalidates other sessions.
+    await run(db, 'DELETE FROM sessions WHERE user_id = ? AND token != ?', [req.userId, req.headers['x-auth-token'] || '']);
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // PUT /api/profile/email
@@ -87,7 +92,7 @@ router.put('/email', requireAuth, async (req, res) => {
     await run(db, 'UPDATE users SET email = ? WHERE id = ?', [email, req.userId]);
     const user = await queryOne(db, 'SELECT id, name, email, role, avatar_color FROM users WHERE id = ?', [req.userId]);
     res.json(user);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 module.exports = router;

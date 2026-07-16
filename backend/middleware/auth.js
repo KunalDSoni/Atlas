@@ -1,33 +1,24 @@
 const { getDb, queryOne } = require('../database');
 
+// Identity is derived ONLY from a valid session token. Never trust client-supplied
+// identity headers (x-user-id / x-user-role) — they are attacker-controlled.
 async function authMiddleware(req, res, next) {
   const token = req.headers['x-auth-token'];
-  if (token) {
-    try {
-      const db = await getDb();
-      const session = await queryOne(db, "SELECT * FROM sessions WHERE token = ? AND expires_at > datetime('now')", [token]);
-      if (session) {
-        const user = await queryOne(db, 'SELECT id, name, role FROM users WHERE id = ? AND is_active = 1', [session.user_id]);
-        if (user) {
-          req.userId = user.id;
-          req.userName = user.name;
-          req.userRole = user.role;
-        }
+  if (!token) return next();
+
+  try {
+    const db = await getDb();
+    const session = await queryOne(db, "SELECT * FROM sessions WHERE token = ? AND expires_at > datetime('now')", [token]);
+    if (session) {
+      const user = await queryOne(db, 'SELECT id, name, role FROM users WHERE id = ? AND is_active = 1', [session.user_id]);
+      if (user) {
+        req.userId = user.id;
+        req.userName = user.name;
+        req.userRole = user.role;
       }
-    } catch (e) { /* fall through to legacy headers */ }
-  }
-  // Legacy header fallback
-  if (!req.userId) {
-    req.userId = req.headers['x-user-id'];
-    req.userRole = req.headers['x-user-role'];
-    // Resolve name for logger
-    if (req.userId && !req.userName) {
-      try {
-        const db = await getDb();
-        const u = await queryOne(db, 'SELECT name FROM users WHERE id = ?', [req.userId]);
-        if (u) req.userName = u.name;
-      } catch(e) {}
     }
+  } catch (e) {
+    return next(e);
   }
   next();
 }

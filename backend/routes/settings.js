@@ -6,6 +6,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { getDb, queryOne, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
+const { serverError } = require('../utils/errors');
 
 const router = express.Router();
 
@@ -20,7 +21,7 @@ router.get('/', requireAuth, async (req, res) => {
       settings = await queryOne(db, 'SELECT * FROM user_settings WHERE id = ?', [id]);
     }
     res.json(settings);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // PUT /api/settings
@@ -50,7 +51,7 @@ router.put('/', requireAuth, async (req, res) => {
 
     settings = await queryOne(db, 'SELECT * FROM user_settings WHERE user_id = ?', [req.userId]);
     res.json(settings);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 module.exports = router;

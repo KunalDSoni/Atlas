@@ -4,6 +4,7 @@
 const express = require('express');
 const { getDb, queryAll } = require('../database');
 const { requireAuth } = require('../middleware/auth');
+const { serverError } = require('../utils/errors');
 
 const router = express.Router();
 
@@ -21,7 +22,7 @@ router.get('/issues/:issueId/activity', requireAuth, async (req, res) => {
       [req.params.issueId]
     );
     res.json(activities);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 module.exports = router;

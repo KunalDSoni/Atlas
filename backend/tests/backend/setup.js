@@ -51,6 +51,7 @@ async function createTestApp() {
   testApp.use('/api', require('../../routes/activity'));
   testApp.use('/api', require('../../routes/watchers'));
   testApp.use('/api', require('../../routes/links'));
+  testApp.use('/api', require('../../routes/attachments'));
 
   app = testApp;
   return testApp;

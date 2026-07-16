@@ -3,6 +3,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
+const { serverError } = require('../utils/errors');
 const router = express.Router();
 
 // ===== SPACES =====
@@ -16,7 +17,7 @@ router.get('/wiki/spaces', requireAuth, async (req, res) => {
       FROM wiki_spaces s LEFT JOIN users u ON s.owner_id = u.id ORDER BY s.name
     `, [req.userId]);
     res.json(spaces);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 router.post('/wiki/spaces', requireAuth, async (req, res) => {
@@ -30,7 +31,7 @@ router.post('/wiki/spaces', requireAuth, async (req, res) => {
       [id, spaceKey.toUpperCase(), name, description || '', icon || '📄', color || '#0c66e4', req.userId]);
     const space = await queryOne(db, 'SELECT * FROM wiki_spaces WHERE id = ?', [id]);
     res.status(201).json(space);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 router.get('/wiki/spaces/:id', requireAuth, async (req, res) => {
@@ -39,7 +40,7 @@ router.get('/wiki/spaces/:id', requireAuth, async (req, res) => {
     const space = await queryOne(db, 'SELECT s.*, u.name as owner_name FROM wiki_spaces s LEFT JOIN users u ON s.owner_id = u.id WHERE s.id = ?', [req.params.id]);
     if (!space) return res.status(404).json({ error: 'Space not found' });
     res.json(space);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 router.put('/wiki/spaces/:id', requireAuth, async (req, res) => {
@@ -53,7 +54,7 @@ router.put('/wiki/spaces/:id', requireAuth, async (req, res) => {
     if (color !== undefined) { updates.push('color = ?'); params.push(color); }
     if (updates.length) { updates.push("updated_at = datetime('now')"); params.push(req.params.id); await run(db, `UPDATE wiki_spaces SET ${updates.join(', ')} WHERE id = ?`, params); }
     res.json(await queryOne(db, 'SELECT * FROM wiki_spaces WHERE id = ?', [req.params.id]));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 router.delete('/wiki/spaces/:id', requireAuth, async (req, res) => {
@@ -72,7 +73,7 @@ router.delete('/wiki/spaces/:id', requireAuth, async (req, res) => {
     await run(db, 'DELETE FROM wiki_stars WHERE space_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM wiki_spaces WHERE id = ?', [req.params.id]);
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // ===== PAGES =====
@@ -94,7 +95,7 @@ router.get('/wiki/spaces/:spaceId/pages', requireAuth, async (req, res) => {
     `, [req.params.spaceId, status]);
     pages.forEach(p => { p.labels = p.labels_str ? p.labels_str.split(',') : []; delete p.labels_str; });
     res.json(pages);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 router.get('/wiki/pages/recent', requireAuth, async (req, res) => {
@@ -112,7 +113,7 @@ router.get('/wiki/pages/recent', requireAuth, async (req, res) => {
       ORDER BY p.updated_at DESC LIMIT 20
     `);
     res.json(pages);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 router.get('/wiki/pages/starred', requireAuth, async (req, res) => {
@@ -129,7 +130,7 @@ router.get('/wiki/pages/starred', requireAuth, async (req, res) => {
       ORDER BY ws.created_at DESC
     `, [req.userId]);
     res.json(pages);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 router.post('/wiki/spaces/:spaceId/pages', requireAuth, async (req, res) => {
@@ -151,7 +152,7 @@ router.post('/wiki/spaces/:spaceId/pages', requireAuth, async (req, res) => {
     }
     const page = await queryOne(db, 'SELECT * FROM wiki_pages WHERE id = ?', [id]);
     res.status(201).json(page);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 router.get('/wiki/pages/:id', requireAuth, async (req, res) => {
@@ -188,7 +189,7 @@ router.get('/wiki/pages/:id', requireAuth, async (req, res) => {
     // Children
     page.children = await queryAll(db, "SELECT id, title, slug, status FROM wiki_pages WHERE parent_id = ? AND status = 'current' ORDER BY position, title", [req.params.id]);
     res.json(page);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 router.put('/wiki/pages/:id', requireAuth, async (req, res) => {
@@ -215,7 +216,7 @@ router.put('/wiki/pages/:id', requireAuth, async (req, res) => {
     await run(db, `UPDATE wiki_pages SET ${updates.join(', ')} WHERE id = ?`, params);
     const updated = await queryOne(db, 'SELECT * FROM wiki_pages WHERE id = ?', [req.params.id]);
     res.json(updated);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 router.delete('/wiki/pages/:id', requireAuth, async (req, res) => {
@@ -231,7 +232,7 @@ router.delete('/wiki/pages/:id', requireAuth, async (req, res) => {
     await run(db, 'DELETE FROM wiki_page_likes WHERE page_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM wiki_pages WHERE id = ?', [req.params.id]);
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // ===== PAGE VERSIONS =====
@@ -244,7 +245,7 @@ router.get('/wiki/pages/:id/versions', requireAuth, async (req, res) => {
       WHERE v.page_id = ? ORDER BY v.version DESC
     `, [req.params.id]);
     res.json(versions);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // ===== COMMENTS =====
@@ -257,7 +258,7 @@ router.get('/wiki/pages/:id/comments', requireAuth, async (req, res) => {
       WHERE c.page_id = ? ORDER BY c.created_at
     `, [req.params.id]);
     res.json(comments);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 router.post('/wiki/pages/:id/comments', requireAuth, async (req, res) => {
@@ -270,7 +271,7 @@ router.post('/wiki/pages/:id/comments', requireAuth, async (req, res) => {
       [id, req.params.id, parent_id || null, req.userId, body]);
     const comment = await queryOne(db, `SELECT c.*, u.name as author_name, u.avatar_color as author_color FROM wiki_page_comments c LEFT JOIN users u ON c.author_id = u.id WHERE c.id = ?`, [id]);
     res.status(201).json(comment);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 router.delete('/wiki/comments/:id', requireAuth, async (req, res) => {
@@ -279,7 +280,7 @@ router.delete('/wiki/comments/:id', requireAuth, async (req, res) => {
     await run(db, 'DELETE FROM wiki_page_comments WHERE parent_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM wiki_page_comments WHERE id = ?', [req.params.id]);
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // ===== LABELS =====
@@ -291,7 +292,7 @@ router.post('/wiki/pages/:id/labels', requireAuth, async (req, res) => {
     try { await run(db, "INSERT INTO wiki_labels (id, page_id, label) VALUES (?,?,?)", [uuidv4(), req.params.id, label.toLowerCase().trim()]); } catch(e){}
     const labels = (await queryAll(db, 'SELECT label FROM wiki_labels WHERE page_id = ?', [req.params.id])).map(l => l.label);
     res.json(labels);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 router.delete('/wiki/pages/:pageId/labels/:label', requireAuth, async (req, res) => {
@@ -300,7 +301,7 @@ router.delete('/wiki/pages/:pageId/labels/:label', requireAuth, async (req, res)
     await run(db, 'DELETE FROM wiki_labels WHERE page_id = ? AND label = ?', [req.params.pageId, req.params.label]);
     const labels = (await queryAll(db, 'SELECT label FROM wiki_labels WHERE page_id = ?', [req.params.pageId])).map(l => l.label);
     res.json(labels);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // ===== STARS =====
@@ -318,7 +319,7 @@ router.post('/wiki/star', requireAuth, async (req, res) => {
       await run(db, "INSERT INTO wiki_stars (id, user_id, page_id, space_id) VALUES (?,?,?,?)", [uuidv4(), req.userId, page_id || null, space_id || null]);
       res.json({ starred: true });
     }
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // ===== LIKES =====
@@ -335,7 +336,7 @@ router.post('/wiki/pages/:id/like', requireAuth, async (req, res) => {
     }
     const count = await queryOne(db, 'SELECT COUNT(*) as c FROM wiki_page_likes WHERE page_id = ?', [req.params.id]);
     res.locals.likeCount = count.c;
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // ===== SEARCH =====
@@ -362,7 +363,7 @@ router.get('/wiki/search', requireAuth, async (req, res) => {
       delete p.body;
     });
     res.json(pages);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // ===== TEMPLATES =====
@@ -374,7 +375,7 @@ router.get('/wiki/templates', requireAuth, async (req, res) => {
       'SELECT * FROM wiki_templates WHERE is_global = 1 OR space_id = ? ORDER BY name',
       [spaceId || '']);
     res.json(templates);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // ===== PAGE TREE =====
@@ -390,7 +391,7 @@ router.get('/wiki/spaces/:spaceId/tree', requireAuth, async (req, res) => {
       else roots.push(map[p.id]);
     });
     res.json(roots);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 module.exports = router;
