@@ -11,7 +11,7 @@ import { useSettings } from '@/hooks/use-settings';
 import { STATUSES, STATUS_LABEL, canCreateIssues } from '@/lib/domain';
 import type { Issue, Sprint } from '@/lib/types';
 import {
-  EmptyState, ErrorState, LabelChip, PageHeader, PriorityIcon, RowsSkeleton, StatusPill, TypeIcon, UserAvatar,
+  EmptyState, EpicBadge, ErrorState, LabelChip, PageHeader, PriorityIcon, RowsSkeleton, StatusPill, TypeIcon, UserAvatar,
 } from '@/components/app/primitives';
 import { IssueDetailSheet } from '@/components/app/issue-detail-sheet';
 import { CreateIssueDialog } from '@/components/app/create-issue-dialog';
@@ -53,6 +53,7 @@ export default function BacklogScreen() {
   const backlog = useMemo(() => {
     const q = query.trim().toLowerCase();
     return issues
+      .filter((i) => i.type !== 'epic')
       .filter((i) => !i.sprint_id)
       .filter((i) => (statusFilter === 'all' ? true : i.status === statusFilter))
       .filter((i) => !q || i.title.toLowerCase().includes(q) || i.issue_key.toLowerCase().includes(q));
@@ -145,6 +146,11 @@ export default function BacklogScreen() {
                   <TypeIcon type={issue.type} />
                   <span className="w-16 shrink-0 font-mono text-xs text-muted-foreground">{issue.issue_key}</span>
                   <span className="min-w-0 flex-1 truncate text-sm">{issue.title}</span>
+                  {issue.epic_key && (
+                    <span className="hidden md:block">
+                      <EpicBadge name={issue.epic_title ?? issue.epic_key} color={issue.epic_badge_color} />
+                    </span>
+                  )}
                   {issue.labels_parsed?.slice(0, 2).map((l) => (
                     <span key={l} className="hidden lg:block">
                       <LabelChip>{l}</LabelChip>

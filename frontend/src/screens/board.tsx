@@ -12,7 +12,7 @@ import { useProjects } from '@/hooks/use-projects';
 import { useSettings } from '@/hooks/use-settings';
 import { STATUS_LABEL, STATUSES, canCreateIssues, canDragIssues } from '@/lib/domain';
 import type { Issue, IssueStatus, Sprint } from '@/lib/types';
-import { EmptyState, ErrorState, LabelChip, PageHeader, PriorityIcon, TypeIcon, UserAvatar } from '@/components/app/primitives';
+import { EmptyState, EpicBadge, ErrorState, LabelChip, PageHeader, PriorityIcon, TypeIcon, UserAvatar } from '@/components/app/primitives';
 import { cn } from '@/lib/utils';
 import { IssueDetailSheet } from '@/components/app/issue-detail-sheet';
 import { CreateIssueDialog } from '@/components/app/create-issue-dialog';
@@ -68,6 +68,12 @@ function IssueCard({
           {issue.labels_parsed.slice(0, 3).map((l) => (
             <LabelChip key={l}>{l}</LabelChip>
           ))}
+        </div>
+      )}
+
+      {issue.epic_key && (
+        <div className={compact ? 'mb-1' : 'mb-1.5'}>
+          <EpicBadge name={issue.epic_title ?? issue.epic_key} color={issue.epic_badge_color} />
         </div>
       )}
 
@@ -145,6 +151,7 @@ export default function BoardScreen() {
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return issues.filter((i) => {
+      if (i.type === 'epic') return false;
       if (sprintFilter === 'backlog' && i.sprint_id) return false;
       if (sprintFilter !== 'all' && sprintFilter !== 'backlog' && i.sprint_id !== sprintFilter) return false;
       if (!q) return true;
