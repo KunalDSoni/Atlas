@@ -17,6 +17,7 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 // Only admins and board admins can create/modify boards (projects) or manage members.
 const requireBoardAdmin = requireRole('admin', 'board_admin');
 const { auditLog } = require('../middleware/logger');
+const { serverError } = require('../utils/errors');
 
 const router = express.Router();
 
@@ -31,7 +32,7 @@ router.get('/', requireAuth, async (req, res) => {
       FROM projects p LEFT JOIN users u ON u.id = p.lead_id ORDER BY p.created_at
     `);
     res.json(projects);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // POST /api/projects
@@ -54,7 +55,7 @@ router.post('/', requireAuth, requireBoardAdmin, async (req, res) => {
     const project = await queryOne(db, 'SELECT * FROM projects WHERE id = ?', [id]);
     auditLog({ userId: req.userId, action: 'Created project', category: 'projects', entityType: 'project', entityId: id, entityName: `${key} - ${name}` });
     res.status(201).json(project);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // PUT /api/projects/:id
@@ -80,7 +81,7 @@ router.put('/:id', requireAuth, requireBoardAdmin, async (req, res) => {
 
     const updated = await queryOne(db, 'SELECT * FROM projects WHERE id = ?', [req.params.id]);
     res.json(updated);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // DELETE /api/projects/:id
@@ -97,7 +98,7 @@ router.delete('/:id', requireAuth, requireBoardAdmin, async (req, res) => {
     await run(db, 'DELETE FROM projects WHERE id = ?', [pid]);
     auditLog({ userId: req.userId, action: 'Deleted project', category: 'projects', entityType: 'project', entityId: pid, entityName: proj ? `${proj.key} - ${proj.name}` : pid });
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // GET /api/projects/:id/stats
@@ -115,7 +116,7 @@ router.get('/:id/stats', requireAuth, async (req, res) => {
       GROUP BY i.assignee_id ORDER BY count DESC
     `, [pid]);
     res.json({ total, byStatus, byType, byAssignee });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // GET /api/projects/:id/members
@@ -128,7 +129,7 @@ router.get('/:id/members', requireAuth, async (req, res) => {
       WHERE pm.project_id = ? ORDER BY pm.added_at
     `, [req.params.id]);
     res.json(members);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // POST /api/projects/:id/members
@@ -145,7 +146,7 @@ router.post('/:id/members', requireAuth, requireBoardAdmin, async (req, res) => 
     await run(db, 'INSERT INTO project_members (id, project_id, user_id, role_in_project) VALUES (?, ?, ?, ?)',
       [id, req.params.id, user_id, role_in_project || 'member']);
     res.status(201).json({ id, project_id: req.params.id, user_id, role_in_project: role_in_project || 'member' });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // PUT /api/projects/:id/members/:userId
@@ -156,7 +157,7 @@ router.put('/:id/members/:userId', requireAuth, requireBoardAdmin, async (req, r
     await run(db, 'UPDATE project_members SET role_in_project = ? WHERE project_id = ? AND user_id = ?',
       [role_in_project, req.params.id, req.params.userId]);
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // DELETE /api/projects/:id/members/:userId
@@ -165,7 +166,7 @@ router.delete('/:id/members/:userId', requireAuth, requireBoardAdmin, async (req
     const db = await getDb();
     await run(db, 'DELETE FROM project_members WHERE project_id = ? AND user_id = ?', [req.params.id, req.params.userId]);
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 module.exports = router;

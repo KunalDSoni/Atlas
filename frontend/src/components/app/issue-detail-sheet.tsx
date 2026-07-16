@@ -1,0 +1,425 @@
+import { useCallback, useEffect, useState } from 'react';
+import { Eye, EyeOff, Loader2, Paperclip, Send, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { api } from '@/lib/api';
+import { useAuth } from '@/context/auth-provider';
+import { PRIORITIES, PRIORITY_LABEL, STATUSES, STATUS_LABEL, TYPE_LABEL, canCreateIssues, isAdmin } from '@/lib/domain';
+import type { ActivityEntry, Attachment, Comment, Issue, IssueStatus, Priority, Sprint, User } from '@/lib/types';
+import { formatBytes, timeAgo } from '@/lib/format';
+import { LabelChip, PriorityIcon, TypeIcon, UserAvatar } from './primitives';
+
+const UNASSIGNED = '__unassigned__';
+const NO_SPRINT = '__backlog__';
+
+export function IssueDetailSheet({
+  issueId,
+  onOpenChange,
+  onChanged,
+}: {
+  issueId: string | null;
+  onOpenChange: (open: boolean) => void;
+  onChanged?: () => void;
+}) {
+  const { user } = useAuth();
+  const [issue, setIssue] = useState<Issue | null>(null);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [activity, setActivity] = useState<ActivityEntry[]>([]);
+  const [watchers, setWatchers] = useState<User[]>([]);
+  const [members, setMembers] = useState<User[]>([]);
+  const [sprints, setSprints] = useState<Sprint[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [commentBody, setCommentBody] = useState('');
+  const [posting, setPosting] = useState(false);
+
+  const canEdit = canCreateIssues(user?.role);
+
+  const load = useCallback(async () => {
+    if (!issueId) return;
+    setLoading(true);
+    try {
+      const detail = await api.issues.get(issueId);
+      setIssue(detail);
+      const [c, a, act, w, u, sp] = await Promise.all([
+        api.comments.list(issueId).catch(() => []),
+        api.attachments.list(issueId).catch(() => []),
+        api.activity.list(issueId).catch(() => []),
+        api.watchers.list(issueId).catch(() => []),
+        api.users.list().catch(() => []),
+        api.sprints.list(detail.project_id).catch(() => []),
+      ]);
+      setComments(c);
+      setAttachments(a);
+      setActivity(act);
+      setWatchers(w);
+      setMembers(u.filter((x) => x.is_active));
+      setSprints(sp);
+    } catch (e) {
+      toast.error('Could not load issue', { description: e instanceof Error ? e.message : undefined });
+    } finally {
+      setLoading(false);
+    }
+  }, [issueId]);
+
+  useEffect(() => {
+    if (issueId) void load();
+    else setIssue(null);
+  }, [issueId, load]);
+
+  async function patch(body: Partial<Issue>) {
+    if (!issue) return;
+    const previous = issue;
+    setIssue({ ...issue, ...body } as Issue);
+    try {
+      await api.issues.update(issue.id, body);
+      onChanged?.();
+      void load();
+    } catch (e) {
+      setIssue(previous);
+      toast.error('Update failed', { description: e instanceof Error ? e.message : undefined });
+    }
+  }
+
+  async function addComment() {
+    if (!issue || !commentBody.trim()) return;
+    setPosting(true);
+    try {
+      await api.comments.create(issue.id, commentBody.trim());
+      setCommentBody('');
+      setComments(await api.comments.list(issue.id));
+    } catch (e) {
+      toast.error('Could not post comment', { description: e instanceof Error ? e.message : undefined });
+    } finally {
+      setPosting(false);
+    }
+  }
+
+  async function toggleWatch() {
+    if (!issue) return;
+    const watching = watchers.some((w) => w.id === user?.id);
+    try {
+      if (watching) await api.watchers.unwatch(issue.id);
+      else await api.watchers.watch(issue.id);
+      setWatchers(await api.watchers.list(issue.id));
+    } catch (e) {
+      toast.error('Could not update watchers', { description: e instanceof Error ? e.message : undefined });
+    }
+  }
+
+  async function uploadFiles(files: FileList | null) {
+    if (!issue || !files?.length) return;
+    try {
+      await api.attachments.upload(issue.id, Array.from(files));
+      setAttachments(await api.attachments.list(issue.id));
+      toast.success('Attachment uploaded');
+    } catch (e) {
+      toast.error('Upload failed', { description: e instanceof Error ? e.message : undefined });
+    }
+  }
+
+  async function removeIssue() {
+    if (!issue) return;
+    try {
+      await api.issues.remove(issue.id);
+      toast.success(`${issue.issue_key} deleted`);
+      onOpenChange(false);
+      onChanged?.();
+    } catch (e) {
+      toast.error('Delete failed', { description: e instanceof Error ? e.message : undefined });
+    }
+  }
+
+  const watching = watchers.some((w) => w.id === user?.id);
+
+  return (
+    <Sheet open={Boolean(issueId)} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="w-full gap-0 overflow-y-auto p-0 sm:max-w-2xl">
+        {loading && !issue ? (
+          <div className="space-y-3 p-6">
+            <Skeleton className="h-6 w-40" />
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-32 w-full" />
+          </div>
+        ) : !issue ? null : (
+          <>
+            <SheetHeader className="gap-2 border-b border-border px-6 py-4">
+              <div className="flex items-center gap-2">
+                <TypeIcon type={issue.type} />
+                <span className="font-mono text-xs text-muted-foreground">{issue.issue_key}</span>
+                <span className="text-xs text-muted-foreground">· {TYPE_LABEL[issue.type]}</span>
+                <span className="flex-1" />
+                <Button variant="ghost" size="sm" onClick={toggleWatch} className="gap-1.5 text-xs">
+                  {watching ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                  {watchers.length}
+                </Button>
+                {isAdmin(user?.role) && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="ghost" size="icon" className="text-destructive" aria-label="Delete issue">
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete {issue.issue_key}?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This permanently deletes the issue and its comments. This cannot be undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={removeIssue}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          Delete
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
+              </div>
+              <SheetTitle className="text-left text-lg leading-snug">{issue.title}</SheetTitle>
+            </SheetHeader>
+
+            <div className="grid gap-6 p-6 md:grid-cols-[1fr_200px]">
+              <div className="min-w-0 space-y-5">
+                <section>
+                  <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Description
+                  </h3>
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                    {issue.description || <span className="text-faint">No description.</span>}
+                  </p>
+                </section>
+
+                {issue.labels_parsed?.length > 0 && (
+                  <section>
+                    <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Labels
+                    </h3>
+                    <div className="flex flex-wrap gap-1">
+                      {issue.labels_parsed.map((l) => (
+                        <LabelChip key={l}>{l}</LabelChip>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                <Tabs defaultValue="comments">
+                  <TabsList>
+                    <TabsTrigger value="comments">Comments ({comments.length})</TabsTrigger>
+                    <TabsTrigger value="attachments">Files ({attachments.length})</TabsTrigger>
+                    <TabsTrigger value="activity">Activity</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="comments" className="space-y-3 pt-3">
+                    <div className="flex gap-2">
+                      <Textarea
+                        value={commentBody}
+                        onChange={(e) => setCommentBody(e.target.value)}
+                        placeholder="Add a comment…"
+                        rows={2}
+                        className="resize-none"
+                      />
+                      <Button
+                        size="icon"
+                        onClick={addComment}
+                        disabled={posting || !commentBody.trim()}
+                        aria-label="Post comment"
+                      >
+                        {posting ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+                      </Button>
+                    </div>
+                    {comments.length === 0 ? (
+                      <p className="py-4 text-center text-sm text-muted-foreground">No comments yet.</p>
+                    ) : (
+                      <ul className="space-y-3">
+                        {comments.map((c) => (
+                          <li key={c.id} className="flex gap-2.5">
+                            <UserAvatar name={c.author_name} color={c.author_color} />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs">
+                                <span className="font-semibold">{c.author_name}</span>{' '}
+                                <span className="text-muted-foreground">{timeAgo(c.created_at)}</span>
+                              </p>
+                              <p className="mt-0.5 whitespace-pre-wrap text-sm">{c.body}</p>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </TabsContent>
+
+                  <TabsContent value="attachments" className="space-y-3 pt-3">
+                    <label className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-border py-4 text-sm text-muted-foreground hover:border-primary/50 hover:text-foreground">
+                      <Paperclip className="size-4" />
+                      Upload files
+                      <input type="file" multiple className="sr-only" onChange={(e) => uploadFiles(e.target.files)} />
+                    </label>
+                    {attachments.length === 0 ? (
+                      <p className="py-2 text-center text-sm text-muted-foreground">No attachments.</p>
+                    ) : (
+                      <ul className="grid grid-cols-2 gap-2">
+                        {attachments.map((a) => (
+                          <li key={a.id} className="overflow-hidden rounded-md border border-border">
+                            {a.mime_type.startsWith('image/') ? (
+                              <img
+                                src={a.preview_url}
+                                alt={a.original_name}
+                                className="h-24 w-full bg-surface object-cover"
+                              />
+                            ) : (
+                              <div className="grid h-24 place-items-center bg-surface text-faint">
+                                <Paperclip className="size-6" />
+                              </div>
+                            )}
+                            <div className="px-2 py-1.5">
+                              <a
+                                href={a.download_url}
+                                className="block truncate text-xs font-medium hover:underline"
+                                title={a.original_name}
+                              >
+                                {a.original_name}
+                              </a>
+                              <p className="text-[11px] text-muted-foreground">{formatBytes(a.size)}</p>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </TabsContent>
+
+                  <TabsContent value="activity" className="pt-3">
+                    {activity.length === 0 ? (
+                      <p className="py-4 text-center text-sm text-muted-foreground">No activity recorded.</p>
+                    ) : (
+                      <ul className="space-y-2.5">
+                        {activity.map((a) => (
+                          <li key={a.id} className="flex items-start gap-2.5 text-sm">
+                            <UserAvatar name={a.user_name} color={a.user_color} className="size-5" />
+                            <p className="min-w-0 flex-1 text-muted-foreground">
+                              <span className="font-medium text-foreground">{a.user_name}</span> changed{' '}
+                              <span className="font-medium text-foreground">{a.field}</span>
+                              {a.old_value && <> from <span className="text-foreground">{a.old_value}</span></>}
+                              {a.new_value && <> to <span className="text-foreground">{a.new_value}</span></>}
+                              <span className="ml-1 text-xs">· {timeAgo(a.created_at)}</span>
+                            </p>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </TabsContent>
+                </Tabs>
+              </div>
+
+              {/* Field rail */}
+              <aside className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Status</Label>
+                  <Select
+                    value={issue.status}
+                    onValueChange={(v) => patch({ status: v as IssueStatus })}
+                    disabled={!canEdit}
+                  >
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {STATUSES.map((s) => (
+                        <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Assignee</Label>
+                  <Select
+                    value={issue.assignee_id ?? UNASSIGNED}
+                    onValueChange={(v) => patch({ assignee_id: v === UNASSIGNED ? null : v })}
+                    disabled={!canEdit}
+                  >
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
+                      {members.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Priority</Label>
+                  <Select
+                    value={issue.priority}
+                    onValueChange={(v) => patch({ priority: v as Priority })}
+                    disabled={!canEdit}
+                  >
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {PRIORITIES.map((p) => (
+                        <SelectItem key={p} value={p}>
+                          <span className="flex items-center gap-2"><PriorityIcon priority={p} />{PRIORITY_LABEL[p]}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Sprint</Label>
+                  <Select
+                    value={issue.sprint_id ?? NO_SPRINT}
+                    onValueChange={(v) => patch({ sprint_id: v === NO_SPRINT ? null : v })}
+                    disabled={!canEdit}
+                  >
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NO_SPRINT}>Backlog</SelectItem>
+                      {sprints.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <Separator />
+
+                <dl className="space-y-2 text-xs">
+                  <div className="flex justify-between">
+                    <dt className="text-muted-foreground">Points</dt>
+                    <dd className="tabular-nums">{issue.story_points ?? '—'}</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-muted-foreground">Reporter</dt>
+                    <dd className="truncate">{issue.reporter_name ?? '—'}</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-muted-foreground">Created</dt>
+                    <dd>{timeAgo(issue.created_at)}</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-muted-foreground">Updated</dt>
+                    <dd>{timeAgo(issue.updated_at)}</dd>
+                  </div>
+                </dl>
+              </aside>
+            </div>
+          </>
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}

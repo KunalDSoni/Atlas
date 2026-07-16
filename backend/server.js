@@ -32,8 +32,32 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Global middleware
-app.use(cors());
-app.use(express.json());
+// CORS: allow-list driven. Defaults to same-origin only (no cross-origin callers),
+// since the SPA is served by this same server. Set CORS_ORIGINS to override.
+const corsOrigins = (process.env.CORS_ORIGINS || '')
+  .split(',').map(s => s.trim()).filter(Boolean);
+app.use(cors({
+  origin: corsOrigins.length ? corsOrigins : false,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'x-auth-token'],
+}));
+
+// Baseline security headers.
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
+
+// Body size cap — the default 100kb is generous for this API and unbounded JSON
+// is a cheap DoS vector.
+app.use(express.json({ limit: '1mb' }));
 app.use(authMiddleware);
 app.use(requestLogger);
 
@@ -95,11 +119,6 @@ app.use('/api', watchersRoutes);
 
 // Issue Links Module — linked issues
 app.use('/api', linksRoutes);
-
-// Wiki (Confluence) frontend
-app.get('/wiki', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'frontend', 'build', 'wiki.html'));
-});
 
 // SPA fallback (Express 5 compatible)
 app.get('/{*splat}', (req, res) => {

@@ -3,7 +3,7 @@
  * Tests: login, logout, session management, middleware auth
  */
 const request = require('supertest');
-const { createTestApp, getApp, adminHeaders } = require('./setup');
+const { createTestApp, getApp, adminHeaders, userHeaders } = require('./setup');
 
 let app;
 
@@ -63,6 +63,53 @@ describe('POST /api/auth/login', () => {
         .send({ email: regularUser.email, password: 'password123' });
       expect(res.status).toBe(401);
     }
+  });
+});
+
+describe('Security — identity headers are not trusted', () => {
+  test('should NOT authenticate from x-user-id / x-user-role alone', async () => {
+    const res = await request(app)
+      .get('/api/auth/me')
+      .set({ 'x-user-id': 'anything', 'x-user-role': 'admin' });
+
+    expect(res.status).toBe(401);
+  });
+
+  test('should NOT grant admin access to a forged role header', async () => {
+    const res = await request(app)
+      .get('/api/admin/stats')
+      .set({ 'x-user-id': 'forged', 'x-user-role': 'admin' });
+
+    expect(res.status).toBe(401);
+    expect(res.body).not.toHaveProperty('users');
+  });
+
+  test('should NOT let a real non-admin escalate via x-user-role', async () => {
+    const headers = await userHeaders();
+    const res = await request(app)
+      .get('/api/admin/stats')
+      .set({ ...headers, 'x-user-role': 'admin' });
+
+    expect(res.status).toBe(403);
+  });
+
+  test('should reject an invalid session token', async () => {
+    const res = await request(app)
+      .get('/api/auth/me')
+      .set({ 'x-auth-token': 'not-a-real-token' });
+
+    expect(res.status).toBe(401);
+  });
+});
+
+describe('Security — password storage', () => {
+  test('should never store the password in plaintext', async () => {
+    const { getDb, queryOne } = require('../../database');
+    const db = await getDb();
+    const row = await queryOne(db, 'SELECT password FROM users WHERE email = ?', ['kunal@example.com']);
+
+    expect(row.password).not.toBe('password123');
+    expect(row.password.startsWith('scrypt$')).toBe(true);
   });
 });
 

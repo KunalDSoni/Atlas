@@ -1,0 +1,283 @@
+// Domain types mirroring the Atlas API responses.
+
+export type Role = 'admin' | 'board_admin' | 'user' | 'client';
+export type IssueStatus = 'todo' | 'in_progress' | 'in_review' | 'done';
+export type IssueType = 'story' | 'bug' | 'task';
+export type Priority = 'highest' | 'high' | 'medium' | 'low';
+export type SprintStatus = 'planned' | 'active' | 'completed';
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  avatar_color: string;
+  avatar_url: string | null;
+  phone: string | null;
+  department: string | null;
+  job_title: string | null;
+  bio: string | null;
+  timezone: string | null;
+  is_active: number;
+  last_login: string | null;
+  created_at: string;
+}
+
+export interface AuthUser extends User {
+  token: string;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  key: string;
+  description: string | null;
+  lead_id: string | null;
+  created_at: string;
+  lead_name: string | null;
+  lead_color: string | null;
+  issue_count: number;
+  member_count: number;
+}
+
+export interface Sprint {
+  id: string;
+  project_id: string;
+  name: string;
+  goal: string | null;
+  status: SprintStatus;
+  start_date: string | null;
+  end_date: string | null;
+  created_at: string;
+  issue_count: number;
+  done_count: number;
+  total_points: number;
+  done_points: number;
+}
+
+export interface Issue {
+  id: string;
+  project_id: string;
+  sprint_id: string | null;
+  issue_key: string;
+  issue_number: number;
+  title: string;
+  description: string | null;
+  type: IssueType;
+  status: IssueStatus;
+  priority: Priority;
+  assignee_id: string | null;
+  reporter_id: string | null;
+  parent_id: string | null;
+  story_points: number | null;
+  labels: string | null;
+  due_date: string | null;
+  board_order: number;
+  created_at: string;
+  updated_at: string;
+  assignee_name: string | null;
+  assignee_color: string | null;
+  reporter_name: string | null;
+  reporter_color: string | null;
+  comment_count: number;
+  attachment_count: number;
+  watcher_count: number;
+  link_count: number;
+  labels_parsed: string[];
+}
+
+export interface Comment {
+  id: string;
+  issue_id: string;
+  author_id: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+  author_name: string;
+  author_color: string;
+}
+
+export interface Attachment {
+  id: string;
+  issue_id: string;
+  filename: string;
+  original_name: string;
+  mime_type: string;
+  size: number;
+  uploaded_by: string;
+  created_at: string;
+  uploader_name: string;
+  uploader_color: string;
+  /** Short-lived signed URLs — browsers cannot send auth headers on <img>/<a>. */
+  preview_url: string;
+  download_url: string;
+}
+
+export interface ActivityEntry {
+  id: string;
+  issue_id: string;
+  user_id: string;
+  field: string;
+  old_value: string | null;
+  new_value: string | null;
+  created_at: string;
+  user_name: string;
+  user_color: string;
+}
+
+export interface ProjectMember {
+  id: string;
+  name: string;
+  email: string;
+  avatar_color: string;
+  role: Role;
+  role_in_project: string;
+}
+
+export interface ProjectStats {
+  total: number;
+  byStatus: { status: IssueStatus; count: number }[];
+  byType: { type: IssueType; count: number }[];
+  byAssignee: { assignee_id: string | null; name: string | null; count: number }[];
+}
+
+export interface AdminStats {
+  users: number;
+  projects: number;
+  issues: number;
+  byRole: { role: Role; count: number }[];
+}
+
+export interface Settings {
+  id: string;
+  user_id: string;
+  theme: string;
+  language: string;
+  email_notifications: number;
+  push_notifications: number;
+  notify_assigned: number;
+  notify_mentions: number;
+  notify_comments: number;
+  notify_status_changes: number;
+  notify_sprint_updates: number;
+  compact_view: number;
+  default_project_id: string | null;
+  items_per_page: number;
+  updated_at: string;
+}
+
+export interface AuditEntry {
+  id: string;
+  user_id: string | null;
+  action: string;
+  category: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  entity_name: string | null;
+  details: string | null;
+  created_at: string;
+  user_name: string | null;
+  user_color: string | null;
+}
+
+export interface AuditLogPage {
+  entries: AuditEntry[];
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
+}
+
+export interface ProfileResponse extends User {
+  projects: { id: string; name: string; key: string; role_in_project: string }[];
+  stats: { assigned: number; completed: number; comments: number };
+}
+
+// ===== Wiki =====
+
+export interface WikiSpace {
+  id: string;
+  space_key: string;
+  name: string;
+  description: string | null;
+  icon: string | null;
+  color: string | null;
+  owner_id: string;
+  is_personal: number;
+  created_at: string;
+  updated_at: string;
+  owner_name: string | null;
+  owner_color: string | null;
+  page_count: number;
+  starred: number;
+}
+
+export interface WikiPage {
+  id: string;
+  space_id: string;
+  parent_id: string | null;
+  title: string;
+  slug: string;
+  body: string;
+  body_format: string;
+  status: string;
+  position: number;
+  author_id: string;
+  last_editor_id: string;
+  version: number;
+  view_count: number;
+  created_at: string;
+  updated_at: string;
+  author_name: string | null;
+  author_color: string | null;
+  editor_name: string | null;
+  comment_count: number;
+  like_count: number;
+  labels: string[];
+  space_name?: string;
+  space_key?: string;
+  space_icon?: string;
+}
+
+export interface WikiTreeNode {
+  id: string;
+  title: string;
+  parent_id: string | null;
+  position: number;
+  slug: string;
+  children: WikiTreeNode[];
+}
+
+export interface WikiComment {
+  id: string;
+  page_id: string;
+  parent_id: string | null;
+  author_id: string;
+  body: string;
+  created_at: string;
+  author_name: string;
+  author_color: string;
+}
+
+export interface WikiVersion {
+  id: string;
+  page_id: string;
+  version: number;
+  title: string;
+  body: string;
+  editor_id: string;
+  change_message: string | null;
+  created_at: string;
+  editor_name: string | null;
+}
+
+export interface WikiTemplate {
+  id: string;
+  space_id: string | null;
+  name: string;
+  description: string | null;
+  body: string;
+  icon: string | null;
+  is_global: number;
+  created_at: string;
+}

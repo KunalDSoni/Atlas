@@ -9,15 +9,24 @@ Open `atlas.html` directly in your browser. All data is in-memory and resets on 
 
 **Option B: Full-stack with database**
 ```bash
-cd backend
-npm install
-node server.js
+# 1. Build the frontend (Vite + React + TypeScript + Tailwind + shadcn/ui)
+cd frontend && npm install && npm run build
+
+# 2. Run the backend, which serves the built app
+cd ../backend && npm install && node server.js
 # Open http://localhost:3001
 ```
 
+For frontend development with hot reload, run the backend and then
+`cd frontend && npm run dev` — Vite proxies `/api` to port 3001.
+
 ## Default Credentials
 
-All accounts use password: `password123`
+⚠️ **Demo data only.** These accounts are seeded when `SEED_DEMO_DATA=true` and all share
+a published password. Set `SEED_DEMO_DATA=false` for any real deployment — see
+[SECURITY.md](SECURITY.md).
+
+All demo accounts use password: `password123`
 
 | Name | Email | Role |
 |------|-------|------|
@@ -37,7 +46,7 @@ atlas/
 │   ├── database.js         # SQLite schema + seed data
 │   ├── package.json
 │   ├── middleware/
-│   │   └── auth.js         # Auth middleware (session token + legacy headers)
+│   │   └── auth.js         # Auth middleware (session token only)
 │   └── routes/
 │       ├── auth.js          # POST /login, /logout, GET /me
 │       ├── users.js         # CRUD user management (admin)
@@ -48,9 +57,19 @@ atlas/
 │       ├── issues.js        # CRUD issues + move (drag & drop)
 │       ├── comments.js      # CRUD comments (author/admin permissions)
 │       └── admin.js         # Admin dashboard stats
-└── frontend/
-    └── build/
-        └── index.html       # React SPA (served by backend)
+└── frontend/               # Vite + React + TypeScript + Tailwind + shadcn/ui
+    ├── components.json     # shadcn/ui config
+    ├── src/
+    │   ├── main.tsx        # entry
+    │   ├── App.tsx         # routing + providers
+    │   ├── index.css       # design tokens (light + dark)
+    │   ├── components/ui/  # shadcn/ui components
+    │   ├── components/app/ # Atlas components (shell, charts, dialogs)
+    │   ├── context/        # auth + theme providers
+    │   ├── hooks/          # shared data hooks
+    │   ├── lib/            # api client, types, domain, formatting
+    │   └── screens/        # one file per screen
+    └── build/              # Vite output — served by the backend
 ```
 
 ## API Reference
@@ -132,10 +151,18 @@ atlas/
 
 ## Tech Stack
 
-- **Frontend**: React 18 + Babel (single HTML, no build step)
+- **Frontend**: React 18 + TypeScript + Vite + Tailwind CSS v4 + shadcn/ui (light & dark)
 - **Backend**: Node.js + Express 5
-- **Database**: sql.js (SQLite in-memory with file persistence)
-- **Auth**: Session-based with token headers
+- **Database**: sql.js (SQLite) for local dev, MySQL for production — set `DB_DRIVER`
+- **Auth**: Session tokens (`x-auth-token`), scrypt-hashed passwords
+
+## Security
+
+Authenticate by sending the token from `POST /api/auth/login` as `x-auth-token`.
+Identity and role come from that session only — `x-user-id` / `x-user-role` are ignored.
+
+Read [SECURITY.md](SECURITY.md) before deploying: it covers the security model, a
+deployment hardening checklist, how to report a vulnerability, and known limitations.
 
 ## Roles & Permissions
 

@@ -7,6 +7,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { getDb, queryAll, queryOne, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
+const { serverError } = require('../utils/errors');
 
 const router = express.Router();
 
@@ -29,7 +30,7 @@ router.get('/issues/:issueId/links', requireAuth, async (req, res) => {
       [req.params.issueId, req.params.issueId]
     );
     res.json(links);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // POST /api/issues/:issueId/links
@@ -57,7 +58,7 @@ router.post('/issues/:issueId/links', requireAuth, async (req, res) => {
        WHERE l.id = ?`, [id]);
 
     res.status(201).json(link);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // DELETE /api/issue-links/:id
@@ -66,7 +67,7 @@ router.delete('/issue-links/:id', requireAuth, async (req, res) => {
     const db = await getDb();
     await run(db, 'DELETE FROM issue_links WHERE id = ?', [req.params.id]);
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 module.exports = router;
