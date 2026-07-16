@@ -105,7 +105,14 @@ router.get('/projects/:projectId/epics', requireAuth, async (req, res) => {
       LEFT JOIN users u ON u.id = e.assignee_id
       WHERE e.project_id = ? AND e.type = 'epic'
       ORDER BY e.board_order, e.created_at`, [req.params.projectId]);
-    res.json(epics);
+    // mysql2 returns SUM()/COUNT() aggregates as strings — the API contract is numeric.
+    res.json(epics.map(e => ({
+      ...e,
+      child_count: Number(e.child_count),
+      done_count: Number(e.done_count),
+      total_points: Number(e.total_points),
+      done_points: Number(e.done_points),
+    })));
   } catch (e) { serverError(res, e); }
 });
 
