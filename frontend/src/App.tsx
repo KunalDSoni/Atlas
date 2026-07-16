@@ -12,6 +12,7 @@ import LoginScreen from '@/screens/login';
 const Dashboard = lazy(() => import('@/screens/dashboard'));
 const Board = lazy(() => import('@/screens/board'));
 const Backlog = lazy(() => import('@/screens/backlog'));
+const Epics = lazy(() => import('@/screens/epics'));
 const Sprints = lazy(() => import('@/screens/sprints'));
 const Reports = lazy(() => import('@/screens/reports'));
 const Profile = lazy(() => import('@/screens/profile'));
@@ -58,6 +59,7 @@ function ProtectedLayout() {
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/board" element={<Board />} />
               <Route path="/backlog" element={<Backlog />} />
+              <Route path="/epics" element={<Epics />} />
               <Route path="/sprints" element={<Sprints />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/wiki" element={<WikiHome />} />
