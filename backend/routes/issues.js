@@ -15,6 +15,9 @@ const { serverError } = require('../utils/errors');
 
 const requireBoardAdmin = requireRole('admin', 'board_admin');
 
+// Epic color constraints: only these 8 named colors are valid
+const EPIC_COLORS = ['purple', 'blue', 'teal', 'green', 'yellow', 'orange', 'red', 'pink'];
+
 // Hierarchy rules: an issue's parent must be an epic in the same project;
 // epics themselves take no parent and no sprint. Returns an error message or null.
 async function validateHierarchy(db, { id, projectId, type, parentId, sprintId }) {
@@ -110,6 +113,10 @@ router.post('/projects/:projectId/issues', requireAuth, requireBoardAdmin, async
     });
     if (hierarchyError) return res.status(400).json({ error: hierarchyError });
 
+    if (epic_color !== undefined && !EPIC_COLORS.includes(epic_color)) {
+      return res.status(400).json({ error: 'Invalid epic color' });
+    }
+
     await run(db, `INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, assignee_id, reporter_id, sprint_id, story_points, due_date, labels, original_estimate, parent_id, epic_color, board_order)
       VALUES (?, ?, ?, ?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
       [id, req.params.projectId, `${project.key}-${issueNumber}`, issueNumber,
@@ -152,6 +159,10 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
       sprintId: nextSprint,
     });
     if (hierarchyError) return res.status(400).json({ error: hierarchyError });
+
+    if (req.body.epic_color !== undefined && !EPIC_COLORS.includes(req.body.epic_color)) {
+      return res.status(400).json({ error: 'Invalid epic color' });
+    }
 
     const allowed = ['title', 'description', 'type', 'status', 'priority', 'assignee_id', 'sprint_id', 'story_points', 'board_order', 'labels', 'due_date', 'original_estimate', 'time_spent', 'parent_id', 'epic_color'];
     const updates = [];

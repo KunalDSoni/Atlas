@@ -98,7 +98,7 @@ const SCHEMA_SQL = [
     due_date TEXT,
     original_estimate TEXT,
     time_spent TEXT,
-    epic_color TEXT DEFAULT 'purple',
+    epic_color TEXT DEFAULT 'purple' CHECK(epic_color IN ('purple','blue','teal','green','yellow','orange','red','pink')),
     board_order INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
@@ -342,7 +342,7 @@ const MYSQL_SCHEMA_SQL = [
     due_date DATETIME NULL,
     original_estimate VARCHAR(50),
     time_spent VARCHAR(50),
-    epic_color VARCHAR(20) DEFAULT 'purple',
+    epic_color VARCHAR(20) DEFAULT 'purple' CHECK(epic_color IN ('purple','blue','teal','green','yellow','orange','red','pink')),
     board_order INT DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -509,6 +509,7 @@ async function initSqlite() {
   SCHEMA_SQL.forEach(sql => db.run(sql));
 
   // CREATE TABLE IF NOT EXISTS won't add columns to an existing data.db — patch in place.
+  // ALTER skips CHECK: existing DBs are covered by API validation in backend/routes/issues.js
   try { db.run("ALTER TABLE issues ADD COLUMN epic_color TEXT DEFAULT 'purple'"); } catch (e) { /* column already exists */ }
 
   saveDb();
@@ -571,6 +572,7 @@ async function initMysqlSchema(pool) {
     "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'issues' AND column_name = 'epic_color'"
   );
   if (epicCol.length === 0) {
+    // ALTER skips CHECK: existing DBs are covered by API validation in backend/routes/issues.js
     await pool.query("ALTER TABLE issues ADD COLUMN epic_color VARCHAR(20) DEFAULT 'purple'");
   }
 

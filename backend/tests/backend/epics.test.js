@@ -49,6 +49,18 @@ describe('creating epics', () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/parent/i);
   });
+
+  test('rejects an invalid epic color on create', async () => {
+    const res = await createIssue({ title: 'Bad Color', type: 'epic', epic_color: 'chartreuse' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/color/i);
+  });
+
+  test('rejects an invalid epic color on update', async () => {
+    const epic = await createIssue({ title: 'Recolor Me', type: 'epic' });
+    const res = await request(app).put(`/api/issues/${epic.body.id}`).set(headers).send({ epic_color: null });
+    expect(res.status).toBe(400);
+  });
 });
 
 describe('assigning issues to epics', () => {
