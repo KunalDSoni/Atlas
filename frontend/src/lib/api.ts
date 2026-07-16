@@ -4,7 +4,7 @@
 // and role from that token alone — client-supplied identity headers are ignored.
 
 import type {
-  ActivityEntry, AdminStats, Attachment, AuditLogPage, AuthUser, Comment, Issue,
+  ActivityEntry, AdminStats, Attachment, AuditLogPage, AuthUser, Comment, Issue, EpicSummary,
   ProfileResponse, Project, ProjectMember, ProjectStats, Settings, Sprint, User,
   IssueLink, LinkType,
   WikiComment, WikiPage, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
@@ -148,6 +148,11 @@ export const api = {
     remove: (id: string) => del<{ ok: boolean }>(`/issues/${id}`),
     move: (id: string, body: { status: string; board_order?: number; sprint_id?: string | null }) =>
       put<Issue>(`/issues/${id}/move`, body),
+  },
+
+  epics: {
+    list: (projectId: string) => get<EpicSummary[]>(`/projects/${projectId}/epics`),
+    children: (issueId: string) => get<Issue[]>(`/issues/${issueId}/children`),
   },
 
   comments: {

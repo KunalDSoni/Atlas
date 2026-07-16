@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import { initials } from '@/lib/format';
 import {
   PRIORITY_COLOR, PRIORITY_ICON, PRIORITY_LABEL, STATUS_LABEL, STATUS_TONE,
-  TYPE_COLOR, TYPE_ICON, TYPE_LABEL,
+  TYPE_COLOR, TYPE_ICON, TYPE_LABEL, epicColor,
 } from '@/lib/domain';
 import type { IssueStatus, IssueType, Priority } from '@/lib/types';
 
@@ -44,6 +44,23 @@ export function StatusPill({ status, className }: { status: IssueStatus; classNa
       )}
     >
       {STATUS_LABEL[status]}
+    </span>
+  );
+}
+
+/** Tinted epic chip shown on board cards and backlog rows. */
+export function EpicBadge({
+  name,
+  color,
+  className,
+}: {
+  name: string;
+  color?: string | null;
+  className?: string;
+}) {
+  return (
+    <span className={cn('max-w-32 truncate rounded px-1.5 py-0.5 text-[10px] font-semibold', epicColor(color).chip, className)}>
+      {name}
     </span>
   );
 }

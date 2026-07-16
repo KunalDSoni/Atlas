@@ -2,7 +2,7 @@
 
 export type Role = 'admin' | 'board_admin' | 'user' | 'client';
 export type IssueStatus = 'todo' | 'in_progress' | 'in_review' | 'done';
-export type IssueType = 'story' | 'bug' | 'task';
+export type IssueType = 'story' | 'bug' | 'task' | 'epic';
 export type Priority = 'highest' | 'high' | 'medium' | 'low';
 export type SprintStatus = 'planned' | 'active' | 'completed';
 export type LinkType = 'relates_to' | 'blocks' | 'is_blocked_by' | 'duplicates' | 'is_duplicated_by';
@@ -84,7 +84,19 @@ export interface Issue {
   attachment_count: number;
   watcher_count: number;
   link_count: number;
+  epic_color: string | null;
+  epic_key: string | null;
+  epic_title: string | null;
+  epic_badge_color: string | null;
   labels_parsed: string[];
+}
+
+/** Epic row with child rollups, from GET /projects/:id/epics. */
+export interface EpicSummary extends Issue {
+  child_count: number;
+  done_count: number;
+  total_points: number;
+  done_points: number;
 }
 
 export interface Comment {
