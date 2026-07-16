@@ -734,6 +734,48 @@ function seedDemoData() {
        issue.assignee !== null ? userIds[issue.assignee] : null, userIds[1], i]);
   });
 
+  // ===== DOGFOOD: Atlas tracks its own Jira/Confluence parity roadmap =====
+  const projId3 = uuid();
+  db.run("INSERT INTO projects (id, name, key, description, lead_id) VALUES (?, ?, ?, ?, ?)",
+    [projId3, 'Atlas Development', 'ATLAS', 'Atlas building Atlas — the Jira/Confluence parity roadmap, tracked as epics', userIds[0]]);
+  [0, 1, 2].forEach(i => {
+    db.run("INSERT INTO project_members (id, project_id, user_id, role_in_project) VALUES (?, ?, ?, ?)",
+      [uuid(), projId3, userIds[i], i === 0 ? 'lead' : 'member']);
+  });
+
+  const roadmapEpics = [
+    { title: 'Epic support', status: 'done', color: 'purple',
+      desc: 'Add epic as a first-class issue type: hierarchy via parent_id, Epics screen with progress rollups, epic badges on board and backlog, epic picker in the issue detail sheet.' },
+    { title: 'Subtasks', status: 'todo', color: 'blue',
+      desc: 'Child issues under stories, tasks, and bugs using the same parent_id column, with progress rollup on the parent issue.' },
+    { title: 'Global search & filters', status: 'todo', color: 'teal',
+      desc: 'Quick search across issues and wiki pages, JQL-lite filter bar (assignee, type, label, status), and saved filters.' },
+    { title: 'Notifications & @mentions', status: 'todo', color: 'yellow',
+      desc: 'In-app notification inbox, @mentions in comments, wiki page watching — wiring up the existing notification settings toggles.' },
+    { title: 'Time tracking', status: 'todo', color: 'orange',
+      desc: 'Original estimates, work logs, and remaining-time display on issues, building on the original_estimate and time_spent columns.' },
+    { title: 'Releases & components', status: 'todo', color: 'red',
+      desc: 'Fix versions and components on issues, plus a release hub screen with per-version progress.' },
+    { title: 'Roadmap / timeline', status: 'todo', color: 'pink',
+      desc: 'Gantt-style timeline view of epics and sprints across time.' },
+    { title: 'Board power-ups', status: 'todo', color: 'green',
+      desc: 'Swimlanes (by assignee/epic), per-column WIP limits, and multi-select bulk edit on the board.' },
+    { title: 'Custom workflows', status: 'todo', color: 'purple',
+      desc: 'Configurable statuses and board columns per project instead of the fixed four-status workflow.' },
+    { title: 'Automation rules', status: 'todo', color: 'blue',
+      desc: 'Trigger → condition → action rules, e.g. "when all subtasks done, move parent to done".' },
+    { title: 'Wiki: collaboration', status: 'todo', color: 'teal',
+      desc: 'Inline comments on wiki page text and page-level restrictions/permissions.' },
+    { title: 'Wiki: publishing', status: 'todo', color: 'orange',
+      desc: 'Page export (PDF/Markdown), macros (table of contents, status badges, issue embeds), and blog posts per space.' },
+  ];
+
+  roadmapEpics.forEach((epic, i) => {
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', ?, 'high', ?, ?, ?)`,
+      [uuid(), projId3, `ATLAS-${i + 1}`, i + 1, epic.title, epic.desc, epic.status, userIds[0], epic.color, i]);
+  });
+
   // ===== CONFLUENCE SEED DATA =====
   const spaceEng = uuid();
   const spaceProd = uuid();
@@ -805,7 +847,7 @@ function seedDemoData() {
     [uuid(), prodPageIds.prd, 'Atlas PRD — Core Features', '', userIds[3]]);
 
   saveDb();
-  console.log('\n  ✓ Demo data seeded (5 users, 2 projects, 13 issues, 2 wiki spaces, 7 pages)\n');
+  console.log('\n  ✓ Demo data seeded (5 users, 3 projects, 25 issues incl. 12 roadmap epics, 2 wiki spaces, 7 pages)\n');
 }
 
 async function seedDemoDataMysql(pool) {

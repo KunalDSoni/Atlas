@@ -206,3 +206,21 @@ describe('epic rollup + children endpoints', () => {
     expect(survivor.body.epic_key).toBeNull();
   });
 });
+
+describe('Atlas Development dogfood seed', () => {
+  test('seeds the ATLAS project with 12 roadmap epics, Epic support done', async () => {
+    const projects = await request(app).get('/api/projects').set(headers);
+    const atlas = projects.body.find((p) => p.key === 'ATLAS');
+    expect(atlas).toBeDefined();
+    expect(atlas.name).toBe('Atlas Development');
+
+    const epics = await request(app).get(`/api/projects/${atlas.id}/epics`).set(headers);
+    expect(epics.status).toBe(200);
+    expect(epics.body.length).toBe(12);
+
+    const first = epics.body.find((e) => e.issue_key === 'ATLAS-1');
+    expect(first.title).toBe('Epic support');
+    expect(first.status).toBe('done');
+    expect(epics.body.filter((e) => e.status === 'todo').length).toBe(11);
+  });
+});
