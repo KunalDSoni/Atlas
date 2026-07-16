@@ -91,6 +91,33 @@ router.get('/projects/:projectId/issues', requireAuth, async (req, res) => {
   } catch (e) { serverError(res, e); }
 });
 
+// GET /api/projects/:projectId/epics — epics with child rollups (Epics screen)
+router.get('/projects/:projectId/epics', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const epics = await queryAll(db, `
+      SELECT e.*, u.name AS assignee_name, u.avatar_color AS assignee_color,
+        (SELECT COUNT(*) FROM issues c WHERE c.parent_id = e.id) AS child_count,
+        (SELECT COUNT(*) FROM issues c WHERE c.parent_id = e.id AND c.status = 'done') AS done_count,
+        (SELECT COALESCE(SUM(c.story_points), 0) FROM issues c WHERE c.parent_id = e.id) AS total_points,
+        (SELECT COALESCE(SUM(c.story_points), 0) FROM issues c WHERE c.parent_id = e.id AND c.status = 'done') AS done_points
+      FROM issues e
+      LEFT JOIN users u ON u.id = e.assignee_id
+      WHERE e.project_id = ? AND e.type = 'epic'
+      ORDER BY e.board_order, e.created_at`, [req.params.projectId]);
+    res.json(epics);
+  } catch (e) { serverError(res, e); }
+});
+
+// GET /api/issues/:id/children — child issues of an epic
+router.get('/issues/:id/children', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const children = await queryAll(db, 'SELECT * FROM issues WHERE parent_id = ? ORDER BY created_at', [req.params.id]);
+    res.json(await Promise.all(children.map(c => enrichIssue(db, c))));
+  } catch (e) { serverError(res, e); }
+});
+
 // POST /api/projects/:projectId/issues
 router.post('/projects/:projectId/issues', requireAuth, requireBoardAdmin, async (req, res) => {
   try {
@@ -204,6 +231,8 @@ router.delete('/issues/:id', requireAuth, requireBoardAdmin, async (req, res) =>
   try {
     const db = await getDb();
     const issue = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
+    // Orphan children rather than cascade — matches Jira semantics.
+    await run(db, 'UPDATE issues SET parent_id = NULL WHERE parent_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM attachments WHERE issue_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM comments WHERE issue_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM activity_log WHERE issue_id = ?', [req.params.id]);

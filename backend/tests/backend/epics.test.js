@@ -161,3 +161,48 @@ describe('type-change guards', () => {
     expect(act.body.some((a) => a.field === 'epic')).toBe(true);
   });
 });
+
+describe('epic rollup + children endpoints', () => {
+  let epicId;
+
+  beforeAll(async () => {
+    const epic = await createIssue({ title: 'Rollup Epic', type: 'epic', epic_color: 'green' });
+    epicId = epic.body.id;
+    await createIssue({ title: 'Rollup Child 1', type: 'story', parent_id: epicId, story_points: 5 });
+    const c2 = await createIssue({ title: 'Rollup Child 2', type: 'task', parent_id: epicId, story_points: 3 });
+    await request(app).put(`/api/issues/${c2.body.id}`).set(headers).send({ status: 'done' });
+  });
+
+  test('GET /projects/:id/epics returns rollup counts and points', async () => {
+    const res = await request(app).get(`/api/projects/${projectId}/epics`).set(headers);
+    expect(res.status).toBe(200);
+    const epic = res.body.find((e) => e.id === epicId);
+    expect(epic).toBeDefined();
+    expect(epic.child_count).toBe(2);
+    expect(epic.done_count).toBe(1);
+    expect(epic.total_points).toBe(8);
+    expect(epic.done_points).toBe(3);
+    expect(res.body.every((e) => e.type === 'epic')).toBe(true);
+  });
+
+  test('GET /issues/:id/children lists the epic children enriched', async () => {
+    const res = await request(app).get(`/api/issues/${epicId}/children`).set(headers);
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBe(2);
+    expect(res.body[0]).toHaveProperty('assignee_name');
+    expect(res.body.map((c) => c.title).sort()).toEqual(['Rollup Child 1', 'Rollup Child 2']);
+  });
+
+  test('deleting an epic orphans its children instead of deleting them', async () => {
+    const epic = await createIssue({ title: 'Doomed Epic', type: 'epic' });
+    const child = await createIssue({ title: 'Survivor', type: 'task', parent_id: epic.body.id });
+
+    const del = await request(app).delete(`/api/issues/${epic.body.id}`).set(headers);
+    expect(del.status).toBe(200);
+
+    const survivor = await request(app).get(`/api/issues/${child.body.id}`).set(headers);
+    expect(survivor.status).toBe(200);
+    expect(survivor.body.parent_id).toBeNull();
+    expect(survivor.body.epic_key).toBeNull();
+  });
+});
