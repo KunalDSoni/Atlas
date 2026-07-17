@@ -4,7 +4,7 @@
 // and role from that token alone — client-supplied identity headers are ignored.
 
 import type {
-  ActivityEntry, AdminStats, Attachment, AuditLogPage, AuthUser, Comment, Issue, EpicSummary,
+  ActivityEntry, AdminStats, AppNotification, Attachment, AuditLogPage, AuthUser, Comment, Issue, EpicSummary,
   ProfileResponse, Project, ProjectMember, ProjectStats, SavedFilter, SearchResults, Settings, Sprint, User,
   IssueLink, LinkType,
   WikiComment, WikiPage, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
@@ -157,6 +157,13 @@ export const api = {
     children: (issueId: string) => get<Issue[]>(`/issues/${issueId}/children`),
   },
 
+  notifications: {
+    list: () => get<AppNotification[]>('/notifications'),
+    unreadCount: () => get<{ count: number }>('/notifications/unread-count'),
+    markRead: (id: string) => put<{ ok: boolean }>(`/notifications/${id}/read`),
+    markAllRead: () => put<{ ok: boolean }>('/notifications/read-all'),
+  },
+
   search: {
     query: (q: string, projectId?: string) =>
       get<SearchResults>(`/search?q=${encodeURIComponent(q)}${projectId ? `&project_id=${encodeURIComponent(projectId)}` : ''}`),
@@ -241,6 +248,10 @@ export const api = {
 
     search: (q: string) => get<WikiPage[]>(`/wiki/search?q=${encodeURIComponent(q)}`),
     templates: () => get<WikiTemplate[]>('/wiki/templates'),
+
+    watchState: (pageId: string) => get<{ count: number; watching: boolean }>(`/wiki/pages/${pageId}/watchers`),
+    watch: (pageId: string) => post<{ ok: boolean; watching: boolean }>(`/wiki/pages/${pageId}/watch`),
+    unwatch: (pageId: string) => del<{ ok: boolean; watching: boolean }>(`/wiki/pages/${pageId}/watch`),
   },
 
   reports: {

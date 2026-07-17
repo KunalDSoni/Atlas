@@ -12,6 +12,7 @@ const { auditLog } = require('../middleware/logger');
 const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
+const { notify } = require('../utils/notify');
 
 const requireBoardAdmin = requireRole('admin', 'board_admin');
 
@@ -248,6 +249,19 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
       const actId = uuidv4();
       await run(db, `INSERT INTO activity_log (id, issue_id, user_id, action, field, old_value, new_value) VALUES (?, ?, ?, 'update', ?, ?, ?)`,
         [actId, req.params.id, req.userId, entry.field, entry.old_value, entry.new_value]);
+    }
+
+    // Assignment notification: tell the new assignee (unless self-assigned).
+    if (req.body.assignee_id !== undefined && req.body.assignee_id && req.body.assignee_id !== issue.assignee_id) {
+      const actor = await queryOne(db, 'SELECT name FROM users WHERE id = ?', [req.userId]);
+      await notify(db, {
+        userId: req.body.assignee_id,
+        actorId: req.userId,
+        type: 'assigned',
+        message: `${actor?.name || 'Someone'} assigned ${issue.issue_key} to you`,
+        link: `/board?issue=${issue.id}`,
+        issueId: issue.id,
+      });
     }
 
     const updated = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);

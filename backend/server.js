@@ -28,6 +28,7 @@ const watchersRoutes = require('./routes/watchers');
 const linksRoutes = require('./routes/links');
 const auditLogRoutes = require('./routes/auditlog');
 const searchRoutes = require('./routes/search');
+const notificationsRoutes = require('./routes/notifications');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -123,6 +124,9 @@ app.use('/api', linksRoutes);
 
 // Global Search + Saved Filters Module
 app.use('/api', searchRoutes);
+
+// Notifications + Wiki Page Watching Module
+app.use('/api', notificationsRoutes);
 
 // SPA fallback (Express 5 compatible)
 app.get('/{*splat}', (req, res) => {

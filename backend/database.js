@@ -254,6 +254,24 @@ const SCHEMA_SQL = [
     name TEXT NOT NULL,
     params TEXT NOT NULL DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS notifications (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    actor_id TEXT REFERENCES users(id),
+    type TEXT NOT NULL,
+    message TEXT NOT NULL,
+    link TEXT,
+    issue_id TEXT,
+    wiki_page_id TEXT,
+    is_read INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS wiki_page_watchers (
+    page_id TEXT NOT NULL REFERENCES wiki_pages(id),
+    user_id TEXT NOT NULL REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (page_id, user_id)
   )`
 ];
 
@@ -506,6 +524,24 @@ const MYSQL_SCHEMA_SQL = [
     name VARCHAR(255) NOT NULL,
     params TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS notifications (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL,
+    actor_id VARCHAR(36),
+    type VARCHAR(50) NOT NULL,
+    message VARCHAR(512) NOT NULL,
+    link VARCHAR(512),
+    issue_id VARCHAR(36),
+    wiki_page_id VARCHAR(36),
+    is_read TINYINT DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS wiki_page_watchers (
+    page_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(36) NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (page_id, user_id)
   ) DEFAULT CHARSET=utf8mb4`
 ];
 
@@ -784,7 +820,7 @@ function seedDemoData() {
       desc: 'Child issues under stories, tasks, and bugs using the same parent_id column, with progress rollup on the parent issue.' },
     { title: 'Global search & filters', status: 'done', color: 'teal',
       desc: 'Quick search across issues and wiki pages, JQL-lite filter bar (assignee, type, label, status), and saved filters.' },
-    { title: 'Notifications & @mentions', status: 'todo', color: 'yellow',
+    { title: 'Notifications & @mentions', status: 'done', color: 'yellow',
       desc: 'In-app notification inbox, @mentions in comments, wiki page watching — wiring up the existing notification settings toggles.' },
     { title: 'Time tracking', status: 'todo', color: 'orange',
       desc: 'Original estimates, work logs, and remaining-time display on issues, building on the original_estimate and time_spent columns.' },
@@ -834,6 +870,11 @@ function seedDemoData() {
       { title: 'Global /api/search across issues and wiki pages', type: 'task' },
       { title: 'Command palette server search with cross-project jump', type: 'story' },
       { title: 'Backlog filter bar: type, assignee, label + saved filters', type: 'story' },
+    ] },
+    { epic: 3, items: [
+      { title: 'Notifications table, API, and header bell inbox', type: 'story' },
+      { title: 'Assignment, watcher-comment, and @mention triggers', type: 'task' },
+      { title: 'Wiki page watching with update notifications', type: 'task' },
     ] },
   ];
   let atlasIssueNumber = 18;

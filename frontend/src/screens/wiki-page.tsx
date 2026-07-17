@@ -75,6 +75,7 @@ export default function WikiPageScreen() {
   const [commentBody, setCommentBody] = useState('');
   const [posting, setPosting] = useState(false);
   const [createChildOpen, setCreateChildOpen] = useState(false);
+  const [watching, setWatching] = useState(false);
 
   const load = useCallback(async () => {
     if (!pageId) return;
@@ -85,12 +86,14 @@ export default function WikiPageScreen() {
       setPage(p);
       setDraftTitle(p.title);
       setDraftBody(p.body);
-      const [t, c] = await Promise.all([
+      const [t, c, w] = await Promise.all([
         api.wiki.tree(p.space_id).catch(() => []),
         api.wiki.comments(p.id).catch(() => []),
+        api.wiki.watchState(p.id).catch(() => ({ count: 0, watching: false })),
       ]);
       setTree(t);
       setComments(c);
+      setWatching(w.watching);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load page');
     } finally {
@@ -129,6 +132,17 @@ export default function WikiPageScreen() {
       setPage({ ...page, like_count: r.like_count });
     } catch (e) {
       toast.error('Could not like page', { description: e instanceof Error ? e.message : undefined });
+    }
+  }
+
+  async function toggleWatch() {
+    if (!page) return;
+    try {
+      const r = watching ? await api.wiki.unwatch(page.id) : await api.wiki.watch(page.id);
+      setWatching(r.watching);
+      toast.success(r.watching ? 'Watching this page' : 'No longer watching');
+    } catch (e) {
+      toast.error('Could not update watching', { description: e instanceof Error ? e.message : undefined });
     }
   }
 
@@ -220,6 +234,15 @@ export default function WikiPageScreen() {
               <>
                 <Button variant="ghost" size="sm" onClick={like} className="gap-1.5">
                   <Heart className="size-4" /> {page.like_count}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={toggleWatch}
+                  className="gap-1.5"
+                  aria-pressed={watching}
+                >
+                  <Eye className="size-4" /> {watching ? 'Watching' : 'Watch'}
                 </Button>
 
                 <Sheet>

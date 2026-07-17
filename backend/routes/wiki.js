@@ -218,6 +218,21 @@ router.put('/wiki/pages/:id', requireAuth, async (req, res) => {
     updates.push("updated_at = datetime('now')");
     params.push(req.params.id);
     await run(db, `UPDATE wiki_pages SET ${updates.join(', ')} WHERE id = ?`, params);
+
+    // Content edits notify the page's watchers.
+    if (title !== undefined || body !== undefined) {
+      const { notify } = require('../utils/notify');
+      const actor = await queryOne(db, 'SELECT name FROM users WHERE id = ?', [req.userId]);
+      const watchers = await queryAll(db, 'SELECT user_id FROM wiki_page_watchers WHERE page_id = ?', [req.params.id]);
+      for (const w of watchers) {
+        await notify(db, {
+          userId: w.user_id, actorId: req.userId, type: 'wiki_update',
+          message: `${actor?.name || 'Someone'} updated "${title || page.title}"`,
+          link: `/wiki/page/${req.params.id}`, wikiPageId: req.params.id,
+        });
+      }
+    }
+
     const updated = await queryOne(db, 'SELECT * FROM wiki_pages WHERE id = ?', [req.params.id]);
     res.json(updated);
   } catch (e) { serverError(res, e); }

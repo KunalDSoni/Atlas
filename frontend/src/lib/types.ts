@@ -156,6 +156,22 @@ export interface SavedFilter {
   };
 }
 
+/** In-app notification row from GET /notifications. */
+export interface AppNotification {
+  id: string;
+  user_id: string;
+  actor_id: string | null;
+  type: 'assigned' | 'comment' | 'mention' | 'wiki_update' | string;
+  message: string;
+  link: string | null;
+  issue_id: string | null;
+  wiki_page_id: string | null;
+  is_read: number;
+  created_at: string;
+  actor_name: string | null;
+  actor_color: string | null;
+}
+
 export interface Comment {
   id: string;
   issue_id: string;
