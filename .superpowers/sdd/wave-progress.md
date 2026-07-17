@@ -15,3 +15,7 @@ Scopes (locked by controller):
 - E12 wiki publishing: export MD/HTML endpoints+menu, macros (TOC from headings, ATLAS-123 issue chips), blog posts (wiki_pages.page_type + space Blog tab). [x]
 
 Testing phase at end: update epics.test.js todo-count, run+fix all suites, new suites per epic area, build, e2e, merge dev, update memory.
+
+TESTING PHASE COMPLETE: parity-wave.test.js (29 tests) + updated epics.test.js/setup.js mounts; full suite 204/204 across 14 suites; fresh build committed; live e2e: 12/12 epics done with dates, search/workflow/versions/components/automations/filters/notifications endpoints verified, SPA serving new bundle.
+Merged to dev.
+WAVE COMPLETE.
