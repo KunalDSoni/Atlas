@@ -18,23 +18,38 @@ const requireBoardAdmin = requireRole('admin', 'board_admin');
 // Epic color constraints: only these 8 named colors are valid
 const EPIC_COLORS = ['purple', 'blue', 'teal', 'green', 'yellow', 'orange', 'red', 'pink'];
 
-// Hierarchy rules: an issue's parent must be an epic in the same project;
-// epics themselves take no parent and no sprint. Returns an error message or null.
+// Hierarchy rules: a strict three-level tree. Epics take no parent and no sprint;
+// stories/tasks/bugs may hang under an epic; subtasks must hang under a
+// story/task/bug and follow their parent's sprint. Returns an error message or null.
+const SUBTASK_PARENT_TYPES = ['story', 'task', 'bug'];
+
 async function validateHierarchy(db, { id, projectId, type, parentId, sprintId }) {
   if (type === 'epic') {
     if (parentId) return 'An epic cannot have a parent';
     if (sprintId) return 'An epic cannot be assigned to a sprint';
-    if (id) return null;
   }
-  if (id && type !== 'epic') {
-    const children = await queryOne(db, 'SELECT COUNT(*) as count FROM issues WHERE parent_id = ?', [id]);
-    if (children.count > 0) return 'Cannot change type: this epic still has child issues';
+  if (type === 'subtask') {
+    if (!parentId) return 'A subtask requires a parent issue';
+    if (sprintId) return 'A subtask follows its parent sprint and cannot be assigned to one directly';
+  }
+  if (id) {
+    // An issue keeps its children only while its type remains a valid parent for them.
+    const kids = await queryOne(db,
+      "SELECT COUNT(*) as total, SUM(CASE WHEN type = 'subtask' THEN 1 ELSE 0 END) as subtasks FROM issues WHERE parent_id = ?", [id]);
+    const subtaskKids = Number(kids.subtasks || 0);
+    const epicKids = Number(kids.total) - subtaskKids;
+    if (epicKids > 0 && type !== 'epic') return 'Cannot change type: this epic still has child issues';
+    if (subtaskKids > 0 && !SUBTASK_PARENT_TYPES.includes(type)) return 'Cannot change type: this issue still has subtasks';
   }
   if (parentId) {
     const parent = await queryOne(db, 'SELECT id, type, project_id FROM issues WHERE id = ?', [parentId]);
     if (!parent) return 'Parent issue not found';
-    if (parent.type !== 'epic') return 'Parent must be an epic';
-    if (parent.project_id !== projectId) return 'Parent epic must be in the same project';
+    if (type === 'subtask') {
+      if (!SUBTASK_PARENT_TYPES.includes(parent.type)) return 'A subtask parent must be a story, task, or bug';
+    } else if (parent.type !== 'epic') {
+      return 'Parent must be an epic';
+    }
+    if (parent.project_id !== projectId) return 'Parent must be in the same project';
   }
   return null;
 }
@@ -260,6 +275,9 @@ router.put('/issues/:id/move', requireAuth, async (req, res) => {
 
     if (issue.type === 'epic' && req.body.sprint_id) {
       return res.status(400).json({ error: 'An epic cannot be assigned to a sprint' });
+    }
+    if (issue.type === 'subtask' && req.body.sprint_id) {
+      return res.status(400).json({ error: 'A subtask follows its parent sprint and cannot be assigned to one directly' });
     }
 
     const { status, sprint_id, board_order } = req.body;
