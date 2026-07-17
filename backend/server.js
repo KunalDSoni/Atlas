@@ -33,6 +33,11 @@ const worklogsRoutes = require('./routes/worklogs');
 const releasesRoutes = require('./routes/releases');
 const workflowsRoutes = require('./routes/workflows');
 const automationsRoutes = require('./routes/automations');
+const productCompaniesRoutes = require('./routes/product-companies');
+const productInsightsRoutes = require('./routes/product-insights');
+const productFeaturesRoutes = require('./routes/product-features');
+const productObjectivesRoutes = require('./routes/product-objectives');
+const portalRoutes = require('./routes/portal');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -143,6 +148,14 @@ app.use('/api', workflowsRoutes);
 
 // Automation Rules Module
 app.use('/api', automationsRoutes);
+
+// Product Module (Productboard parity) — companies/customers, insights,
+// features + prioritization, objectives, and the customer-facing idea portal
+app.use('/api', productCompaniesRoutes);
+app.use('/api', productInsightsRoutes);
+app.use('/api', productFeaturesRoutes);
+app.use('/api', productObjectivesRoutes);
+app.use('/api', portalRoutes);
 
 // SPA fallback (Express 5 compatible)
 app.get('/{*splat}', (req, res) => {

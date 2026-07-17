@@ -76,6 +76,11 @@ async function createTestApp() {
   testApp.use('/api', require('../../routes/releases'));
   testApp.use('/api', require('../../routes/workflows'));
   testApp.use('/api', require('../../routes/automations'));
+  testApp.use('/api', require('../../routes/product-companies'));
+  testApp.use('/api', require('../../routes/product-insights'));
+  testApp.use('/api', require('../../routes/product-features'));
+  testApp.use('/api', require('../../routes/product-objectives'));
+  testApp.use('/api', require('../../routes/portal'));
 
   app = testApp;
   return testApp;
