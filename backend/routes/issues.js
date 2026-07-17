@@ -64,8 +64,10 @@ async function enrichIssue(db, issue) {
     ? await queryOne(db, 'SELECT name, avatar_color FROM users WHERE id = ?', [issue.reporter_id])
     : null;
   const parent = issue.parent_id
-    ? await queryOne(db, 'SELECT issue_key, title, epic_color FROM issues WHERE id = ?', [issue.parent_id])
+    ? await queryOne(db, 'SELECT issue_key, title, type, epic_color FROM issues WHERE id = ?', [issue.parent_id])
     : null;
+  const subtasks = await queryOne(db,
+    "SELECT COUNT(*) as total, SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as done FROM issues WHERE parent_id = ? AND type = 'subtask'", [issue.id]);
   const commentCount = await queryOne(db, 'SELECT COUNT(*) as count FROM comments WHERE issue_id = ?', [issue.id]);
   const attachmentCount = await queryOne(db, 'SELECT COUNT(*) as count FROM attachments WHERE issue_id = ?', [issue.id]);
   const watcherCount = await queryOne(db, 'SELECT COUNT(*) as count FROM issue_watchers WHERE issue_id = ?', [issue.id]);
@@ -77,9 +79,14 @@ async function enrichIssue(db, issue) {
     assignee_color: assignee?.avatar_color || null,
     reporter_name: reporter?.name || null,
     reporter_color: reporter?.avatar_color || null,
-    epic_key: parent?.issue_key || null,
-    epic_title: parent?.title || null,
-    epic_badge_color: parent?.epic_color || null,
+    parent_key: parent?.issue_key || null,
+    parent_title: parent?.title || null,
+    parent_type: parent?.type || null,
+    epic_key: parent?.type === 'epic' ? parent.issue_key : null,
+    epic_title: parent?.type === 'epic' ? parent.title : null,
+    epic_badge_color: parent?.type === 'epic' ? parent.epic_color : null,
+    subtask_count: Number(subtasks.total),
+    subtask_done_count: Number(subtasks.done || 0),
     comment_count: commentCount.count,
     attachment_count: attachmentCount.count,
     watcher_count: watcherCount.count,
@@ -225,7 +232,7 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
         params.push(newVal);
         // Log activity for meaningful field changes
         if (key !== 'board_order' && String(oldVal) !== String(newVal)) {
-          activityEntries.push({ field: key === 'parent_id' ? 'epic' : key, old_value: oldVal, new_value: String(newVal) });
+          activityEntries.push({ field: key === 'parent_id' ? (nextType === 'subtask' ? 'parent' : 'epic') : key, old_value: oldVal, new_value: String(newVal) });
         }
       }
     }

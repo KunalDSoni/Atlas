@@ -172,3 +172,80 @@ describe('type-change guards', () => {
     expect(res.body.error).toMatch(/child/i);
   });
 });
+
+describe('enrichment — parent fields and rollup counts', () => {
+  let hostId;
+
+  beforeAll(async () => {
+    const host = await createIssue({ title: 'Enriched Host', type: 'story' });
+    hostId = host.body.id;
+    await createIssue({ title: 'Sub A', type: 'subtask', parent_id: hostId });
+    const b = await createIssue({ title: 'Sub B', type: 'subtask', parent_id: hostId });
+    await request(app).put(`/api/issues/${b.body.id}`).set(headers).send({ status: 'done' });
+  });
+
+  test('a subtask carries generic parent fields, not epic fields', async () => {
+    const subs = await request(app).get(`/api/issues/${hostId}/children`).set(headers);
+    expect(subs.status).toBe(200);
+    const sub = subs.body.find((s) => s.title === 'Sub A');
+    expect(sub.parent_key).toMatch(/^ATL-\d+$/);
+    expect(sub.parent_title).toBe('Enriched Host');
+    expect(sub.parent_type).toBe('story');
+    expect(sub.epic_key).toBeNull();
+    expect(sub.epic_title).toBeNull();
+    expect(sub.epic_badge_color).toBeNull();
+  });
+
+  test('an epic child still carries epic fields AND generic parent fields', async () => {
+    const epic = await createIssue({ title: 'Enriched Epic', type: 'epic', epic_color: 'teal' });
+    const child = await createIssue({ title: 'Epic Child E', type: 'story', parent_id: epic.body.id });
+    expect(child.body.epic_title).toBe('Enriched Epic');
+    expect(child.body.epic_badge_color).toBe('teal');
+    expect(child.body.parent_title).toBe('Enriched Epic');
+    expect(child.body.parent_type).toBe('epic');
+  });
+
+  test('the parent issue reports subtask_count and subtask_done_count as numbers', async () => {
+    const res = await request(app).get(`/api/issues/${hostId}`).set(headers);
+    expect(res.status).toBe(200);
+    expect(res.body.subtask_count).toBe(2);
+    expect(res.body.subtask_done_count).toBe(1);
+  });
+
+  test('subtask counts appear in the project issue list', async () => {
+    const res = await request(app).get(`/api/projects/${projectId}/issues`).set(headers);
+    const host = res.body.find((i) => i.id === hostId);
+    expect(host.subtask_count).toBe(2);
+    expect(host.subtask_done_count).toBe(1);
+  });
+
+  test('epic rollup does NOT count grandchild subtasks', async () => {
+    const epic = await createIssue({ title: 'Grandparent Epic', type: 'epic' });
+    const mid = await createIssue({ title: 'Middle Story', type: 'story', parent_id: epic.body.id, story_points: 5 });
+    await createIssue({ title: 'Grandchild Sub', type: 'subtask', parent_id: mid.body.id, story_points: 99 });
+    const epics = await request(app).get(`/api/projects/${projectId}/epics`).set(headers);
+    const row = epics.body.find((e) => e.id === epic.body.id);
+    expect(row.child_count).toBe(1);
+    expect(row.total_points).toBe(5);
+  });
+
+  test('deleting the parent orphans its subtasks', async () => {
+    const host = await createIssue({ title: 'Doomed Host', type: 'story' });
+    const sub = await createIssue({ title: 'Orphaned Sub', type: 'subtask', parent_id: host.body.id });
+    const del = await request(app).delete(`/api/issues/${host.body.id}`).set(headers);
+    expect(del.status).toBe(200);
+    const orphan = await request(app).get(`/api/issues/${sub.body.id}`).set(headers);
+    expect(orphan.status).toBe(200);
+    expect(orphan.body.parent_id).toBeNull();
+    expect(orphan.body.parent_key).toBeNull();
+  });
+
+  test('records a "parent" activity entry when a subtask is reparented', async () => {
+    const other = await createIssue({ title: 'Reparent Target', type: 'story' });
+    const sub = await createIssue({ title: 'Tracked Sub', type: 'subtask', parent_id: hostId });
+    await request(app).put(`/api/issues/${sub.body.id}`).set(headers).send({ parent_id: other.body.id });
+    const act = await request(app).get(`/api/issues/${sub.body.id}/activity`).set(headers);
+    expect(act.status).toBe(200);
+    expect(act.body.some((a) => a.field === 'parent')).toBe(true);
+  });
+});
