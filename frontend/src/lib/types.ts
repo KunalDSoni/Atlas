@@ -404,6 +404,7 @@ export interface WikiPage {
   like_count: number;
   restricted?: number;
   can_edit_page?: number;
+  page_type?: 'page' | 'blog' | string;
   labels: string[];
   space_name?: string;
   space_key?: string;

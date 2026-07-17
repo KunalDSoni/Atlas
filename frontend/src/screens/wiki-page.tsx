@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  ArrowLeft, Clock, Eye, Heart, History, Loader2, Lock, Pencil, Plus, Quote, Send, Trash2, X,
+  ArrowLeft, Clock, Download, Eye, Heart, History, Loader2, Lock, Pencil, Plus, Quote, Send, Trash2, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -24,6 +24,9 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { ErrorState, LabelChip, RowsSkeleton, UserAvatar } from '@/components/app/primitives';
 import { RichTextEditor, RichTextView } from '@/components/app/rich-text';
 import { WikiTree } from '@/components/app/wiki-tree';
@@ -140,6 +143,22 @@ export default function WikiPageScreen() {
       setPage({ ...page, like_count: r.like_count });
     } catch (e) {
       toast.error('Could not like page', { description: e instanceof Error ? e.message : undefined });
+    }
+  }
+
+  async function exportPage(format: 'markdown' | 'html') {
+    if (!page) return;
+    try {
+      const file = await api.wiki.exportPage(page.id, format);
+      const blob = new Blob([file.content], { type: file.mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file.filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast.error('Export failed', { description: e instanceof Error ? e.message : undefined });
     }
   }
 
@@ -297,6 +316,25 @@ export default function WikiPageScreen() {
                   </Button>
                 )}
 
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" aria-label="Export page" title="Export page">
+                      <Download className="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onSelect={() => void exportPage('markdown')}>
+                      Export as Markdown
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => void exportPage('html')}>
+                      Export as HTML
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => window.print()}>
+                      Print / PDF
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
                 <Sheet>
                   <SheetTrigger asChild>
                     <Button variant="ghost" size="icon" aria-label="Version history">
@@ -360,7 +398,7 @@ export default function WikiPageScreen() {
           <Card>
             <CardContent className="px-6 py-5">
               {page.body ? (
-                <RichTextView html={page.body} />
+                <RichTextView html={page.body} macros />
               ) : (
                 <p className="py-8 text-center text-sm text-muted-foreground">
                   This page is empty. Click Edit to add content.

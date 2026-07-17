@@ -164,6 +164,7 @@ const SCHEMA_SQL = [
     updated_at TEXT DEFAULT (datetime('now'))
   )`,
   `CREATE TABLE IF NOT EXISTS wiki_pages (
+    page_type TEXT DEFAULT 'page',
     id TEXT PRIMARY KEY,
     space_id TEXT NOT NULL REFERENCES wiki_spaces(id),
     parent_id TEXT REFERENCES wiki_pages(id),
@@ -489,6 +490,7 @@ const MYSQL_SCHEMA_SQL = [
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   ) DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS wiki_pages (
+    page_type VARCHAR(20) DEFAULT 'page',
     id VARCHAR(36) PRIMARY KEY,
     space_id VARCHAR(36) NOT NULL,
     parent_id VARCHAR(36),
@@ -678,6 +680,7 @@ async function initSqlite() {
   try { db.run("ALTER TABLE issues ADD COLUMN start_date TEXT"); } catch (e) { /* column already exists */ }
   try { db.run("ALTER TABLE projects ADD COLUMN wip_limits TEXT DEFAULT '{}'"); } catch (e) { /* column already exists */ }
   try { db.run("ALTER TABLE wiki_page_comments ADD COLUMN quote TEXT"); } catch (e) { /* column already exists */ }
+  try { db.run("ALTER TABLE wiki_pages ADD COLUMN page_type TEXT DEFAULT 'page'"); } catch (e) { /* column already exists */ }
 
   saveDb();
 
@@ -759,6 +762,13 @@ async function initMysqlSchema(pool) {
   );
   if (quoteCol.length === 0) {
     await pool.query('ALTER TABLE wiki_page_comments ADD COLUMN quote TEXT');
+  }
+
+  const [ptCol] = await pool.query(
+    "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'wiki_pages' AND column_name = 'page_type'"
+  );
+  if (ptCol.length === 0) {
+    await pool.query("ALTER TABLE wiki_pages ADD COLUMN page_type VARCHAR(20) DEFAULT 'page'");
   }
 
   const [wipCol] = await pool.query(
@@ -976,7 +986,7 @@ function seedDemoData() {
       desc: 'Trigger → condition → action rules, e.g. "when all subtasks done, move parent to done".' },
     { title: 'Wiki: collaboration', status: 'done', color: 'teal',
       desc: 'Inline comments on wiki page text and page-level restrictions/permissions.' },
-    { title: 'Wiki: publishing', status: 'todo', color: 'orange',
+    { title: 'Wiki: publishing', status: 'done', color: 'orange',
       desc: 'Page export (PDF/Markdown), macros (table of contents, status badges, issue embeds), and blog posts per space.' },
   ];
 
@@ -1054,6 +1064,11 @@ function seedDemoData() {
     { epic: 10, items: [
       { title: 'Comment-on-selection quotes in wiki comments', type: 'story' },
       { title: 'Page restrictions: per-user view/edit with API enforcement', type: 'story' },
+    ] },
+    { epic: 11, items: [
+      { title: 'Markdown and HTML export with print-to-PDF', type: 'task' },
+      { title: 'Wiki macros: table of contents and issue-key chips', type: 'story' },
+      { title: 'Blog posts per space, kept out of the page tree', type: 'story' },
     ] },
   ];
   let atlasIssueNumber = 18;

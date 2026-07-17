@@ -4,8 +4,11 @@
 // again on render — defence in depth, and it also protects against rows written before
 // that fix landed. Never render a wiki body with a bare dangerouslySetInnerHTML.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import DOMPurify, { type Config } from 'dompurify';
+import { toast } from 'sonner';
+import { api } from '@/lib/api';
 import { Bold, Code, Heading2, Heading3, Italic, Link2, List, ListOrdered, Quote, Strikethrough } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,13 +32,115 @@ export function sanitizeHtml(html: string): string {
   return String(DOMPurify.sanitize(html ?? '', PURIFY_CONFIG));
 }
 
+const ISSUE_KEY_RE = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/;
+
+/**
+ * Wiki macros, applied AFTER sanitising (everything injected here is built from
+ * textContent, never raw user HTML):
+ * - `[toc]` on its own line becomes a table of contents from the page headings
+ * - issue keys like ATLAS-12 become clickable chips
+ */
+function applyMacros(html: string): string {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  const root = tpl.content;
+
+  const headings = [...root.querySelectorAll('h1, h2, h3')];
+  headings.forEach((h, i) => {
+    h.id = `h-${i}-${(h.textContent || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`;
+  });
+
+  root.querySelectorAll('p, div').forEach((el) => {
+    if ((el.textContent || '').trim().toLowerCase() !== '[toc]') return;
+    const nav = document.createElement('nav');
+    nav.className = 'wiki-toc rounded-md border border-border bg-surface px-4 py-3';
+    const title = document.createElement('p');
+    title.className = 'text-xs font-semibold uppercase tracking-wider text-muted-foreground';
+    title.textContent = 'On this page';
+    nav.appendChild(title);
+    const ul = document.createElement('ul');
+    headings.forEach((h) => {
+      const li = document.createElement('li');
+      if (h.tagName === 'H3') li.style.marginLeft = '1rem';
+      const a = document.createElement('a');
+      a.href = `#${h.id}`;
+      a.textContent = h.textContent || '';
+      li.appendChild(a);
+      ul.appendChild(li);
+    });
+    nav.appendChild(ul);
+    el.replaceWith(nav);
+  });
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const targets: Text[] = [];
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    const text = node as Text;
+    if (text.parentElement?.closest('a, code, pre')) continue;
+    if (ISSUE_KEY_RE.test(text.textContent || '')) targets.push(text);
+  }
+  targets.forEach((text) => {
+    const frag = document.createDocumentFragment();
+    (text.textContent || '').split(/(\b[A-Z][A-Z0-9]{1,9}-\d+\b)/g).forEach((part) => {
+      if (/^[A-Z][A-Z0-9]{1,9}-\d+$/.test(part)) {
+        const chip = document.createElement('a');
+        chip.href = '#';
+        chip.setAttribute('data-issue-key', part);
+        chip.className =
+          'wiki-issue-chip inline-flex items-center gap-0.5 rounded bg-primary/10 px-1 font-mono text-[11px] font-semibold text-primary no-underline hover:bg-primary/20';
+        chip.textContent = part;
+        frag.appendChild(chip);
+      } else if (part) {
+        frag.appendChild(document.createTextNode(part));
+      }
+    });
+    text.replaceWith(frag);
+  });
+
+  const out = document.createElement('div');
+  out.appendChild(root);
+  return out.innerHTML;
+}
+
 /** Read-only wiki content. Typography is applied via the `wiki-prose` class. */
-export function RichTextView({ html, className }: { html: string; className?: string }) {
+export function RichTextView({
+  html,
+  className,
+  macros = false,
+}: {
+  html: string;
+  className?: string;
+  /** Enable [toc] + issue-key chips (wiki pages). */
+  macros?: boolean;
+}) {
+  const navigate = useNavigate();
+  const rendered = useMemo(() => {
+    const clean = sanitizeHtml(html);
+    return macros ? applyMacros(clean) : clean;
+  }, [html, macros]);
+
+  async function onClick(e: React.MouseEvent<HTMLDivElement>) {
+    const chip = (e.target as HTMLElement).closest?.('a[data-issue-key]');
+    if (!chip) return;
+    e.preventDefault();
+    const key = chip.getAttribute('data-issue-key') ?? '';
+    try {
+      const results = await api.search.query(key);
+      const hit = results.issues.find((i) => i.issue_key === key) ?? results.issues[0];
+      if (hit) navigate(hit.type === 'epic' ? `/epics?issue=${hit.id}` : `/board?issue=${hit.id}`);
+      else toast.info(`No issue found for ${key}`);
+    } catch {
+      toast.error(`Could not look up ${key}`);
+    }
+  }
+
   return (
     <div
       className={cn('wiki-prose', className)}
-      // Sanitised immediately above; the server also cleans on write.
-      dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }}
+      onClick={onClick}
+      // Sanitised inside `rendered`; the server also cleans on write.
+      dangerouslySetInnerHTML={{ __html: rendered }}
     />
   );
 }

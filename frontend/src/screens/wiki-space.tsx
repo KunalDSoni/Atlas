@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, BookOpen, Plus, Star, Trash2 } from 'lucide-react';
+import { ArrowLeft, BookOpen, Plus, Star, Trash2, Newspaper } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -41,6 +41,7 @@ export function CreatePageDialog({
   const [templateId, setTemplateId] = useState(BLANK);
   const [templates, setTemplates] = useState<WikiTemplate[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [asBlog, setAsBlog] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -57,7 +58,8 @@ export function CreatePageDialog({
       const page = await api.wiki.createPage(spaceId, {
         title: title.trim(),
         body: tpl?.body ?? '',
-        parent_id: parentId ?? null,
+        parent_id: asBlog ? null : (parentId ?? null),
+        page_type: asBlog ? 'blog' : 'page',
       });
       toast.success('Page created');
       onOpenChange(false);
@@ -82,6 +84,15 @@ export function CreatePageDialog({
               <Label htmlFor="pg-title">Title</Label>
               <Input id="pg-title" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus required />
             </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={asBlog}
+                onChange={(e) => setAsBlog(e.target.checked)}
+                className="size-4"
+              />
+              Publish as a blog post (kept out of the page tree)
+            </label>
             <div className="space-y-2">
               <Label>Template</Label>
               <Select value={templateId} onValueChange={setTemplateId}>
@@ -182,6 +193,9 @@ export default function WikiSpaceScreen() {
     );
   }
 
+  const blogPosts = pages.filter((p) => p.page_type === 'blog');
+  const docPages = pages.filter((p) => p.page_type !== 'blog');
+
   return (
     <>
       <Button asChild variant="ghost" size="sm" className="mb-2 -ml-2 text-muted-foreground">
@@ -243,9 +257,34 @@ export default function WikiSpaceScreen() {
             <WikiTree nodes={tree} />
           </aside>
 
+          <div className="min-w-0 space-y-4">
+          {blogPosts.length > 0 && (
+            <div>
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-faint">Blog</p>
+              <Card className="overflow-hidden py-0">
+                <ul className="divide-y divide-border-light">
+                  {blogPosts.map((p) => (
+                    <li key={p.id}>
+                      <Link
+                        to={`/wiki/page/${p.id}`}
+                        className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/60"
+                      >
+                        <Newspaper className="size-4 shrink-0 text-primary" />
+                        <span className="min-w-0 flex-1 truncate text-sm">{p.title}</span>
+                        <span className="hidden w-20 shrink-0 text-right text-xs text-muted-foreground md:block">
+                          {timeAgo(p.created_at)}
+                        </span>
+                        <UserAvatar name={p.author_name} color={p.author_color} className="size-5" />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            </div>
+          )}
           <Card className="overflow-hidden py-0">
             <ul className="divide-y divide-border-light">
-              {pages.map((p) => (
+              {docPages.map((p) => (
                 <li key={p.id}>
                   <Link
                     to={`/wiki/page/${p.id}`}
@@ -263,6 +302,7 @@ export default function WikiSpaceScreen() {
               ))}
             </ul>
           </Card>
+          </div>
         </div>
       )}
 

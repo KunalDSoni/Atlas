@@ -109,8 +109,9 @@ router.get('/wiki/spaces/:spaceId/pages', requireAuth, async (req, res) => {
       LEFT JOIN users u ON p.author_id = u.id
       LEFT JOIN users e ON p.last_editor_id = e.id
       WHERE p.space_id = ? AND p.status = ?
-      ORDER BY p.position, p.title
-    `, [req.params.spaceId, status]);
+      ${req.query.type ? "AND COALESCE(p.page_type,'page') = ?" : ''}
+      ORDER BY ${req.query.type === 'blog' ? 'p.created_at DESC' : 'p.position, p.title'}
+    `, req.query.type ? [req.params.spaceId, status, req.query.type] : [req.params.spaceId, status]);
     pages.forEach(p => { p.labels = p.labels_str ? p.labels_str.split(',') : []; delete p.labels_str; });
     res.json(pages);
   } catch (e) { serverError(res, e); }
@@ -155,14 +156,15 @@ router.post('/wiki/spaces/:spaceId/pages', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
     const { title, parent_id, body_format, labels } = req.body;
+    const pageType = req.body.page_type === 'blog' ? 'blog' : 'page';
     // User-authored HTML is rendered into other users' browsers — clean it on write.
     const body = sanitizeRichText(req.body.body);
     if (!title) return res.status(400).json({ error: 'Title required' });
     const id = uuidv4();
     const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
     const maxPos = await queryOne(db, 'SELECT COALESCE(MAX(position),0)+1 as p FROM wiki_pages WHERE space_id = ? AND parent_id IS ?', [req.params.spaceId, parent_id || null]);
-    await run(db, `INSERT INTO wiki_pages (id, space_id, parent_id, title, slug, body, body_format, author_id, last_editor_id, position) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      [id, req.params.spaceId, parent_id || null, title, slug, body || '', body_format || 'html', req.userId, req.userId, maxPos.p]);
+    await run(db, `INSERT INTO wiki_pages (id, space_id, parent_id, title, slug, body, body_format, author_id, last_editor_id, position, page_type) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      [id, req.params.spaceId, parent_id || null, title, slug, body || '', body_format || 'html', req.userId, req.userId, maxPos.p, pageType]);
     await run(db, "INSERT INTO wiki_page_versions (id, page_id, version, title, body, editor_id, change_message) VALUES (?,?,1,?,?,?,'Created')",
       [uuidv4(), id, title, body || '', req.userId]);
     if (labels && Array.isArray(labels)) {
@@ -276,6 +278,55 @@ router.delete('/wiki/pages/:id', requireAuth, async (req, res) => {
     await run(db, 'DELETE FROM wiki_page_likes WHERE page_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM wiki_pages WHERE id = ?', [req.params.id]);
     res.json({ ok: true });
+  } catch (e) { serverError(res, e); }
+});
+
+// ===== EXPORT =====
+// Crude but dependency-free HTML → Markdown for the sanitised tag subset we store.
+function htmlToMarkdown(html) {
+  let md = String(html || '');
+  md = md.replace(/<\s*br\s*\/?>/gi, '\n');
+  md = md.replace(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, '\n# $1\n');
+  md = md.replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, '\n## $1\n');
+  md = md.replace(/<h3[^>]*>([\s\S]*?)<\/h3>/gi, '\n### $1\n');
+  md = md.replace(/<h[4-6][^>]*>([\s\S]*?)<\/h[4-6]>/gi, '\n#### $1\n');
+  md = md.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, '- $1\n');
+  md = md.replace(/<\/(ul|ol)>/gi, '\n');
+  md = md.replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi, (m, inner) =>
+    inner.split('\n').map((l) => `> ${l.trim()}`).join('\n') + '\n');
+  md = md.replace(/<pre[^>]*>([\s\S]*?)<\/pre>/gi, '\n```\n$1\n```\n');
+  md = md.replace(/<code[^>]*>([\s\S]*?)<\/code>/gi, '`$1`');
+  md = md.replace(/<(strong|b)[^>]*>([\s\S]*?)<\/(strong|b)>/gi, '**$2**');
+  md = md.replace(/<(em|i)[^>]*>([\s\S]*?)<\/(em|i)>/gi, '*$2*');
+  md = md.replace(/<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, '[$2]($1)');
+  md = md.replace(/<img[^>]*alt="([^"]*)"[^>]*src="([^"]*)"[^>]*\/?>/gi, '![$1]($2)');
+  md = md.replace(/<tr[^>]*>([\s\S]*?)<\/tr>/gi, (m, inner) => {
+    const cells = [...inner.matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/gi)].map((c) => c[1].replace(/<[^>]+>/g, '').trim());
+    return cells.length ? `| ${cells.join(' | ')} |\n` : '';
+  });
+  md = md.replace(/<\/(p|div|table|thead|tbody|figure)>/gi, '\n');
+  md = md.replace(/<[^>]+>/g, '');
+  md = md.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+  return md.replace(/\n{3,}/g, '\n\n').trim() + '\n';
+}
+
+// Content is returned as JSON — the SPA turns it into a Blob download, since a bare
+// <a href> cannot carry the auth header.
+router.get('/wiki/pages/:id/export', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const page = await queryOne(db, 'SELECT * FROM wiki_pages WHERE id = ?', [req.params.id]);
+    if (!page) return res.status(404).json({ error: 'Page not found' });
+    const access = await pageAccess(db, req.params.id, req.userId, req.userRole);
+    if (!access.view) return res.status(403).json({ error: 'This page is restricted' });
+
+    const slug = page.slug || 'page';
+    if (req.query.format === 'markdown') {
+      res.json({ filename: `${slug}.md`, mime: 'text/markdown', content: `# ${page.title}\n\n${htmlToMarkdown(page.body)}` });
+    } else {
+      const html = `<!doctype html>\n<html><head><meta charset="utf-8"><title>${page.title}</title></head><body><h1>${page.title}</h1>\n${page.body || ''}\n</body></html>`;
+      res.json({ filename: `${slug}.html`, mime: 'text/html', content: html });
+    }
   } catch (e) { serverError(res, e); }
 });
 
@@ -459,7 +510,7 @@ router.get('/wiki/templates', requireAuth, async (req, res) => {
 router.get('/wiki/spaces/:spaceId/tree', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const pages = await queryAll(db, "SELECT id, title, parent_id, position, slug FROM wiki_pages WHERE space_id = ? AND status = 'current' ORDER BY position, title", [req.params.spaceId]);
+    const pages = await queryAll(db, "SELECT id, title, parent_id, position, slug FROM wiki_pages WHERE space_id = ? AND status = 'current' AND COALESCE(page_type,'page') = 'page' ORDER BY position, title", [req.params.spaceId]);
     // Build tree
     const map = {}; const roots = [];
     pages.forEach(p => { map[p.id] = { ...p, children: [] }; });

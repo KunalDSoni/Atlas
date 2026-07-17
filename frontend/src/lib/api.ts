@@ -276,7 +276,8 @@ export const api = {
       post<WikiSpace>('/wiki/spaces', body),
     deleteSpace: (id: string) => del<{ ok: boolean }>(`/wiki/spaces/${id}`),
 
-    pages: (spaceId: string) => get<WikiPage[]>(`/wiki/spaces/${spaceId}/pages`),
+    pages: (spaceId: string, type?: 'page' | 'blog') =>
+      get<WikiPage[]>(`/wiki/spaces/${spaceId}/pages${type ? `?type=${type}` : ''}`),
     tree: (spaceId: string) => get<WikiTreeNode[]>(`/wiki/spaces/${spaceId}/tree`),
     recent: () => get<WikiPage[]>('/wiki/pages/recent'),
     starred: () => get<WikiPage[]>('/wiki/pages/starred'),
@@ -301,6 +302,8 @@ export const api = {
 
     watchState: (pageId: string) => get<{ count: number; watching: boolean }>(`/wiki/pages/${pageId}/watchers`),
     restrictions: (pageId: string) => get<WikiRestriction[]>(`/wiki/pages/${pageId}/restrictions`),
+    exportPage: (pageId: string, format: 'markdown' | 'html') =>
+      get<{ filename: string; mime: string; content: string }>(`/wiki/pages/${pageId}/export?format=${format}`),
     setRestrictions: (pageId: string, restrictions: { user_id: string; can_edit: boolean }[]) =>
       put<{ ok: boolean; count: number }>(`/wiki/pages/${pageId}/restrictions`, { restrictions }),
     watch: (pageId: string) => post<{ ok: boolean; watching: boolean }>(`/wiki/pages/${pageId}/watch`),
