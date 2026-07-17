@@ -112,6 +112,50 @@ export interface EpicSummary extends Pick<Issue,
   done_points: number;
 }
 
+/** Lightweight hit rows from GET /search. */
+export interface SearchIssueHit {
+  id: string;
+  issue_key: string;
+  title: string;
+  type: IssueType;
+  status: IssueStatus;
+  priority: Priority;
+  project_id: string;
+  project_key: string;
+  project_name: string;
+}
+
+export interface SearchPageHit {
+  id: string;
+  title: string;
+  slug: string;
+  space_id: string;
+  space_name: string;
+  space_key: string;
+}
+
+export interface SearchResults {
+  issues: SearchIssueHit[];
+  pages: SearchPageHit[];
+}
+
+/** Saved backlog filter (per user, per project). */
+export interface SavedFilter {
+  id: string;
+  project_id: string;
+  user_id: string;
+  name: string;
+  params: string;
+  created_at: string;
+  params_parsed: {
+    query?: string;
+    status?: string;
+    type?: string;
+    assignee?: string;
+    label?: string;
+  };
+}
+
 export interface Comment {
   id: string;
   issue_id: string;

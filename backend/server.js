@@ -27,6 +27,7 @@ const activityRoutes = require('./routes/activity');
 const watchersRoutes = require('./routes/watchers');
 const linksRoutes = require('./routes/links');
 const auditLogRoutes = require('./routes/auditlog');
+const searchRoutes = require('./routes/search');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -119,6 +120,9 @@ app.use('/api', watchersRoutes);
 
 // Issue Links Module — linked issues
 app.use('/api', linksRoutes);
+
+// Global Search + Saved Filters Module
+app.use('/api', searchRoutes);
 
 // SPA fallback (Express 5 compatible)
 app.get('/{*splat}', (req, res) => {

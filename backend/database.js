@@ -246,6 +246,14 @@ const SCHEMA_SQL = [
     status_code INTEGER,
     duration_ms INTEGER,
     created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS saved_filters (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    user_id TEXT NOT NULL REFERENCES users(id),
+    name TEXT NOT NULL,
+    params TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now'))
   )`
 ];
 
@@ -489,6 +497,14 @@ const MYSQL_SCHEMA_SQL = [
     path VARCHAR(512),
     status_code INT,
     duration_ms INT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS saved_filters (
+    id VARCHAR(36) PRIMARY KEY,
+    project_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(36) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    params TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   ) DEFAULT CHARSET=utf8mb4`
 ];
@@ -766,7 +782,7 @@ function seedDemoData() {
       desc: 'Add epic as a first-class issue type: hierarchy via parent_id, Epics screen with progress rollups, epic badges on board and backlog, epic picker in the issue detail sheet.' },
     { title: 'Subtasks', status: 'done', color: 'blue',
       desc: 'Child issues under stories, tasks, and bugs using the same parent_id column, with progress rollup on the parent issue.' },
-    { title: 'Global search & filters', status: 'todo', color: 'teal',
+    { title: 'Global search & filters', status: 'done', color: 'teal',
       desc: 'Quick search across issues and wiki pages, JQL-lite filter bar (assignee, type, label, status), and saved filters.' },
     { title: 'Notifications & @mentions', status: 'todo', color: 'yellow',
       desc: 'In-app notification inbox, @mentions in comments, wiki page watching — wiring up the existing notification settings toggles.' },
@@ -809,6 +825,25 @@ function seedDemoData() {
     db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
       VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
       [uuid(), projId3, `ATLAS-${13 + i}`, 13 + i, c.title, c.type, userIds[0], userIds[0], atlasEpicIds[1], i]);
+  });
+
+  // Wave epics (3-12): each shipped epic gets done children describing its real work.
+  // `epic` is the 0-based index into atlasEpicIds; numbering continues after ATLAS-17.
+  const waveChildren = [
+    { epic: 2, items: [
+      { title: 'Global /api/search across issues and wiki pages', type: 'task' },
+      { title: 'Command palette server search with cross-project jump', type: 'story' },
+      { title: 'Backlog filter bar: type, assignee, label + saved filters', type: 'story' },
+    ] },
+  ];
+  let atlasIssueNumber = 18;
+  waveChildren.forEach((w) => {
+    w.items.forEach((c, i) => {
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${atlasIssueNumber}`, atlasIssueNumber, c.title, c.type, userIds[0], userIds[0], atlasEpicIds[w.epic], i]);
+      atlasIssueNumber += 1;
+    });
   });
 
   // ===== CONFLUENCE SEED DATA =====

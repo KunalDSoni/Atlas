@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Plus, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -56,6 +57,21 @@ export default function EpicsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [openIssueId, setOpenIssueId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // ?issue=<id> deep-links an epic open (used by the command palette).
+  useEffect(() => {
+    const target = searchParams.get('issue');
+    if (target) setOpenIssueId(target);
+  }, [searchParams]);
+
+  function closeIssue() {
+    setOpenIssueId(null);
+    if (searchParams.has('issue')) {
+      searchParams.delete('issue');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }
 
   const load = useCallback(async () => {
     if (!currentProjectId) return;
@@ -135,7 +151,7 @@ export default function EpicsScreen() {
 
       <IssueDetailSheet
         issueId={openIssueId}
-        onOpenChange={(o) => !o && setOpenIssueId(null)}
+        onOpenChange={(o) => !o && closeIssue()}
         onChanged={load}
         onOpenIssue={setOpenIssueId}
       />

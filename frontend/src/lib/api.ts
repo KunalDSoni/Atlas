@@ -5,7 +5,7 @@
 
 import type {
   ActivityEntry, AdminStats, Attachment, AuditLogPage, AuthUser, Comment, Issue, EpicSummary,
-  ProfileResponse, Project, ProjectMember, ProjectStats, Settings, Sprint, User,
+  ProfileResponse, Project, ProjectMember, ProjectStats, SavedFilter, SearchResults, Settings, Sprint, User,
   IssueLink, LinkType,
   WikiComment, WikiPage, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
 } from './types';
@@ -155,6 +155,18 @@ export const api = {
   epics: {
     list: (projectId: string) => get<EpicSummary[]>(`/projects/${projectId}/epics`),
     children: (issueId: string) => get<Issue[]>(`/issues/${issueId}/children`),
+  },
+
+  search: {
+    query: (q: string, projectId?: string) =>
+      get<SearchResults>(`/search?q=${encodeURIComponent(q)}${projectId ? `&project_id=${encodeURIComponent(projectId)}` : ''}`),
+  },
+
+  filters: {
+    list: (projectId: string) => get<SavedFilter[]>(`/projects/${projectId}/filters`),
+    create: (projectId: string, name: string, params: SavedFilter['params_parsed']) =>
+      post<SavedFilter>(`/projects/${projectId}/filters`, { name, params }),
+    remove: (id: string) => del<{ ok: boolean }>(`/filters/${id}`),
   },
 
   comments: {
