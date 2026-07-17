@@ -99,6 +99,8 @@ const SCHEMA_SQL = [
     original_estimate TEXT,
     time_spent TEXT,
     epic_color TEXT DEFAULT 'purple' CHECK(epic_color IN ('purple','blue','teal','green','yellow','orange','red','pink')),
+    fix_version_id TEXT REFERENCES versions(id),
+    component_id TEXT REFERENCES components(id),
     board_order INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
@@ -280,6 +282,22 @@ const SCHEMA_SQL = [
     minutes INTEGER NOT NULL,
     comment TEXT,
     created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS versions (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    name TEXT NOT NULL,
+    description TEXT,
+    status TEXT DEFAULT 'unreleased' CHECK(status IN ('unreleased','released')),
+    release_date TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS components (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    name TEXT NOT NULL,
+    description TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
   )`
 ];
 
@@ -377,6 +395,8 @@ const MYSQL_SCHEMA_SQL = [
     original_estimate VARCHAR(50),
     time_spent VARCHAR(50),
     epic_color VARCHAR(20) DEFAULT 'purple' CHECK(epic_color IN ('purple','blue','teal','green','yellow','orange','red','pink')),
+    fix_version_id VARCHAR(36),
+    component_id VARCHAR(36),
     board_order INT DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -558,6 +578,22 @@ const MYSQL_SCHEMA_SQL = [
     minutes INT NOT NULL,
     comment TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS versions (
+    id VARCHAR(36) PRIMARY KEY,
+    project_id VARCHAR(36) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    status VARCHAR(20) DEFAULT 'unreleased' CHECK(status IN ('unreleased','released')),
+    release_date DATETIME NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS components (
+    id VARCHAR(36) PRIMARY KEY,
+    project_id VARCHAR(36) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   ) DEFAULT CHARSET=utf8mb4`
 ];
 
@@ -579,6 +615,8 @@ async function initSqlite() {
   // CREATE TABLE IF NOT EXISTS won't add columns to an existing data.db — patch in place.
   // ALTER skips CHECK: existing DBs are covered by API validation in backend/routes/issues.js
   try { db.run("ALTER TABLE issues ADD COLUMN epic_color TEXT DEFAULT 'purple'"); } catch (e) { /* column already exists */ }
+  try { db.run("ALTER TABLE issues ADD COLUMN fix_version_id TEXT"); } catch (e) { /* column already exists */ }
+  try { db.run("ALTER TABLE issues ADD COLUMN component_id TEXT"); } catch (e) { /* column already exists */ }
 
   saveDb();
 
@@ -642,6 +680,15 @@ async function initMysqlSchema(pool) {
   if (epicCol.length === 0) {
     // ALTER skips CHECK: existing DBs are covered by API validation in backend/routes/issues.js
     await pool.query("ALTER TABLE issues ADD COLUMN epic_color VARCHAR(20) DEFAULT 'purple'");
+  }
+
+  for (const col of ['fix_version_id', 'component_id']) {
+    const [hit] = await pool.query(
+      "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'issues' AND column_name = ?", [col]
+    );
+    if (hit.length === 0) {
+      await pool.query(`ALTER TABLE issues ADD COLUMN ${col} VARCHAR(36)`);
+    }
   }
 
   const [rows] = await pool.query('SELECT COUNT(*) as c FROM users');
@@ -840,7 +887,7 @@ function seedDemoData() {
       desc: 'In-app notification inbox, @mentions in comments, wiki page watching — wiring up the existing notification settings toggles.' },
     { title: 'Time tracking', status: 'done', color: 'orange',
       desc: 'Original estimates, work logs, and remaining-time display on issues, building on the original_estimate and time_spent columns.' },
-    { title: 'Releases & components', status: 'todo', color: 'red',
+    { title: 'Releases & components', status: 'done', color: 'red',
       desc: 'Fix versions and components on issues, plus a release hub screen with per-version progress.' },
     { title: 'Roadmap / timeline', status: 'todo', color: 'pink',
       desc: 'Gantt-style timeline view of epics and sprints across time.' },
@@ -895,6 +942,11 @@ function seedDemoData() {
     { epic: 4, items: [
       { title: 'Work logs table and API with time_spent rollup', type: 'task' },
       { title: 'Time tracking panel: estimate, log work, remaining bar', type: 'story' },
+    ] },
+    { epic: 5, items: [
+      { title: 'Versions and components tables with issue rollups', type: 'task' },
+      { title: 'Releases hub screen with per-version progress', type: 'story' },
+      { title: 'Fix version and component pickers on issues', type: 'task' },
     ] },
   ];
   let atlasIssueNumber = 18;

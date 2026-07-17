@@ -30,6 +30,7 @@ const auditLogRoutes = require('./routes/auditlog');
 const searchRoutes = require('./routes/search');
 const notificationsRoutes = require('./routes/notifications');
 const worklogsRoutes = require('./routes/worklogs');
+const releasesRoutes = require('./routes/releases');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -131,6 +132,9 @@ app.use('/api', notificationsRoutes);
 
 // Time Tracking Module
 app.use('/api', worklogsRoutes);
+
+// Releases + Components Module
+app.use('/api', releasesRoutes);
 
 // SPA fallback (Express 5 compatible)
 app.get('/{*splat}', (req, res) => {

@@ -21,7 +21,7 @@ import {
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
 import { EPIC_COLORS, PRIORITIES, PRIORITY_LABEL, STATUSES, STATUS_LABEL, TYPE_LABEL, canCreateIssues, epicColor, isAdmin } from '@/lib/domain';
-import type { ActivityEntry, Attachment, Comment, EpicSummary, Issue, IssueStatus, Priority, Sprint, User, WorkLog } from '@/lib/types';
+import type { ActivityEntry, Attachment, Comment, EpicSummary, Issue, IssueStatus, Priority, ProjectComponent, Sprint, User, Version, WorkLog } from '@/lib/types';
 import { formatBytes, formatDuration, timeAgo } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { PriorityIcon, StatusPill, TypeIcon, UserAvatar } from './primitives';
@@ -31,6 +31,8 @@ import { LinkedIssues } from './linked-issues';
 const UNASSIGNED = '__unassigned__';
 const NO_SPRINT = '__backlog__';
 const NO_EPIC = '__no_epic__';
+const NO_VERSION = '__no_version__';
+const NO_COMPONENT = '__no_component__';
 
 export function IssueDetailSheet({
   issueId,
@@ -61,6 +63,8 @@ export function IssueDetailSheet({
   const [subtaskTitle, setSubtaskTitle] = useState('');
   const [addingSubtask, setAddingSubtask] = useState(false);
   const [worklogs, setWorklogs] = useState<WorkLog[]>([]);
+  const [versions, setVersions] = useState<Version[]>([]);
+  const [components, setComponents] = useState<ProjectComponent[]>([]);
   const [logOpen, setLogOpen] = useState(false);
   const [logHours, setLogHours] = useState('');
   const [logComment, setLogComment] = useState('');
@@ -76,7 +80,7 @@ export function IssueDetailSheet({
       const detail = await api.issues.get(issueId);
       setIssue(detail);
       setEstimateHours(detail.original_estimate ? String(Math.round((detail.original_estimate / 60) * 10) / 10) : '');
-      const [c, a, act, w, u, sp, ep, ch, all, wl] = await Promise.all([
+      const [c, a, act, w, u, sp, ep, ch, all, wl, vs, comps] = await Promise.all([
         api.comments.list(issueId).catch(() => []),
         api.attachments.list(issueId).catch(() => []),
         api.activity.list(issueId).catch(() => []),
@@ -87,6 +91,8 @@ export function IssueDetailSheet({
         detail.type !== 'subtask' ? api.epics.children(detail.id).catch(() => []) : Promise.resolve([]),
         detail.type === 'epic' ? api.issues.list(detail.project_id).catch(() => []) : Promise.resolve([]),
         api.worklogs.list(issueId).catch(() => []),
+        api.versions.list(detail.project_id).catch(() => []),
+        api.components.list(detail.project_id).catch(() => []),
       ]);
       setComments(c);
       setAttachments(a);
@@ -98,6 +104,8 @@ export function IssueDetailSheet({
       setChildren(ch);
       setCandidates(all.filter((i) => i.type !== 'epic' && i.type !== 'subtask' && !i.parent_id));
       setWorklogs(wl);
+      setVersions(vs);
+      setComponents(comps);
     } catch (e) {
       toast.error('Could not load issue', { description: e instanceof Error ? e.message : undefined });
     } finally {
@@ -676,6 +684,44 @@ export function IssueDetailSheet({
                         />
                       ))}
                     </div>
+                  </div>
+                )}
+
+                {issue.type !== 'epic' && versions.length > 0 && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Fix version</Label>
+                    <Select
+                      value={issue.fix_version_id ?? NO_VERSION}
+                      onValueChange={(v) => patch({ fix_version_id: v === NO_VERSION ? null : v })}
+                      disabled={!canEdit}
+                    >
+                      <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NO_VERSION}>None</SelectItem>
+                        {versions.map((v) => (
+                          <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {issue.type !== 'epic' && components.length > 0 && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Component</Label>
+                    <Select
+                      value={issue.component_id ?? NO_COMPONENT}
+                      onValueChange={(v) => patch({ component_id: v === NO_COMPONENT ? null : v })}
+                      disabled={!canEdit}
+                    >
+                      <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NO_COMPONENT}>None</SelectItem>
+                        {components.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 )}
 

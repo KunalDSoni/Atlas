@@ -95,6 +95,11 @@ export interface Issue {
   subtask_done_count: number;
   original_estimate: number | null;
   time_spent: number | null;
+  fix_version_id: string | null;
+  component_id: string | null;
+  fix_version_name: string | null;
+  fix_version_status: string | null;
+  component_name: string | null;
   labels_parsed: string[];
 }
 
@@ -156,6 +161,29 @@ export interface SavedFilter {
     assignee?: string;
     label?: string;
   };
+}
+
+/** Fix version (release) with issue rollups. */
+export interface Version {
+  id: string;
+  project_id: string;
+  name: string;
+  description: string | null;
+  status: 'unreleased' | 'released';
+  release_date: string | null;
+  created_at: string;
+  issue_count: number;
+  done_count: number;
+}
+
+/** Project component with issue count. */
+export interface ProjectComponent {
+  id: string;
+  project_id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+  issue_count: number;
 }
 
 /** In-app notification row from GET /notifications. */

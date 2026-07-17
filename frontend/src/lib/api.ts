@@ -5,7 +5,7 @@
 
 import type {
   ActivityEntry, AdminStats, AppNotification, Attachment, AuditLogPage, AuthUser, Comment, Issue, EpicSummary,
-  ProfileResponse, Project, ProjectMember, ProjectStats, SavedFilter, SearchResults, Settings, Sprint, User,
+  ProfileResponse, Project, ProjectComponent, ProjectMember, ProjectStats, SavedFilter, SearchResults, Settings, Sprint, User, Version,
   IssueLink, LinkType,
   WikiComment, WikiPage, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
   WorkLog,
@@ -156,6 +156,24 @@ export const api = {
   epics: {
     list: (projectId: string) => get<EpicSummary[]>(`/projects/${projectId}/epics`),
     children: (issueId: string) => get<Issue[]>(`/issues/${issueId}/children`),
+  },
+
+  versions: {
+    list: (projectId: string) => get<Version[]>(`/projects/${projectId}/versions`),
+    create: (projectId: string, body: { name: string; description?: string; release_date?: string }) =>
+      post<Version>(`/projects/${projectId}/versions`, body),
+    update: (id: string, body: Partial<Pick<Version, 'name' | 'description' | 'status' | 'release_date'>>) =>
+      put<Version>(`/versions/${id}`, body),
+    remove: (id: string) => del<{ ok: boolean }>(`/versions/${id}`),
+  },
+
+  components: {
+    list: (projectId: string) => get<ProjectComponent[]>(`/projects/${projectId}/components`),
+    create: (projectId: string, body: { name: string; description?: string }) =>
+      post<ProjectComponent>(`/projects/${projectId}/components`, body),
+    update: (id: string, body: Partial<Pick<ProjectComponent, 'name' | 'description'>>) =>
+      put<ProjectComponent>(`/components/${id}`, body),
+    remove: (id: string) => del<{ ok: boolean }>(`/components/${id}`),
   },
 
   worklogs: {

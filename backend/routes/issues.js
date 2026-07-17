@@ -67,6 +67,12 @@ async function enrichIssue(db, issue) {
   const parent = issue.parent_id
     ? await queryOne(db, 'SELECT issue_key, title, type, epic_color FROM issues WHERE id = ?', [issue.parent_id])
     : null;
+  const fixVersion = issue.fix_version_id
+    ? await queryOne(db, 'SELECT name, status FROM versions WHERE id = ?', [issue.fix_version_id])
+    : null;
+  const component = issue.component_id
+    ? await queryOne(db, 'SELECT name FROM components WHERE id = ?', [issue.component_id])
+    : null;
   const subtasks = await queryOne(db,
     "SELECT COUNT(*) as total, SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as done FROM issues WHERE parent_id = ? AND type = 'subtask'", [issue.id]);
   const commentCount = await queryOne(db, 'SELECT COUNT(*) as count FROM comments WHERE issue_id = ?', [issue.id]);
@@ -86,6 +92,9 @@ async function enrichIssue(db, issue) {
     epic_key: parent?.type === 'epic' ? parent.issue_key : null,
     epic_title: parent?.type === 'epic' ? parent.title : null,
     epic_badge_color: parent?.type === 'epic' ? parent.epic_color : null,
+    fix_version_name: fixVersion?.name || null,
+    fix_version_status: fixVersion?.status || null,
+    component_name: component?.name || null,
     subtask_count: Number(subtasks.total),
     subtask_done_count: Number(subtasks.done || 0),
     comment_count: commentCount.count,
@@ -221,7 +230,7 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid epic color' });
     }
 
-    const allowed = ['title', 'description', 'type', 'status', 'priority', 'assignee_id', 'sprint_id', 'story_points', 'board_order', 'labels', 'due_date', 'original_estimate', 'time_spent', 'parent_id', 'epic_color'];
+    const allowed = ['title', 'description', 'type', 'status', 'priority', 'assignee_id', 'sprint_id', 'story_points', 'board_order', 'labels', 'due_date', 'original_estimate', 'time_spent', 'parent_id', 'epic_color', 'fix_version_id', 'component_id'];
     const updates = [];
     const params = [];
     const activityEntries = [];
