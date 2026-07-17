@@ -1,15 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  BookOpen, Columns3, FileClock, Gauge, LayoutDashboard, ListTodo, Moon, Rocket,
-  Settings as SettingsIcon, Shield, Sun, User as UserIcon, Users,
+  BookOpen, Columns3, FileClock, Gauge, LayoutDashboard, ListTodo, Rocket,
+  Settings as SettingsIcon, Shield, User as UserIcon, Users,
 } from 'lucide-react';
 import {
   CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator,
 } from '@/components/ui/command';
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
-import { useTheme } from '@/context/theme-provider';
 import { useProjects } from '@/hooks/use-projects';
 import { isAdmin } from '@/lib/domain';
 import type { Issue, SearchResults } from '@/lib/types';
@@ -40,7 +39,6 @@ export function CommandPalette() {
   const [results, setResults] = useState<SearchResults>({ issues: [], pages: [] });
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { theme, setTheme } = useTheme();
   const { projects, currentProjectId, setCurrentProjectId } = useProjects();
 
   useEffect(() => {
@@ -191,18 +189,6 @@ export function CommandPalette() {
             </CommandGroup>
           </>
         )}
-
-        <CommandSeparator />
-        <CommandGroup heading="Theme">
-          <CommandItem
-            value="theme toggle dark light"
-            onSelect={() => run(() => setTheme(theme === 'dark' ? 'light' : 'dark'))}
-            className="gap-2"
-          >
-            {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
-            Switch to {theme === 'dark' ? 'light' : 'dark'} theme
-          </CommandItem>
-        </CommandGroup>
       </CommandList>
     </CommandDialog>
   );

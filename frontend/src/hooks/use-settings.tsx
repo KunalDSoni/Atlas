@@ -4,7 +4,6 @@ import {
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
-import { useTheme } from '@/context/theme-provider';
 import type { Settings } from '@/lib/types';
 
 interface SettingsContextValue {
@@ -22,7 +21,6 @@ const SettingsContext = createContext<SettingsContextValue | null>(null);
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  const { theme, setTheme } = useTheme();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -38,13 +36,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         const s = await api.settings.get();
         if (cancelled) return;
         setSettings(s);
-
-        // The account's saved theme is the source of truth on sign-in, so the
-        // preference follows the user across browsers instead of being stranded
-        // in one localStorage.
-        if (s.theme && s.theme !== theme && ['light', 'dark', 'system'].includes(s.theme)) {
-          setTheme(s.theme as 'light' | 'dark' | 'system');
-        }
       } catch {
         // Settings are a preference layer — the app stays usable on defaults.
         if (!cancelled) setSettings(null);

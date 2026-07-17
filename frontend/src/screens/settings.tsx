@@ -3,7 +3,6 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useTheme } from '@/context/theme-provider';
 import { useSettings } from '@/hooks/use-settings';
 import type { Settings } from '@/lib/types';
 import { ErrorState, PageHeader, RowsSkeleton } from '@/components/app/primitives';
@@ -18,7 +17,6 @@ const NOTIFICATION_TOGGLES: { key: keyof Settings; label: string; hint: string }
 ];
 
 export default function SettingsScreen() {
-  const { theme, setTheme } = useTheme();
   // Shared with the rest of the app, so these controls actually take effect.
   const { settings, loading, patch } = useSettings();
   const error = !loading && !settings ? 'Failed to load settings' : null;
@@ -50,29 +48,6 @@ export default function SettingsScreen() {
             <CardTitle className="text-sm font-semibold">Appearance</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <Label>Theme</Label>
-                <p className="mt-0.5 text-xs text-muted-foreground">Saved to your account and applied wherever you sign in.</p>
-              </div>
-              <Select
-                value={theme}
-                onValueChange={(v) => {
-                  setTheme(v as 'light' | 'dark' | 'system');
-                  void patch({ theme: v });
-                }}
-              >
-                <SelectTrigger className="w-36" aria-label="Theme"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="light">Light</SelectItem>
-                  <SelectItem value="dark">Dark</SelectItem>
-                  <SelectItem value="system">System</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Separator />
-
             <div className="flex items-center justify-between gap-4">
               <div>
                 <Label htmlFor="compact">Compact view</Label>

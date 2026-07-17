@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Bell, CalendarRange, ChevronsUpDown, Columns3, FileClock, Gauge, LayoutDashboard, ListTodo, LogOut, Menu, Package,
-  Monitor, Moon, Rocket, Search, Settings as SettingsIcon, Shield, Sun, User as UserIcon, Users, BookOpen, Zap,
+  Rocket, Search, Settings as SettingsIcon, Shield, User as UserIcon, Users, BookOpen, Zap,
   Inbox, Lightbulb, Target, Map as MapIcon, Building2, MessagesSquare,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -15,9 +15,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
-import { useTheme } from '@/context/theme-provider';
 import { useProjects } from '@/hooks/use-projects';
-import { useSettings } from '@/hooks/use-settings';
 import { isAdmin } from '@/lib/domain';
 import type { AppNotification } from '@/lib/types';
 import { timeAgo } from '@/lib/format';
@@ -163,40 +161,6 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         <NavSection title="Knowledge" items={WIKI_NAV} onNavigate={onNavigate} />
       </ScrollArea>
     </div>
-  );
-}
-
-function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
-  const { patch } = useSettings();
-  const Icon = theme === 'dark' ? Moon : theme === 'light' ? Sun : Monitor;
-
-  // Sign-in treats the account's saved theme as the source of truth, so a
-  // localStorage-only change here would revert on the next load.
-  const choose = (t: 'light' | 'dark' | 'system') => {
-    setTheme(t);
-    void patch({ theme: t });
-  };
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label="Change theme">
-          <Icon className="size-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onSelect={() => choose('light')} className="gap-2">
-          <Sun className="size-4" /> Light {theme === 'light' && <span className="ml-auto text-xs text-primary">•</span>}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => choose('dark')} className="gap-2">
-          <Moon className="size-4" /> Dark {theme === 'dark' && <span className="ml-auto text-xs text-primary">•</span>}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => choose('system')} className="gap-2">
-          <Monitor className="size-4" /> System {theme === 'system' && <span className="ml-auto text-xs text-primary">•</span>}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 
@@ -367,7 +331,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           <div className="flex-1" />
           <NotificationBell />
-          <ThemeToggle />
           <UserMenu />
         </header>
 
