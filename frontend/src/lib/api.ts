@@ -51,7 +51,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   const res = await fetch(`/api${path}`, { ...options, headers });
 
-  if (res.status === 401) {
+  // A 401 from login means bad credentials, not an expired session — let the
+  // server's message fall through to the normal error path below.
+  if (res.status === 401 && path !== '/auth/login') {
     clearToken();
     window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
     throw new ApiError('Your session has expired. Please sign in again.', 401);
