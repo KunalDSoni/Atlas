@@ -208,7 +208,7 @@ describe('epic rollup + children endpoints', () => {
 });
 
 describe('Atlas Development dogfood seed', () => {
-  test('seeds the ATLAS project with 12 roadmap epics, Epic support done', async () => {
+  test('seeds the ATLAS project with 18 roadmap epics, Epic support done', async () => {
     const projects = await request(app).get('/api/projects').set(headers);
     const atlas = projects.body.find((p) => p.key === 'ATLAS');
     expect(atlas).toBeDefined();
@@ -216,7 +216,8 @@ describe('Atlas Development dogfood seed', () => {
 
     const epics = await request(app).get(`/api/projects/${atlas.id}/epics`).set(headers);
     expect(epics.status).toBe(200);
-    expect(epics.body.length).toBe(12);
+    // 12 Jira/Confluence parity epics + 6 Productboard-parity product epics.
+    expect(epics.body.length).toBe(18);
 
     const first = epics.body.find((e) => e.issue_key === 'ATLAS-1');
     expect(first.title).toBe('Epic support');
@@ -224,7 +225,8 @@ describe('Atlas Development dogfood seed', () => {
     const second = epics.body.find((e) => e.issue_key === 'ATLAS-2');
     expect(second.title).toBe('Subtasks');
     expect(second.status).toBe('done');
-    // The whole parity roadmap has shipped — every epic is seeded done.
-    expect(epics.body.filter((e) => e.status === 'done').length).toBe(12);
+    // Every roadmap epic — parity and product — is seeded done.
+    expect(epics.body.filter((e) => e.status === 'done').length).toBe(18);
+    expect(epics.body.some((e) => e.title === 'Product: Insights inbox')).toBe(true);
   });
 });
