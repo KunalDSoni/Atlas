@@ -76,7 +76,12 @@ async function enrichIssue(db, issue) {
     ? await queryOne(db, 'SELECT name FROM components WHERE id = ?', [issue.component_id])
     : null;
   const subtasks = await queryOne(db,
-    "SELECT COUNT(*) as total, SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as done FROM issues WHERE parent_id = ? AND type = 'subtask'", [issue.id]);
+    `SELECT COUNT(*) as total,
+       SUM(CASE WHEN status = 'done' OR EXISTS (
+         SELECT 1 FROM project_statuses ps
+         WHERE ps.project_id = issues.project_id AND ps.key = issues.status AND ps.category = 'done')
+       THEN 1 ELSE 0 END) as done
+     FROM issues WHERE parent_id = ? AND type = 'subtask'`, [issue.id]);
   const commentCount = await queryOne(db, 'SELECT COUNT(*) as count FROM comments WHERE issue_id = ?', [issue.id]);
   const attachmentCount = await queryOne(db, 'SELECT COUNT(*) as count FROM attachments WHERE issue_id = ?', [issue.id]);
   const watcherCount = await queryOne(db, 'SELECT COUNT(*) as count FROM issue_watchers WHERE issue_id = ?', [issue.id]);
@@ -129,12 +134,17 @@ router.get('/projects/:projectId/issues', requireAuth, async (req, res) => {
 router.get('/projects/:projectId/epics', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
+    // A child counts as done when its literal status is 'done' (baked-in
+    // workflow) or the project's workflow maps its status to the done category.
+    const DONE = `(c.status = 'done' OR EXISTS (
+      SELECT 1 FROM project_statuses ps
+      WHERE ps.project_id = c.project_id AND ps.key = c.status AND ps.category = 'done'))`;
     const epics = await queryAll(db, `
       SELECT e.*, u.name AS assignee_name, u.avatar_color AS assignee_color,
         (SELECT COUNT(*) FROM issues c WHERE c.parent_id = e.id) AS child_count,
-        (SELECT COUNT(*) FROM issues c WHERE c.parent_id = e.id AND c.status = 'done') AS done_count,
+        (SELECT COUNT(*) FROM issues c WHERE c.parent_id = e.id AND ${DONE}) AS done_count,
         (SELECT COALESCE(SUM(c.story_points), 0) FROM issues c WHERE c.parent_id = e.id) AS total_points,
-        (SELECT COALESCE(SUM(c.story_points), 0) FROM issues c WHERE c.parent_id = e.id AND c.status = 'done') AS done_points
+        (SELECT COALESCE(SUM(c.story_points), 0) FROM issues c WHERE c.parent_id = e.id AND ${DONE}) AS done_points
       FROM issues e
       LEFT JOIN users u ON u.id = e.assignee_id
       WHERE e.project_id = ? AND e.type = 'epic'
