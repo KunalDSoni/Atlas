@@ -4,10 +4,12 @@
 // and role from that token alone — client-supplied identity headers are ignored.
 
 import type {
-  ActivityEntry, AdminStats, Attachment, AuditLogPage, AuthUser, Comment, Issue,
-  ProfileResponse, Project, ProjectMember, ProjectStats, Settings, Sprint, User,
+  ActivityEntry, AdminStats, AppNotification, Attachment, AuditLogPage, AuthUser,
+  AutomationAction, AutomationCondition, AutomationRule, AutomationTrigger, Comment, Issue, EpicSummary,
+  ProfileResponse, Project, ProjectComponent, ProjectMember, ProjectStats, SavedFilter, SearchResults, Settings, Sprint, User, Version,
   IssueLink, LinkType,
-  WikiComment, WikiPage, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
+  WikiComment, WikiPage, WikiRestriction, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
+  WorkLog, WorkflowStatus,
 } from './types';
 
 const TOKEN_KEY = 'atlas_token';
@@ -51,7 +53,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   const res = await fetch(`/api${path}`, { ...options, headers });
 
-  if (res.status === 401) {
+  // A 401 from login means bad credentials, not an expired session — let the
+  // server's message fall through to the normal error path below.
+  if (res.status === 401 && path !== '/auth/login') {
     clearToken();
     window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
     throw new ApiError('Your session has expired. Please sign in again.', 401);
@@ -150,6 +154,78 @@ export const api = {
       put<Issue>(`/issues/${id}/move`, body),
   },
 
+  epics: {
+    list: (projectId: string) => get<EpicSummary[]>(`/projects/${projectId}/epics`),
+    children: (issueId: string) => get<Issue[]>(`/issues/${issueId}/children`),
+  },
+
+  automations: {
+    list: (projectId: string) => get<AutomationRule[]>(`/projects/${projectId}/automations`),
+    create: (projectId: string, body: {
+      name: string;
+      trigger_type: AutomationTrigger;
+      conditions: AutomationCondition[];
+      actions: AutomationAction[];
+    }) => post<AutomationRule>(`/projects/${projectId}/automations`, body),
+    update: (id: string, body: Partial<{ name: string; enabled: boolean; conditions: AutomationCondition[]; actions: AutomationAction[] }>) =>
+      put<AutomationRule>(`/automations/${id}`, body),
+    remove: (id: string) => del<{ ok: boolean }>(`/automations/${id}`),
+  },
+
+  workflow: {
+    list: (projectId: string) => get<WorkflowStatus[]>(`/projects/${projectId}/statuses`),
+    create: (projectId: string, body: { label: string; key?: string; category?: string }) =>
+      post<WorkflowStatus>(`/projects/${projectId}/statuses`, body),
+    update: (id: string, body: Partial<Pick<WorkflowStatus, 'label' | 'category' | 'position'>>) =>
+      put<WorkflowStatus>(`/statuses/${id}`, body),
+    remove: (id: string, migrateTo?: string) =>
+      del<{ ok: boolean; migrated_to: string }>(`/statuses/${id}${migrateTo ? `?migrate_to=${encodeURIComponent(migrateTo)}` : ''}`),
+  },
+
+  versions: {
+    list: (projectId: string) => get<Version[]>(`/projects/${projectId}/versions`),
+    create: (projectId: string, body: { name: string; description?: string; release_date?: string }) =>
+      post<Version>(`/projects/${projectId}/versions`, body),
+    update: (id: string, body: Partial<Pick<Version, 'name' | 'description' | 'status' | 'release_date'>>) =>
+      put<Version>(`/versions/${id}`, body),
+    remove: (id: string) => del<{ ok: boolean }>(`/versions/${id}`),
+  },
+
+  components: {
+    list: (projectId: string) => get<ProjectComponent[]>(`/projects/${projectId}/components`),
+    create: (projectId: string, body: { name: string; description?: string }) =>
+      post<ProjectComponent>(`/projects/${projectId}/components`, body),
+    update: (id: string, body: Partial<Pick<ProjectComponent, 'name' | 'description'>>) =>
+      put<ProjectComponent>(`/components/${id}`, body),
+    remove: (id: string) => del<{ ok: boolean }>(`/components/${id}`),
+  },
+
+  worklogs: {
+    list: (issueId: string) => get<WorkLog[]>(`/issues/${issueId}/worklogs`),
+    create: (issueId: string, minutes: number, comment?: string) =>
+      post<WorkLog>(`/issues/${issueId}/worklogs`, { minutes, comment }),
+    remove: (id: string) => del<{ ok: boolean }>(`/worklogs/${id}`),
+  },
+
+  notifications: {
+    list: () => get<AppNotification[]>('/notifications'),
+    unreadCount: () => get<{ count: number }>('/notifications/unread-count'),
+    markRead: (id: string) => put<{ ok: boolean }>(`/notifications/${id}/read`),
+    markAllRead: () => put<{ ok: boolean }>('/notifications/read-all'),
+  },
+
+  search: {
+    query: (q: string, projectId?: string) =>
+      get<SearchResults>(`/search?q=${encodeURIComponent(q)}${projectId ? `&project_id=${encodeURIComponent(projectId)}` : ''}`),
+  },
+
+  filters: {
+    list: (projectId: string) => get<SavedFilter[]>(`/projects/${projectId}/filters`),
+    create: (projectId: string, name: string, params: SavedFilter['params_parsed']) =>
+      post<SavedFilter>(`/projects/${projectId}/filters`, { name, params }),
+    remove: (id: string) => del<{ ok: boolean }>(`/filters/${id}`),
+  },
+
   comments: {
     list: (issueId: string) => get<Comment[]>(`/issues/${issueId}/comments`),
     create: (issueId: string, body: string) => post<Comment>(`/issues/${issueId}/comments`, { body }),
@@ -200,7 +276,8 @@ export const api = {
       post<WikiSpace>('/wiki/spaces', body),
     deleteSpace: (id: string) => del<{ ok: boolean }>(`/wiki/spaces/${id}`),
 
-    pages: (spaceId: string) => get<WikiPage[]>(`/wiki/spaces/${spaceId}/pages`),
+    pages: (spaceId: string, type?: 'page' | 'blog') =>
+      get<WikiPage[]>(`/wiki/spaces/${spaceId}/pages${type ? `?type=${type}` : ''}`),
     tree: (spaceId: string) => get<WikiTreeNode[]>(`/wiki/spaces/${spaceId}/tree`),
     recent: () => get<WikiPage[]>('/wiki/pages/recent'),
     starred: () => get<WikiPage[]>('/wiki/pages/starred'),
@@ -214,7 +291,7 @@ export const api = {
 
     versions: (id: string) => get<WikiVersion[]>(`/wiki/pages/${id}/versions`),
     comments: (id: string) => get<WikiComment[]>(`/wiki/pages/${id}/comments`),
-    addComment: (id: string, body: string) => post<WikiComment>(`/wiki/pages/${id}/comments`, { body }),
+    addComment: (id: string, body: string, quote?: string) => post<WikiComment>(`/wiki/pages/${id}/comments`, { body, quote }),
     deleteComment: (id: string) => del<{ ok: boolean }>(`/wiki/comments/${id}`),
 
     like: (id: string) => post<{ liked: boolean; like_count: number }>(`/wiki/pages/${id}/like`),
@@ -222,6 +299,15 @@ export const api = {
 
     search: (q: string) => get<WikiPage[]>(`/wiki/search?q=${encodeURIComponent(q)}`),
     templates: () => get<WikiTemplate[]>('/wiki/templates'),
+
+    watchState: (pageId: string) => get<{ count: number; watching: boolean }>(`/wiki/pages/${pageId}/watchers`),
+    restrictions: (pageId: string) => get<WikiRestriction[]>(`/wiki/pages/${pageId}/restrictions`),
+    exportPage: (pageId: string, format: 'markdown' | 'html') =>
+      get<{ filename: string; mime: string; content: string }>(`/wiki/pages/${pageId}/export?format=${format}`),
+    setRestrictions: (pageId: string, restrictions: { user_id: string; can_edit: boolean }[]) =>
+      put<{ ok: boolean; count: number }>(`/wiki/pages/${pageId}/restrictions`, { restrictions }),
+    watch: (pageId: string) => post<{ ok: boolean; watching: boolean }>(`/wiki/pages/${pageId}/watch`),
+    unwatch: (pageId: string) => del<{ ok: boolean; watching: boolean }>(`/wiki/pages/${pageId}/watch`),
   },
 
   reports: {

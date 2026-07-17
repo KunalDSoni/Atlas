@@ -1,8 +1,21 @@
 // Domain types mirroring the Atlas API responses.
 
 export type Role = 'admin' | 'board_admin' | 'user' | 'client';
-export type IssueStatus = 'todo' | 'in_progress' | 'in_review' | 'done';
-export type IssueType = 'story' | 'bug' | 'task';
+/** Status keys are per-project since custom workflows; the four defaults remain common. */
+export type IssueStatus = string;
+export type StatusCategory = 'todo' | 'in_progress' | 'done';
+
+/** Row from GET /projects/:id/statuses (id is "default-<key>" until customized). */
+export interface WorkflowStatus {
+  id: string;
+  project_id: string;
+  key: string;
+  label: string;
+  category: StatusCategory;
+  position: number;
+  builtin: boolean;
+}
+export type IssueType = 'story' | 'bug' | 'task' | 'epic' | 'subtask';
 export type Priority = 'highest' | 'high' | 'medium' | 'low';
 export type SprintStatus = 'planned' | 'active' | 'completed';
 export type LinkType = 'relates_to' | 'blocks' | 'is_blocked_by' | 'duplicates' | 'is_duplicated_by';
@@ -33,6 +46,7 @@ export interface Project {
   name: string;
   key: string;
   description: string | null;
+  wip_limits: string | null;
   lead_id: string | null;
   created_at: string;
   lead_name: string | null;
@@ -73,6 +87,7 @@ export interface Issue {
   story_points: number | null;
   labels: string | null;
   due_date: string | null;
+  start_date: string | null;
   board_order: number;
   created_at: string;
   updated_at: string;
@@ -84,7 +99,160 @@ export interface Issue {
   attachment_count: number;
   watcher_count: number;
   link_count: number;
+  epic_color: string | null;
+  epic_key: string | null;
+  epic_title: string | null;
+  epic_badge_color: string | null;
+  parent_key: string | null;
+  parent_title: string | null;
+  parent_type: IssueType | null;
+  subtask_count: number;
+  subtask_done_count: number;
+  original_estimate: number | null;
+  time_spent: number | null;
+  fix_version_id: string | null;
+  component_id: string | null;
+  fix_version_name: string | null;
+  fix_version_status: string | null;
+  component_name: string | null;
   labels_parsed: string[];
+}
+
+/**
+ * Epic row with child rollups, from GET /projects/:id/epics.
+ * Raw DB row + assignee join + rollups — NOT enriched like Issue
+ * (no labels_parsed, comment_count, epic_key, watcher/link counts).
+ */
+export interface EpicSummary extends Pick<Issue,
+  | 'id' | 'project_id' | 'sprint_id' | 'issue_key' | 'issue_number' | 'title' | 'description'
+  | 'type' | 'status' | 'priority' | 'assignee_id' | 'reporter_id' | 'parent_id'
+  | 'story_points' | 'labels' | 'due_date' | 'start_date' | 'board_order' | 'created_at' | 'updated_at'
+  | 'epic_color' | 'assignee_name' | 'assignee_color'> {
+  child_count: number;
+  done_count: number;
+  total_points: number;
+  done_points: number;
+}
+
+/** Lightweight hit rows from GET /search. */
+export interface SearchIssueHit {
+  id: string;
+  issue_key: string;
+  title: string;
+  type: IssueType;
+  status: IssueStatus;
+  priority: Priority;
+  project_id: string;
+  project_key: string;
+  project_name: string;
+}
+
+export interface SearchPageHit {
+  id: string;
+  title: string;
+  slug: string;
+  space_id: string;
+  space_name: string;
+  space_key: string;
+}
+
+export interface SearchResults {
+  issues: SearchIssueHit[];
+  pages: SearchPageHit[];
+}
+
+/** Saved backlog filter (per user, per project). */
+export interface SavedFilter {
+  id: string;
+  project_id: string;
+  user_id: string;
+  name: string;
+  params: string;
+  created_at: string;
+  params_parsed: {
+    query?: string;
+    status?: string;
+    type?: string;
+    assignee?: string;
+    label?: string;
+  };
+}
+
+/** Fix version (release) with issue rollups. */
+export interface Version {
+  id: string;
+  project_id: string;
+  name: string;
+  description: string | null;
+  status: 'unreleased' | 'released';
+  release_date: string | null;
+  created_at: string;
+  issue_count: number;
+  done_count: number;
+}
+
+/** Project component with issue count. */
+export interface ProjectComponent {
+  id: string;
+  project_id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+  issue_count: number;
+}
+
+/** Automation rule: trigger → conditions (all must match) → actions. */
+export type AutomationTrigger = 'issue_created' | 'status_changed' | 'all_subtasks_done';
+
+export interface AutomationCondition {
+  field: 'type' | 'priority' | 'status';
+  value: string;
+}
+
+export interface AutomationAction {
+  type: 'set_status' | 'set_assignee' | 'add_label' | 'notify_user';
+  value: string;
+}
+
+export interface AutomationRule {
+  id: string;
+  project_id: string;
+  name: string;
+  trigger_type: AutomationTrigger;
+  conditions: string;
+  actions: string;
+  enabled: number;
+  created_at: string;
+  conditions_parsed: AutomationCondition[];
+  actions_parsed: AutomationAction[];
+}
+
+/** In-app notification row from GET /notifications. */
+export interface AppNotification {
+  id: string;
+  user_id: string;
+  actor_id: string | null;
+  type: 'assigned' | 'comment' | 'mention' | 'wiki_update' | string;
+  message: string;
+  link: string | null;
+  issue_id: string | null;
+  wiki_page_id: string | null;
+  is_read: number;
+  created_at: string;
+  actor_name: string | null;
+  actor_color: string | null;
+}
+
+/** Work log entry from GET /issues/:id/worklogs. Minutes-based. */
+export interface WorkLog {
+  id: string;
+  issue_id: string;
+  user_id: string;
+  minutes: number;
+  comment: string | null;
+  created_at: string;
+  user_name: string | null;
+  user_color: string | null;
 }
 
 export interface Comment {
@@ -234,6 +402,9 @@ export interface WikiPage {
   editor_name: string | null;
   comment_count: number;
   like_count: number;
+  restricted?: number;
+  can_edit_page?: number;
+  page_type?: 'page' | 'blog' | string;
   labels: string[];
   space_name?: string;
   space_key?: string;
@@ -255,9 +426,18 @@ export interface WikiComment {
   parent_id: string | null;
   author_id: string;
   body: string;
+  quote: string | null;
   created_at: string;
   author_name: string;
   author_color: string;
+}
+
+/** Row from GET /wiki/pages/:id/restrictions. */
+export interface WikiRestriction {
+  user_id: string;
+  can_edit: number;
+  name: string | null;
+  avatar_color: string | null;
 }
 
 export interface WikiVersion {

@@ -54,7 +54,7 @@ atlas/
 │       ├── settings.js      # GET/PUT user preferences
 │       ├── projects.js      # CRUD projects + members + stats
 │       ├── sprints.js       # CRUD sprints with issue stats
-│       ├── issues.js        # CRUD issues + move (drag & drop)
+│       ├── issues.js        # CRUD issues + move + epics
 │       ├── comments.js      # CRUD comments (author/admin permissions)
 │       └── admin.js         # Admin dashboard stats
 └── frontend/               # Vite + React + TypeScript + Tailwind + shadcn/ui
@@ -135,6 +135,8 @@ atlas/
 | PUT | `/api/issues/:id` | Update issue fields |
 | DELETE | `/api/issues/:id` | Delete issue (cascade comments) |
 | PUT | `/api/issues/:id/move` | Move issue (drag & drop) |
+| GET | `/api/projects/:id/epics` | List epics with child rollups (counts + points) |
+| GET | `/api/issues/:id/children` | List an epic's child issues |
 
 ### Comments Module
 | Method | Endpoint | Description |

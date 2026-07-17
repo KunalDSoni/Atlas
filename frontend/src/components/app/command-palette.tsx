@@ -12,7 +12,7 @@ import { useAuth } from '@/context/auth-provider';
 import { useTheme } from '@/context/theme-provider';
 import { useProjects } from '@/hooks/use-projects';
 import { isAdmin } from '@/lib/domain';
-import type { Issue, WikiPage } from '@/lib/types';
+import type { Issue, SearchResults } from '@/lib/types';
 import { TypeIcon } from './primitives';
 
 const NAV = [
@@ -37,7 +37,7 @@ export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [issues, setIssues] = useState<Issue[]>([]);
-  const [pages, setPages] = useState<WikiPage[]>([]);
+  const [results, setResults] = useState<SearchResults>({ issues: [], pages: [] });
   const navigate = useNavigate();
   const { user } = useAuth();
   const { theme, setTheme } = useTheme();
@@ -61,16 +61,16 @@ export function CommandPalette() {
     api.issues.list(currentProjectId).then(setIssues).catch(() => setIssues([]));
   }, [open, currentProjectId]);
 
-  // Wiki search is server-side, so it needs a query.
+  // Global search is server-side (issues across every project + wiki pages).
   useEffect(() => {
     if (!open) return;
     const q = query.trim();
     if (q.length < 2) {
-      setPages([]);
+      setResults({ issues: [], pages: [] });
       return;
     }
     const t = setTimeout(() => {
-      api.wiki.search(q).then(setPages).catch(() => setPages([]));
+      api.search.query(q).then(setResults).catch(() => setResults({ issues: [], pages: [] }));
     }, 250);
     return () => clearTimeout(t);
   }, [open, query]);
@@ -103,7 +103,7 @@ export function CommandPalette() {
             ))}
         </CommandGroup>
 
-        {issues.length > 0 && (
+        {query.trim().length < 2 && issues.length > 0 && (
           <>
             <CommandSeparator />
             <CommandGroup heading="Issues">
@@ -111,7 +111,7 @@ export function CommandPalette() {
                 <CommandItem
                   key={i.id}
                   value={`${i.issue_key} ${i.title}`}
-                  onSelect={() => run(() => navigate(`/board?issue=${i.id}`))}
+                  onSelect={() => run(() => navigate(i.type === 'epic' ? `/epics?issue=${i.id}` : `/board?issue=${i.id}`))}
                   className="gap-2"
                 >
                   <TypeIcon type={i.type} />
@@ -123,11 +123,37 @@ export function CommandPalette() {
           </>
         )}
 
-        {pages.length > 0 && (
+        {results.issues.length > 0 && (
+          <>
+            <CommandSeparator />
+            <CommandGroup heading="Issues (all projects)">
+              {results.issues.map((i) => (
+                <CommandItem
+                  key={i.id}
+                  value={`${i.issue_key} ${i.title}`}
+                  onSelect={() =>
+                    run(() => {
+                      if (i.project_id !== currentProjectId) setCurrentProjectId(i.project_id);
+                      navigate(i.type === 'epic' ? `/epics?issue=${i.id}` : `/board?issue=${i.id}`);
+                    })
+                  }
+                  className="gap-2"
+                >
+                  <TypeIcon type={i.type} />
+                  <span className="font-mono text-xs text-muted-foreground">{i.issue_key}</span>
+                  <span className="min-w-0 flex-1 truncate">{i.title}</span>
+                  <span className="text-xs text-muted-foreground">{i.project_key}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </>
+        )}
+
+        {results.pages.length > 0 && (
           <>
             <CommandSeparator />
             <CommandGroup heading="Wiki pages">
-              {pages.slice(0, 20).map((p) => (
+              {results.pages.map((p) => (
                 <CommandItem
                   key={p.id}
                   value={`wiki ${p.title}`}

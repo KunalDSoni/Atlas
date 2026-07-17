@@ -12,7 +12,11 @@ import LoginScreen from '@/screens/login';
 const Dashboard = lazy(() => import('@/screens/dashboard'));
 const Board = lazy(() => import('@/screens/board'));
 const Backlog = lazy(() => import('@/screens/backlog'));
+const Epics = lazy(() => import('@/screens/epics'));
 const Sprints = lazy(() => import('@/screens/sprints'));
+const Releases = lazy(() => import('@/screens/releases'));
+const Roadmap = lazy(() => import('@/screens/roadmap'));
+const Automation = lazy(() => import('@/screens/automation'));
 const Reports = lazy(() => import('@/screens/reports'));
 const Profile = lazy(() => import('@/screens/profile'));
 const Settings = lazy(() => import('@/screens/settings'));
@@ -58,7 +62,11 @@ function ProtectedLayout() {
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/board" element={<Board />} />
               <Route path="/backlog" element={<Backlog />} />
+              <Route path="/epics" element={<Epics />} />
               <Route path="/sprints" element={<Sprints />} />
+              <Route path="/releases" element={<Releases />} />
+              <Route path="/roadmap" element={<Roadmap />} />
+              <Route path="/automation" element={<Automation />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/wiki" element={<WikiHome />} />
               <Route path="/wiki/space/:spaceId" element={<WikiSpace />} />

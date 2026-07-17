@@ -9,6 +9,7 @@ const { v4: uuidv4 } = require('uuid');
 const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
+const { notify, mentionedUserIds } = require('../utils/notify');
 
 const router = express.Router();
 
@@ -41,6 +42,30 @@ router.post('/issues/:issueId/comments', requireAuth, async (req, res) => {
     const authorId = author_id || req.userId;
     await run(db, 'INSERT INTO comments (id, issue_id, author_id, body) VALUES (?, ?, ?, ?)',
       [id, req.params.issueId, authorId, commentBody]);
+
+    // Fan out: @mentions first (stronger signal), then issue watchers.
+    const issue = await queryOne(db, 'SELECT id, issue_key FROM issues WHERE id = ?', [req.params.issueId]);
+    if (issue) {
+      const actor = await queryOne(db, 'SELECT name FROM users WHERE id = ?', [authorId]);
+      const actorName = actor?.name || 'Someone';
+      const mentioned = await mentionedUserIds(db, commentBody, authorId);
+      for (const uid of mentioned) {
+        await notify(db, {
+          userId: uid, actorId: authorId, type: 'mention',
+          message: `${actorName} mentioned you on ${issue.issue_key}`,
+          link: `/board?issue=${issue.id}`, issueId: issue.id,
+        });
+      }
+      const watchers = await queryAll(db, 'SELECT user_id FROM issue_watchers WHERE issue_id = ?', [req.params.issueId]);
+      for (const w of watchers) {
+        if (mentioned.includes(w.user_id)) continue;
+        await notify(db, {
+          userId: w.user_id, actorId: authorId, type: 'comment',
+          message: `${actorName} commented on ${issue.issue_key}`,
+          link: `/board?issue=${issue.id}`, issueId: issue.id,
+        });
+      }
+    }
 
     const comment = await queryOne(db, 'SELECT * FROM comments WHERE id = ?', [id]);
     res.status(201).json(await enrichComment(db, comment));

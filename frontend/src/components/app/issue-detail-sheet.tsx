@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Eye, EyeOff, Loader2, Paperclip, Send, Trash2 } from 'lucide-react';
+import { Clock, Eye, EyeOff, Loader2, Paperclip, Plus, Send, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -15,15 +20,20 @@ import {
 } from '@/components/ui/alert-dialog';
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
-import { PRIORITIES, PRIORITY_LABEL, STATUSES, STATUS_LABEL, TYPE_LABEL, canCreateIssues, isAdmin } from '@/lib/domain';
-import type { ActivityEntry, Attachment, Comment, Issue, IssueStatus, Priority, Sprint, User } from '@/lib/types';
-import { formatBytes, timeAgo } from '@/lib/format';
-import { PriorityIcon, TypeIcon, UserAvatar } from './primitives';
+import { useWorkflow } from '@/hooks/use-workflow';
+import { EPIC_COLORS, PRIORITIES, PRIORITY_LABEL, TYPE_LABEL, canCreateIssues, epicColor, isAdmin } from '@/lib/domain';
+import type { ActivityEntry, Attachment, Comment, EpicSummary, Issue, IssueStatus, Priority, ProjectComponent, Sprint, User, Version, WorkLog } from '@/lib/types';
+import { formatBytes, formatDuration, timeAgo } from '@/lib/format';
+import { cn } from '@/lib/utils';
+import { PriorityIcon, StatusPill, TypeIcon, UserAvatar } from './primitives';
 import { LabelsEditor } from './labels-editor';
 import { LinkedIssues } from './linked-issues';
 
 const UNASSIGNED = '__unassigned__';
 const NO_SPRINT = '__backlog__';
+const NO_EPIC = '__no_epic__';
+const NO_VERSION = '__no_version__';
+const NO_COMPONENT = '__no_component__';
 
 export function IssueDetailSheet({
   issueId,
@@ -45,11 +55,25 @@ export function IssueDetailSheet({
   const [watchers, setWatchers] = useState<User[]>([]);
   const [members, setMembers] = useState<User[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
+  const [epics, setEpics] = useState<EpicSummary[]>([]);
+  const [children, setChildren] = useState<Issue[]>([]);
+  const [candidates, setCandidates] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(false);
   const [commentBody, setCommentBody] = useState('');
   const [posting, setPosting] = useState(false);
+  const [subtaskTitle, setSubtaskTitle] = useState('');
+  const [addingSubtask, setAddingSubtask] = useState(false);
+  const [worklogs, setWorklogs] = useState<WorkLog[]>([]);
+  const [versions, setVersions] = useState<Version[]>([]);
+  const [components, setComponents] = useState<ProjectComponent[]>([]);
+  const [logOpen, setLogOpen] = useState(false);
+  const [logHours, setLogHours] = useState('');
+  const [logComment, setLogComment] = useState('');
+  const [estimateHours, setEstimateHours] = useState('');
+  const [loggingWork, setLoggingWork] = useState(false);
 
   const canEdit = canCreateIssues(user?.role);
+  const workflow = useWorkflow(issue?.project_id);
 
   const load = useCallback(async () => {
     if (!issueId) return;
@@ -57,13 +81,20 @@ export function IssueDetailSheet({
     try {
       const detail = await api.issues.get(issueId);
       setIssue(detail);
-      const [c, a, act, w, u, sp] = await Promise.all([
+      setEstimateHours(detail.original_estimate ? String(Math.round((detail.original_estimate / 60) * 10) / 10) : '');
+      const [c, a, act, w, u, sp, ep, ch, all, wl, vs, comps] = await Promise.all([
         api.comments.list(issueId).catch(() => []),
         api.attachments.list(issueId).catch(() => []),
         api.activity.list(issueId).catch(() => []),
         api.watchers.list(issueId).catch(() => []),
         api.users.list().catch(() => []),
         api.sprints.list(detail.project_id).catch(() => []),
+        api.epics.list(detail.project_id).catch(() => []),
+        detail.type !== 'subtask' ? api.epics.children(detail.id).catch(() => []) : Promise.resolve([]),
+        detail.type === 'epic' ? api.issues.list(detail.project_id).catch(() => []) : Promise.resolve([]),
+        api.worklogs.list(issueId).catch(() => []),
+        api.versions.list(detail.project_id).catch(() => []),
+        api.components.list(detail.project_id).catch(() => []),
       ]);
       setComments(c);
       setAttachments(a);
@@ -71,6 +102,12 @@ export function IssueDetailSheet({
       setWatchers(w);
       setMembers(u.filter((x) => x.is_active));
       setSprints(sp);
+      setEpics(ep.filter((e) => e.id !== detail.id));
+      setChildren(ch);
+      setCandidates(all.filter((i) => i.type !== 'epic' && i.type !== 'subtask' && !i.parent_id));
+      setWorklogs(wl);
+      setVersions(vs);
+      setComponents(comps);
     } catch (e) {
       toast.error('Could not load issue', { description: e instanceof Error ? e.message : undefined });
     } finally {
@@ -109,6 +146,59 @@ export function IssueDetailSheet({
     } finally {
       setPosting(false);
     }
+  }
+
+  async function addSubtask() {
+    if (!issue || !subtaskTitle.trim()) return;
+    setAddingSubtask(true);
+    try {
+      await api.issues.create(issue.project_id, { title: subtaskTitle.trim(), type: 'subtask', parent_id: issue.id });
+      setSubtaskTitle('');
+      onChanged?.();
+      void load();
+    } catch (e) {
+      toast.error('Could not add subtask', { description: e instanceof Error ? e.message : undefined });
+    } finally {
+      setAddingSubtask(false);
+    }
+  }
+
+  async function logWork() {
+    if (!issue) return;
+    const hours = parseFloat(logHours);
+    if (!Number.isFinite(hours) || hours <= 0) return;
+    setLoggingWork(true);
+    try {
+      await api.worklogs.create(issue.id, Math.round(hours * 60), logComment.trim() || undefined);
+      setLogHours('');
+      setLogComment('');
+      setWorklogs(await api.worklogs.list(issue.id));
+      const fresh = await api.issues.get(issue.id);
+      setIssue(fresh);
+      onChanged?.();
+      toast.success('Work logged');
+    } catch (e) {
+      toast.error('Could not log work', { description: e instanceof Error ? e.message : undefined });
+    } finally {
+      setLoggingWork(false);
+    }
+  }
+
+  async function removeWorkLog(id: string) {
+    if (!issue) return;
+    try {
+      await api.worklogs.remove(id);
+      setWorklogs(await api.worklogs.list(issue.id));
+      const fresh = await api.issues.get(issue.id);
+      setIssue(fresh);
+    } catch (e) {
+      toast.error('Could not delete work log', { description: e instanceof Error ? e.message : undefined });
+    }
+  }
+
+  async function saveEstimate() {
+    const hours = parseFloat(estimateHours);
+    await patch({ original_estimate: estimateHours === '' ? null : Math.round((Number.isFinite(hours) ? hours : 0) * 60) });
   }
 
   async function toggleWatch() {
@@ -196,6 +286,16 @@ export function IssueDetailSheet({
                   </AlertDialog>
                 )}
               </div>
+              {issue.type === 'subtask' && issue.parent_id && issue.parent_key && (
+                <button
+                  onClick={() => onOpenIssue?.(issue.parent_id!)}
+                  className="flex w-fit max-w-full items-center gap-1.5 text-left text-xs text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {issue.parent_type && <TypeIcon type={issue.parent_type} className="size-3.5" />}
+                  <span className="font-mono">{issue.parent_key}</span>
+                  <span className="truncate">{issue.parent_title}</span>
+                </button>
+              )}
               <SheetTitle className="text-left text-lg leading-snug">{issue.title}</SheetTitle>
             </SheetHeader>
 
@@ -209,6 +309,136 @@ export function IssueDetailSheet({
                     {issue.description || <span className="text-faint">No description.</span>}
                   </p>
                 </section>
+
+                {issue.type === 'epic' && (
+                  <section>
+                    <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Child issues ({children.length})
+                    </h3>
+                    {children.length > 0 && (
+                      <div className="mb-2 flex items-center gap-2">
+                        <Progress
+                          value={children.length === 0 ? 0 : Math.round((children.filter((c) => c.status === 'done').length / children.length) * 100)}
+                          className="h-1.5"
+                        />
+                        <span className="whitespace-nowrap text-[11px] tabular-nums text-muted-foreground">
+                          {children.filter((c) => c.status === 'done').length}/{children.length} done
+                        </span>
+                      </div>
+                    )}
+                    <ul className="divide-y divide-border-light rounded-md border border-border">
+                      {children.map((c) => (
+                        <li key={c.id}>
+                          <button
+                            onClick={() => onOpenIssue?.(c.id)}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted/60"
+                          >
+                            <TypeIcon type={c.type} />
+                            <span className="font-mono text-xs text-muted-foreground">{c.issue_key}</span>
+                            <span className="min-w-0 flex-1 truncate">{c.title}</span>
+                            <StatusPill status={c.status} className="shrink-0" />
+                            {c.assignee_name && <UserAvatar name={c.assignee_name} color={c.assignee_color} className="size-5" />}
+                          </button>
+                        </li>
+                      ))}
+                      {children.length === 0 && (
+                        <li className="px-3 py-3 text-sm text-muted-foreground">No child issues yet.</li>
+                      )}
+                    </ul>
+                    {canEdit && candidates.length > 0 && (
+                      <div className="mt-2">
+                        <Select
+                          value=""
+                          onValueChange={async (childId) => {
+                            try {
+                              await api.issues.update(childId, { parent_id: issue.id });
+                              onChanged?.();
+                              void load();
+                            } catch (e) {
+                              toast.error('Could not add issue to epic', { description: e instanceof Error ? e.message : undefined });
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="w-full text-muted-foreground">
+                            <SelectValue placeholder="Add an existing issue…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {candidates.map((c) => (
+                              <SelectItem key={c.id} value={c.id}>
+                                <span className="flex items-center gap-2">
+                                  <TypeIcon type={c.type} />
+                                  <span className="font-mono text-xs">{c.issue_key}</span> {c.title}
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </section>
+                )}
+
+                {issue.type !== 'epic' && issue.type !== 'subtask' && (
+                  <section>
+                    <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Subtasks ({children.length})
+                    </h3>
+                    {children.length > 0 && (
+                      <>
+                        <div className="mb-2 flex items-center gap-2">
+                          <Progress
+                            value={Math.round((children.filter((c) => c.status === 'done').length / children.length) * 100)}
+                            className="h-1.5"
+                          />
+                          <span className="whitespace-nowrap text-[11px] tabular-nums text-muted-foreground">
+                            {children.filter((c) => c.status === 'done').length}/{children.length} done
+                          </span>
+                        </div>
+                        <ul className="divide-y divide-border-light rounded-md border border-border">
+                          {children.map((c) => (
+                            <li key={c.id}>
+                              <button
+                                onClick={() => onOpenIssue?.(c.id)}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted/60"
+                              >
+                                <TypeIcon type={c.type} />
+                                <span className="font-mono text-xs text-muted-foreground">{c.issue_key}</span>
+                                <span className="min-w-0 flex-1 truncate">{c.title}</span>
+                                <StatusPill status={c.status} className="shrink-0" />
+                                {c.assignee_name && <UserAvatar name={c.assignee_name} color={c.assignee_color} className="size-5" />}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                    {canEdit && (
+                      <div className="mt-2 flex gap-2">
+                        <Input
+                          value={subtaskTitle}
+                          onChange={(e) => setSubtaskTitle(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              void addSubtask();
+                            }
+                          }}
+                          placeholder="Add a subtask…"
+                          aria-label="New subtask title"
+                        />
+                        <Button
+                          size="icon"
+                          variant="outline"
+                          onClick={addSubtask}
+                          disabled={addingSubtask || !subtaskTitle.trim()}
+                          aria-label="Add subtask"
+                        >
+                          {addingSubtask ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+                        </Button>
+                      </div>
+                    )}
+                  </section>
+                )}
 
                 <section>
                   <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -352,8 +582,8 @@ export function IssueDetailSheet({
                   >
                     <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {STATUSES.map((s) => (
-                        <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>
+                      {workflow.statuses.map((s) => (
+                        <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -394,21 +624,126 @@ export function IssueDetailSheet({
                   </Select>
                 </div>
 
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Sprint</Label>
-                  <Select
-                    value={issue.sprint_id ?? NO_SPRINT}
-                    onValueChange={(v) => patch({ sprint_id: v === NO_SPRINT ? null : v })}
-                    disabled={!canEdit}
-                  >
-                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={NO_SPRINT}>Backlog</SelectItem>
-                      {sprints.map((s) => (
-                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                {issue.type !== 'epic' && issue.type !== 'subtask' && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Sprint</Label>
+                    <Select
+                      value={issue.sprint_id ?? NO_SPRINT}
+                      onValueChange={(v) => patch({ sprint_id: v === NO_SPRINT ? null : v })}
+                      disabled={!canEdit}
+                    >
+                      <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NO_SPRINT}>Backlog</SelectItem>
+                        {sprints.map((s) => (
+                          <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {issue.type !== 'epic' && issue.type !== 'subtask' && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Epic</Label>
+                    <Select
+                      value={issue.parent_id ?? NO_EPIC}
+                      onValueChange={(v) => patch({ parent_id: v === NO_EPIC ? null : v })}
+                      disabled={!canEdit}
+                    >
+                      <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NO_EPIC}>No epic</SelectItem>
+                        {epics.map((e) => (
+                          <SelectItem key={e.id} value={e.id}>
+                            <span className="flex items-center gap-2">
+                              <span className={cn('size-2.5 rounded-sm', epicColor(e.epic_color).swatch)} />
+                              {e.title}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {issue.type === 'epic' && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Epic color</Label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {Object.entries(EPIC_COLORS).map(([name, c]) => (
+                        <button
+                          key={name}
+                          type="button"
+                          disabled={!canEdit}
+                          onClick={() => patch({ epic_color: name })}
+                          aria-label={c.label}
+                          className={cn(
+                            'size-5 rounded-full transition-transform hover:scale-110',
+                            c.swatch,
+                            issue.epic_color === name && 'ring-2 ring-ring ring-offset-2 ring-offset-background',
+                          )}
+                        />
                       ))}
-                    </SelectContent>
-                  </Select>
+                    </div>
+                  </div>
+                )}
+
+                {issue.type !== 'epic' && versions.length > 0 && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Fix version</Label>
+                    <Select
+                      value={issue.fix_version_id ?? NO_VERSION}
+                      onValueChange={(v) => patch({ fix_version_id: v === NO_VERSION ? null : v })}
+                      disabled={!canEdit}
+                    >
+                      <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NO_VERSION}>None</SelectItem>
+                        {versions.map((v) => (
+                          <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {issue.type !== 'epic' && components.length > 0 && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Component</Label>
+                    <Select
+                      value={issue.component_id ?? NO_COMPONENT}
+                      onValueChange={(v) => patch({ component_id: v === NO_COMPONENT ? null : v })}
+                      disabled={!canEdit}
+                    >
+                      <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NO_COMPONENT}>None</SelectItem>
+                        {components.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Time tracking</Label>
+                  {(issue.original_estimate ?? 0) > 0 && (
+                    <Progress
+                      value={Math.min(100, Math.round(((issue.time_spent ?? 0) / (issue.original_estimate ?? 1)) * 100))}
+                      className="h-1.5"
+                    />
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    {formatDuration(issue.time_spent)} logged
+                    {(issue.original_estimate ?? 0) > 0 && (
+                      <> · {formatDuration(Math.max(0, (issue.original_estimate ?? 0) - (issue.time_spent ?? 0)))} left</>
+                    )}
+                  </p>
+                  <Button variant="outline" size="sm" className="w-full gap-1.5" onClick={() => setLogOpen(true)}>
+                    <Clock className="size-3.5" /> Log work
+                  </Button>
                 </div>
 
                 <Separator />
@@ -433,6 +768,93 @@ export function IssueDetailSheet({
                 </dl>
               </aside>
             </div>
+
+            <Dialog open={logOpen} onOpenChange={setLogOpen}>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Time tracking · {issue.issue_key}</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  {canEdit && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Original estimate (hours)</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={estimateHours}
+                          onChange={(e) => setEstimateHours(e.target.value)}
+                          placeholder="e.g. 8"
+                          aria-label="Original estimate in hours"
+                        />
+                        <Button variant="outline" onClick={saveEstimate}>Set</Button>
+                      </div>
+                    </div>
+                  )}
+                  {canEdit && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Log work</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.25"
+                          value={logHours}
+                          onChange={(e) => setLogHours(e.target.value)}
+                          placeholder="Hours"
+                          aria-label="Hours worked"
+                          className="w-28"
+                        />
+                        <Input
+                          value={logComment}
+                          onChange={(e) => setLogComment(e.target.value)}
+                          placeholder="What did you work on?"
+                          aria-label="Work description"
+                        />
+                        <Button onClick={logWork} disabled={loggingWork || !logHours}>
+                          {loggingWork ? <Loader2 className="size-4 animate-spin" /> : 'Log'}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  {worklogs.length === 0 ? (
+                    <p className="py-2 text-center text-sm text-muted-foreground">No work logged yet.</p>
+                  ) : (
+                    <ul className="max-h-56 space-y-2 overflow-y-auto">
+                      {worklogs.map((wlog) => (
+                        <li key={wlog.id} className="flex items-start gap-2.5 text-sm">
+                          <UserAvatar name={wlog.user_name} color={wlog.user_color} className="size-6" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs">
+                              <span className="font-semibold">{wlog.user_name}</span>{' '}
+                              <span className="text-muted-foreground">
+                                logged {formatDuration(wlog.minutes)} · {timeAgo(wlog.created_at)}
+                              </span>
+                            </p>
+                            {wlog.comment && <p className="mt-0.5 text-sm">{wlog.comment}</p>}
+                          </div>
+                          {(wlog.user_id === user?.id || isAdmin(user?.role)) && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="size-7 text-muted-foreground hover:text-destructive"
+                              onClick={() => removeWorkLog(wlog.id)}
+                              aria-label="Delete work log"
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setLogOpen(false)}>Close</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </>
         )}
       </SheetContent>

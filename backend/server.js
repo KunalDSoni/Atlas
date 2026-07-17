@@ -27,6 +27,12 @@ const activityRoutes = require('./routes/activity');
 const watchersRoutes = require('./routes/watchers');
 const linksRoutes = require('./routes/links');
 const auditLogRoutes = require('./routes/auditlog');
+const searchRoutes = require('./routes/search');
+const notificationsRoutes = require('./routes/notifications');
+const worklogsRoutes = require('./routes/worklogs');
+const releasesRoutes = require('./routes/releases');
+const workflowsRoutes = require('./routes/workflows');
+const automationsRoutes = require('./routes/automations');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -119,6 +125,24 @@ app.use('/api', watchersRoutes);
 
 // Issue Links Module — linked issues
 app.use('/api', linksRoutes);
+
+// Global Search + Saved Filters Module
+app.use('/api', searchRoutes);
+
+// Notifications + Wiki Page Watching Module
+app.use('/api', notificationsRoutes);
+
+// Time Tracking Module
+app.use('/api', worklogsRoutes);
+
+// Releases + Components Module
+app.use('/api', releasesRoutes);
+
+// Custom Workflows Module
+app.use('/api', workflowsRoutes);
+
+// Automation Rules Module
+app.use('/api', automationsRoutes);
 
 // SPA fallback (Express 5 compatible)
 app.get('/{*splat}', (req, res) => {

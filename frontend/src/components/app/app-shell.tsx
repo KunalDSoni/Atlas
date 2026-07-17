@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
-  ChevronsUpDown, Columns3, FileClock, Gauge, LayoutDashboard, ListTodo, LogOut, Menu,
-  Monitor, Moon, Rocket, Search, Settings as SettingsIcon, Shield, Sun, User as UserIcon, Users, BookOpen,
+  Bell, CalendarRange, ChevronsUpDown, Columns3, FileClock, Gauge, LayoutDashboard, ListTodo, LogOut, Menu, Package,
+  Monitor, Moon, Rocket, Search, Settings as SettingsIcon, Shield, Sun, User as UserIcon, Users, BookOpen, Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -12,10 +12,14 @@ import {
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
 import { useTheme } from '@/context/theme-provider';
 import { useProjects } from '@/hooks/use-projects';
+import { useSettings } from '@/hooks/use-settings';
 import { isAdmin } from '@/lib/domain';
+import type { AppNotification } from '@/lib/types';
+import { timeAgo } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { UserAvatar } from './primitives';
 import { CommandPalette } from './command-palette';
@@ -30,8 +34,12 @@ const PROJECT_NAV: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/board', label: 'Board', icon: Columns3 },
   { to: '/backlog', label: 'Backlog', icon: ListTodo },
+  { to: '/epics', label: 'Epics', icon: Zap },
+  { to: '/roadmap', label: 'Roadmap', icon: CalendarRange },
   { to: '/sprints', label: 'Sprints', icon: Rocket },
+  { to: '/releases', label: 'Releases', icon: Package },
   { to: '/reports', label: 'Reports', icon: Gauge },
+  { to: '/automation', label: 'Automation', icon: Zap },
 ];
 
 const WIKI_NAV: NavItem[] = [{ to: '/wiki', label: 'Wiki', icon: BookOpen }];
@@ -147,7 +155,15 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
 function ThemeToggle() {
   const { theme, setTheme } = useTheme();
+  const { patch } = useSettings();
   const Icon = theme === 'dark' ? Moon : theme === 'light' ? Sun : Monitor;
+
+  // Sign-in treats the account's saved theme as the source of truth, so a
+  // localStorage-only change here would revert on the next load.
+  const choose = (t: 'light' | 'dark' | 'system') => {
+    setTheme(t);
+    void patch({ theme: t });
+  };
 
   return (
     <DropdownMenu>
@@ -157,15 +173,104 @@ function ThemeToggle() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onSelect={() => setTheme('light')} className="gap-2">
+        <DropdownMenuItem onSelect={() => choose('light')} className="gap-2">
           <Sun className="size-4" /> Light {theme === 'light' && <span className="ml-auto text-xs text-primary">•</span>}
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => setTheme('dark')} className="gap-2">
+        <DropdownMenuItem onSelect={() => choose('dark')} className="gap-2">
           <Moon className="size-4" /> Dark {theme === 'dark' && <span className="ml-auto text-xs text-primary">•</span>}
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => setTheme('system')} className="gap-2">
+        <DropdownMenuItem onSelect={() => choose('system')} className="gap-2">
           <Monitor className="size-4" /> System {theme === 'system' && <span className="ml-auto text-xs text-primary">•</span>}
         </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function NotificationBell() {
+  const navigate = useNavigate();
+  const [items, setItems] = useState<AppNotification[]>([]);
+  const [unread, setUnread] = useState(0);
+  const [open, setOpen] = useState(false);
+
+  const refreshCount = useCallback(() => {
+    api.notifications.unreadCount().then((r) => setUnread(r.count)).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    refreshCount();
+    const t = setInterval(refreshCount, 60_000);
+    return () => clearInterval(t);
+  }, [refreshCount]);
+
+  useEffect(() => {
+    if (!open) return;
+    api.notifications.list().then(setItems).catch(() => setItems([]));
+  }, [open]);
+
+  async function openNotification(n: AppNotification) {
+    if (!n.is_read) {
+      await api.notifications.markRead(n.id).catch(() => undefined);
+      refreshCount();
+    }
+    if (n.link) navigate(n.link);
+  }
+
+  async function markAll() {
+    await api.notifications.markAllRead().catch(() => undefined);
+    setItems((prev) => prev.map((n) => ({ ...n, is_read: 1 })));
+    setUnread(0);
+  }
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="relative" aria-label={`Notifications${unread ? ` (${unread} unread)` : ''}`}>
+          <Bell className="size-4" />
+          {unread > 0 && (
+            <span className="absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-destructive px-1 text-[9px] font-bold leading-4 text-white">
+              {unread > 9 ? '9+' : unread}
+            </span>
+          )}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-80 p-0">
+        <div className="flex items-center justify-between px-3 py-2">
+          <p className="text-sm font-semibold">Notifications</p>
+          {unread > 0 && (
+            <button onClick={markAll} className="text-xs text-primary hover:underline">
+              Mark all read
+            </button>
+          )}
+        </div>
+        <Separator />
+        {items.length === 0 ? (
+          <p className="px-3 py-6 text-center text-sm text-muted-foreground">You're all caught up.</p>
+        ) : (
+          <ul className="max-h-96 overflow-y-auto">
+            {items.map((n) => (
+              <li key={n.id}>
+                <button
+                  onClick={() => {
+                    setOpen(false);
+                    void openNotification(n);
+                  }}
+                  className={cn(
+                    'flex w-full items-start gap-2.5 px-3 py-2.5 text-left text-sm transition-colors hover:bg-muted/60',
+                    !n.is_read && 'bg-primary/5',
+                  )}
+                >
+                  <UserAvatar name={n.actor_name ?? '?'} color={n.actor_color} className="size-6 shrink-0" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block leading-snug">{n.message}</span>
+                    <span className="text-xs text-muted-foreground">{timeAgo(n.created_at)}</span>
+                  </span>
+                  {!n.is_read && <span className="mt-1.5 size-2 shrink-0 rounded-full bg-primary" aria-label="Unread" />}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -248,6 +353,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </button>
 
           <div className="flex-1" />
+          <NotificationBell />
           <ThemeToggle />
           <UserMenu />
         </header>

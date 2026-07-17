@@ -58,6 +58,7 @@ const SCHEMA_SQL = [
     name TEXT NOT NULL,
     key TEXT UNIQUE NOT NULL,
     description TEXT,
+    wip_limits TEXT DEFAULT '{}',
     lead_id TEXT REFERENCES users(id),
     created_at TEXT DEFAULT (datetime('now'))
   )`,
@@ -88,7 +89,7 @@ const SCHEMA_SQL = [
     title TEXT NOT NULL,
     description TEXT,
     type TEXT DEFAULT 'task' CHECK(type IN ('story','task','bug','epic','subtask')),
-    status TEXT DEFAULT 'todo' CHECK(status IN ('todo','in_progress','in_review','done')),
+    status TEXT DEFAULT 'todo',
     priority TEXT DEFAULT 'medium' CHECK(priority IN ('highest','high','medium','low','lowest')),
     assignee_id TEXT REFERENCES users(id),
     reporter_id TEXT REFERENCES users(id),
@@ -96,8 +97,12 @@ const SCHEMA_SQL = [
     story_points INTEGER,
     labels TEXT DEFAULT '[]',
     due_date TEXT,
+    start_date TEXT,
     original_estimate TEXT,
     time_spent TEXT,
+    epic_color TEXT DEFAULT 'purple' CHECK(epic_color IN ('purple','blue','teal','green','yellow','orange','red','pink')),
+    fix_version_id TEXT REFERENCES versions(id),
+    component_id TEXT REFERENCES components(id),
     board_order INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
@@ -159,6 +164,7 @@ const SCHEMA_SQL = [
     updated_at TEXT DEFAULT (datetime('now'))
   )`,
   `CREATE TABLE IF NOT EXISTS wiki_pages (
+    page_type TEXT DEFAULT 'page',
     id TEXT PRIMARY KEY,
     space_id TEXT NOT NULL REFERENCES wiki_spaces(id),
     parent_id TEXT REFERENCES wiki_pages(id),
@@ -186,6 +192,7 @@ const SCHEMA_SQL = [
     created_at TEXT DEFAULT (datetime('now'))
   )`,
   `CREATE TABLE IF NOT EXISTS wiki_page_comments (
+    quote TEXT,
     id TEXT PRIMARY KEY,
     page_id TEXT NOT NULL REFERENCES wiki_pages(id),
     parent_id TEXT REFERENCES wiki_page_comments(id),
@@ -245,6 +252,82 @@ const SCHEMA_SQL = [
     status_code INTEGER,
     duration_ms INTEGER,
     created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS saved_filters (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    user_id TEXT NOT NULL REFERENCES users(id),
+    name TEXT NOT NULL,
+    params TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS notifications (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    actor_id TEXT REFERENCES users(id),
+    type TEXT NOT NULL,
+    message TEXT NOT NULL,
+    link TEXT,
+    issue_id TEXT,
+    wiki_page_id TEXT,
+    is_read INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS wiki_page_watchers (
+    page_id TEXT NOT NULL REFERENCES wiki_pages(id),
+    user_id TEXT NOT NULL REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (page_id, user_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS work_logs (
+    id TEXT PRIMARY KEY,
+    issue_id TEXT NOT NULL REFERENCES issues(id),
+    user_id TEXT NOT NULL REFERENCES users(id),
+    minutes INTEGER NOT NULL,
+    comment TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS project_statuses (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    key TEXT NOT NULL,
+    label TEXT NOT NULL,
+    category TEXT DEFAULT 'in_progress' CHECK(category IN ('todo','in_progress','done')),
+    position INTEGER DEFAULT 0,
+    UNIQUE(project_id, key)
+  )`,
+  `CREATE TABLE IF NOT EXISTS wiki_page_restrictions (
+    page_id TEXT NOT NULL REFERENCES wiki_pages(id),
+    user_id TEXT NOT NULL REFERENCES users(id),
+    can_edit INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (page_id, user_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS automation_rules (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    name TEXT NOT NULL,
+    trigger_type TEXT NOT NULL CHECK(trigger_type IN ('issue_created','status_changed','all_subtasks_done')),
+    conditions TEXT NOT NULL DEFAULT '[]',
+    actions TEXT NOT NULL DEFAULT '[]',
+    enabled INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS versions (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    name TEXT NOT NULL,
+    description TEXT,
+    status TEXT DEFAULT 'unreleased' CHECK(status IN ('unreleased','released')),
+    release_date TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS components (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    name TEXT NOT NULL,
+    description TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
   )`
 ];
 
@@ -301,6 +384,7 @@ const MYSQL_SCHEMA_SQL = [
     name VARCHAR(255) NOT NULL,
     \`key\` VARCHAR(50) UNIQUE NOT NULL,
     description TEXT,
+    wip_limits VARCHAR(2000),
     lead_id VARCHAR(36),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   ) DEFAULT CHARSET=utf8mb4`,
@@ -331,7 +415,7 @@ const MYSQL_SCHEMA_SQL = [
     title VARCHAR(512) NOT NULL,
     description TEXT,
     type VARCHAR(20) DEFAULT 'task' CHECK(type IN ('story','task','bug','epic','subtask')),
-    status VARCHAR(20) DEFAULT 'todo' CHECK(status IN ('todo','in_progress','in_review','done')),
+    status VARCHAR(20) DEFAULT 'todo',
     priority VARCHAR(20) DEFAULT 'medium' CHECK(priority IN ('highest','high','medium','low','lowest')),
     assignee_id VARCHAR(36),
     reporter_id VARCHAR(36),
@@ -339,8 +423,12 @@ const MYSQL_SCHEMA_SQL = [
     story_points INT,
     labels VARCHAR(2000) DEFAULT '[]',
     due_date DATETIME NULL,
+    start_date DATETIME NULL,
     original_estimate VARCHAR(50),
     time_spent VARCHAR(50),
+    epic_color VARCHAR(20) DEFAULT 'purple' CHECK(epic_color IN ('purple','blue','teal','green','yellow','orange','red','pink')),
+    fix_version_id VARCHAR(36),
+    component_id VARCHAR(36),
     board_order INT DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -402,6 +490,7 @@ const MYSQL_SCHEMA_SQL = [
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   ) DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS wiki_pages (
+    page_type VARCHAR(20) DEFAULT 'page',
     id VARCHAR(36) PRIMARY KEY,
     space_id VARCHAR(36) NOT NULL,
     parent_id VARCHAR(36),
@@ -429,6 +518,7 @@ const MYSQL_SCHEMA_SQL = [
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   ) DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS wiki_page_comments (
+    quote TEXT,
     id VARCHAR(36) PRIMARY KEY,
     page_id VARCHAR(36) NOT NULL,
     parent_id VARCHAR(36),
@@ -488,6 +578,82 @@ const MYSQL_SCHEMA_SQL = [
     status_code INT,
     duration_ms INT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS saved_filters (
+    id VARCHAR(36) PRIMARY KEY,
+    project_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(36) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    params TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS notifications (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL,
+    actor_id VARCHAR(36),
+    type VARCHAR(50) NOT NULL,
+    message VARCHAR(512) NOT NULL,
+    link VARCHAR(512),
+    issue_id VARCHAR(36),
+    wiki_page_id VARCHAR(36),
+    is_read TINYINT DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS wiki_page_watchers (
+    page_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(36) NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (page_id, user_id)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS work_logs (
+    id VARCHAR(36) PRIMARY KEY,
+    issue_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(36) NOT NULL,
+    minutes INT NOT NULL,
+    comment TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS project_statuses (
+    id VARCHAR(36) PRIMARY KEY,
+    project_id VARCHAR(36) NOT NULL,
+    \`key\` VARCHAR(50) NOT NULL,
+    label VARCHAR(255) NOT NULL,
+    category VARCHAR(20) DEFAULT 'in_progress' CHECK(category IN ('todo','in_progress','done')),
+    position INT DEFAULT 0,
+    UNIQUE(project_id, \`key\`)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS wiki_page_restrictions (
+    page_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(36) NOT NULL,
+    can_edit TINYINT DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (page_id, user_id)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS automation_rules (
+    id VARCHAR(36) PRIMARY KEY,
+    project_id VARCHAR(36) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    trigger_type VARCHAR(40) NOT NULL,
+    conditions TEXT NOT NULL,
+    actions TEXT NOT NULL,
+    enabled TINYINT DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS versions (
+    id VARCHAR(36) PRIMARY KEY,
+    project_id VARCHAR(36) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    status VARCHAR(20) DEFAULT 'unreleased' CHECK(status IN ('unreleased','released')),
+    release_date DATETIME NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS components (
+    id VARCHAR(36) PRIMARY KEY,
+    project_id VARCHAR(36) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   ) DEFAULT CHARSET=utf8mb4`
 ];
 
@@ -505,6 +671,17 @@ async function initSqlite() {
 
   // Create tables
   SCHEMA_SQL.forEach(sql => db.run(sql));
+
+  // CREATE TABLE IF NOT EXISTS won't add columns to an existing data.db — patch in place.
+  // ALTER skips CHECK: existing DBs are covered by API validation in backend/routes/issues.js
+  try { db.run("ALTER TABLE issues ADD COLUMN epic_color TEXT DEFAULT 'purple'"); } catch (e) { /* column already exists */ }
+  try { db.run("ALTER TABLE issues ADD COLUMN fix_version_id TEXT"); } catch (e) { /* column already exists */ }
+  try { db.run("ALTER TABLE issues ADD COLUMN component_id TEXT"); } catch (e) { /* column already exists */ }
+  try { db.run("ALTER TABLE issues ADD COLUMN start_date TEXT"); } catch (e) { /* column already exists */ }
+  try { db.run("ALTER TABLE projects ADD COLUMN wip_limits TEXT DEFAULT '{}'"); } catch (e) { /* column already exists */ }
+  try { db.run("ALTER TABLE wiki_page_comments ADD COLUMN quote TEXT"); } catch (e) { /* column already exists */ }
+  try { db.run("ALTER TABLE wiki_pages ADD COLUMN page_type TEXT DEFAULT 'page'"); } catch (e) { /* column already exists */ }
+
   saveDb();
 
   // Seed or create admin
@@ -559,6 +736,46 @@ async function initMysql() {
 async function initMysqlSchema(pool) {
   for (const sql of MYSQL_SCHEMA_SQL) {
     await pool.query(sql);
+  }
+
+  const [epicCol] = await pool.query(
+    "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'issues' AND column_name = 'epic_color'"
+  );
+  if (epicCol.length === 0) {
+    // ALTER skips CHECK: existing DBs are covered by API validation in backend/routes/issues.js
+    await pool.query("ALTER TABLE issues ADD COLUMN epic_color VARCHAR(20) DEFAULT 'purple'");
+  }
+
+  for (const col of ['fix_version_id', 'component_id', 'start_date']) {
+    const [hit] = await pool.query(
+      "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'issues' AND column_name = ?", [col]
+    );
+    if (hit.length === 0) {
+      await pool.query(col === 'start_date'
+        ? 'ALTER TABLE issues ADD COLUMN start_date DATETIME NULL'
+        : `ALTER TABLE issues ADD COLUMN ${col} VARCHAR(36)`);
+    }
+  }
+
+  const [quoteCol] = await pool.query(
+    "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'wiki_page_comments' AND column_name = 'quote'"
+  );
+  if (quoteCol.length === 0) {
+    await pool.query('ALTER TABLE wiki_page_comments ADD COLUMN quote TEXT');
+  }
+
+  const [ptCol] = await pool.query(
+    "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'wiki_pages' AND column_name = 'page_type'"
+  );
+  if (ptCol.length === 0) {
+    await pool.query("ALTER TABLE wiki_pages ADD COLUMN page_type VARCHAR(20) DEFAULT 'page'");
+  }
+
+  const [wipCol] = await pool.query(
+    "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'projects' AND column_name = 'wip_limits'"
+  );
+  if (wipCol.length === 0) {
+    await pool.query('ALTER TABLE projects ADD COLUMN wip_limits VARCHAR(2000)');
   }
 
   const [rows] = await pool.query('SELECT COUNT(*) as c FROM users');
@@ -698,11 +915,29 @@ function seedDemoData() {
     { title: 'Fix CORS issues in staging', type: 'bug', status: 'done', priority: 'high', points: 2, assignee: 2 },
   ];
 
+  const atlIssueIds = [];
   issueData.forEach((issue, i) => {
+    const iid = uuid();
+    atlIssueIds.push(iid);
     db.run(`INSERT INTO issues (id, project_id, sprint_id, issue_key, issue_number, title, type, status, priority, story_points, assignee_id, reporter_id, board_order)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [uuid(), projId1, sprintId, `ATL-${i + 1}`, i + 1, issue.title, issue.type, issue.status, issue.priority, issue.points,
+      [iid, projId1, sprintId, `ATL-${i + 1}`, i + 1, issue.title, issue.type, issue.status, issue.priority, issue.points,
        issue.assignee !== null ? userIds[issue.assignee] : null, userIds[0], i]);
+  });
+
+  // Demo subtasks: ATL-1 (OAuth2 story, in the active sprint) and ATL-7 (notification
+  // refactor). Subtasks carry no sprint_id — they follow their parent implicitly.
+  const atlSubtasks = [
+    { parent: 0, title: 'Add PKCE support to the authorization flow', status: 'done', assignee: 0 },
+    { parent: 0, title: 'Refresh-token rotation and revocation', status: 'in_progress', assignee: 1 },
+    { parent: 0, title: 'Provider buttons on the sign-in screen', status: 'todo', assignee: null },
+    { parent: 6, title: 'Extract notification templates into their own module', status: 'todo', assignee: 2 },
+  ];
+  atlSubtasks.forEach((s, i) => {
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+      VALUES (?, ?, ?, ?, ?, 'subtask', ?, 'medium', ?, ?, ?, ?)`,
+      [uuid(), projId1, `ATL-${11 + i}`, 11 + i, s.title, s.status,
+       s.assignee !== null ? userIds[s.assignee] : null, userIds[0], atlIssueIds[s.parent], i]);
   });
 
   // Seed issues for Mobile App
@@ -717,6 +952,133 @@ function seedDemoData() {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [uuid(), projId2, sprintId2, `MOB-${i + 1}`, i + 1, issue.title, issue.type, issue.status, issue.priority, issue.points,
        issue.assignee !== null ? userIds[issue.assignee] : null, userIds[1], i]);
+  });
+
+  // ===== DOGFOOD: Atlas tracks its own Jira/Confluence parity roadmap =====
+  const projId3 = uuid();
+  db.run("INSERT INTO projects (id, name, key, description, lead_id) VALUES (?, ?, ?, ?, ?)",
+    [projId3, 'Atlas Development', 'ATLAS', 'Atlas building Atlas — the Jira/Confluence parity roadmap, tracked as epics', userIds[0]]);
+  [0, 1, 2].forEach(i => {
+    db.run("INSERT INTO project_members (id, project_id, user_id, role_in_project) VALUES (?, ?, ?, ?)",
+      [uuid(), projId3, userIds[i], i === 0 ? 'lead' : 'member']);
+  });
+
+  const roadmapEpics = [
+    { title: 'Epic support', status: 'done', color: 'purple',
+      desc: 'Add epic as a first-class issue type: hierarchy via parent_id, Epics screen with progress rollups, epic badges on board and backlog, epic picker in the issue detail sheet.' },
+    { title: 'Subtasks', status: 'done', color: 'blue',
+      desc: 'Child issues under stories, tasks, and bugs using the same parent_id column, with progress rollup on the parent issue.' },
+    { title: 'Global search & filters', status: 'done', color: 'teal',
+      desc: 'Quick search across issues and wiki pages, JQL-lite filter bar (assignee, type, label, status), and saved filters.' },
+    { title: 'Notifications & @mentions', status: 'done', color: 'yellow',
+      desc: 'In-app notification inbox, @mentions in comments, wiki page watching — wiring up the existing notification settings toggles.' },
+    { title: 'Time tracking', status: 'done', color: 'orange',
+      desc: 'Original estimates, work logs, and remaining-time display on issues, building on the original_estimate and time_spent columns.' },
+    { title: 'Releases & components', status: 'done', color: 'red',
+      desc: 'Fix versions and components on issues, plus a release hub screen with per-version progress.' },
+    { title: 'Roadmap / timeline', status: 'done', color: 'pink',
+      desc: 'Gantt-style timeline view of epics and sprints across time.' },
+    { title: 'Board power-ups', status: 'done', color: 'green',
+      desc: 'Swimlanes (by assignee/epic), per-column WIP limits, and multi-select bulk edit on the board.' },
+    { title: 'Custom workflows', status: 'done', color: 'purple',
+      desc: 'Configurable statuses and board columns per project instead of the fixed four-status workflow.' },
+    { title: 'Automation rules', status: 'done', color: 'blue',
+      desc: 'Trigger → condition → action rules, e.g. "when all subtasks done, move parent to done".' },
+    { title: 'Wiki: collaboration', status: 'done', color: 'teal',
+      desc: 'Inline comments on wiki page text and page-level restrictions/permissions.' },
+    { title: 'Wiki: publishing', status: 'done', color: 'orange',
+      desc: 'Page export (PDF/Markdown), macros (table of contents, status badges, issue embeds), and blog posts per space.' },
+  ];
+
+  const atlasEpicIds = [];
+  // Staggered month-long windows from 2026-07-01 so the Roadmap timeline has shape.
+  const epicWindow = (i) => {
+    const start = new Date(Date.UTC(2026, 6, 1) + i * 21 * 86400000);
+    const due = new Date(start.getTime() + 30 * 86400000);
+    return [start.toISOString().slice(0, 10), due.toISOString().slice(0, 10)];
+  };
+  roadmapEpics.forEach((epic, i) => {
+    const eid = uuid();
+    atlasEpicIds.push(eid);
+    const [startDate, dueDate] = epicWindow(i);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', ?, 'high', ?, ?, ?, ?, ?)`,
+      [eid, projId3, `ATLAS-${i + 1}`, i + 1, epic.title, epic.desc, epic.status, userIds[0], epic.color, startDate, dueDate, i]);
+  });
+
+  // Epic 2 (Subtasks) shipped — its actual work, tracked as done children.
+  const subtasksEpicChildren = [
+    { title: 'Generalize hierarchy validation to subtask parents', type: 'task' },
+    { title: 'Parent join fields and subtask rollup counts in the issues API', type: 'task' },
+    { title: 'Subtasks section with quick-add in the issue detail sheet', type: 'story' },
+    { title: 'Subtask progress chips on board cards and backlog rows', type: 'story' },
+    { title: 'Backend test suite for subtask hierarchy rules', type: 'task' },
+  ];
+  subtasksEpicChildren.forEach((c, i) => {
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+      [uuid(), projId3, `ATLAS-${13 + i}`, 13 + i, c.title, c.type, userIds[0], userIds[0], atlasEpicIds[1], i]);
+  });
+
+  // Wave epics (3-12): each shipped epic gets done children describing its real work.
+  // `epic` is the 0-based index into atlasEpicIds; numbering continues after ATLAS-17.
+  const waveChildren = [
+    { epic: 2, items: [
+      { title: 'Global /api/search across issues and wiki pages', type: 'task' },
+      { title: 'Command palette server search with cross-project jump', type: 'story' },
+      { title: 'Backlog filter bar: type, assignee, label + saved filters', type: 'story' },
+    ] },
+    { epic: 3, items: [
+      { title: 'Notifications table, API, and header bell inbox', type: 'story' },
+      { title: 'Assignment, watcher-comment, and @mention triggers', type: 'task' },
+      { title: 'Wiki page watching with update notifications', type: 'task' },
+    ] },
+    { epic: 4, items: [
+      { title: 'Work logs table and API with time_spent rollup', type: 'task' },
+      { title: 'Time tracking panel: estimate, log work, remaining bar', type: 'story' },
+    ] },
+    { epic: 5, items: [
+      { title: 'Versions and components tables with issue rollups', type: 'task' },
+      { title: 'Releases hub screen with per-version progress', type: 'story' },
+      { title: 'Fix version and component pickers on issues', type: 'task' },
+    ] },
+    { epic: 6, items: [
+      { title: 'Epic start/due date windows on issues', type: 'task' },
+      { title: 'Roadmap screen: month grid, epic and sprint bars, today line', type: 'story' },
+    ] },
+    { epic: 7, items: [
+      { title: 'Swimlanes by assignee and epic', type: 'story' },
+      { title: 'Per-column WIP limits with over-limit warning', type: 'task' },
+      { title: 'Multi-select bulk edit bar: status, assignee, delete', type: 'story' },
+    ] },
+    { epic: 8, items: [
+      { title: 'Per-project status table with categories and positions', type: 'task' },
+      { title: 'Workflow editor: add, rename category, reorder, delete with migration', type: 'story' },
+      { title: 'Board, backlog, and issue sheet render dynamic statuses', type: 'story' },
+    ] },
+    { epic: 9, items: [
+      { title: 'Automation rules table and trigger engine', type: 'task' },
+      { title: 'Rule builder screen: trigger, condition, action', type: 'story' },
+      { title: 'All-subtasks-done trigger wired to issue lifecycle', type: 'task' },
+    ] },
+    { epic: 10, items: [
+      { title: 'Comment-on-selection quotes in wiki comments', type: 'story' },
+      { title: 'Page restrictions: per-user view/edit with API enforcement', type: 'story' },
+    ] },
+    { epic: 11, items: [
+      { title: 'Markdown and HTML export with print-to-PDF', type: 'task' },
+      { title: 'Wiki macros: table of contents and issue-key chips', type: 'story' },
+      { title: 'Blog posts per space, kept out of the page tree', type: 'story' },
+    ] },
+  ];
+  let atlasIssueNumber = 18;
+  waveChildren.forEach((w) => {
+    w.items.forEach((c, i) => {
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${atlasIssueNumber}`, atlasIssueNumber, c.title, c.type, userIds[0], userIds[0], atlasEpicIds[w.epic], i]);
+      atlasIssueNumber += 1;
+    });
   });
 
   // ===== CONFLUENCE SEED DATA =====
@@ -790,7 +1152,7 @@ function seedDemoData() {
     [uuid(), prodPageIds.prd, 'Atlas PRD — Core Features', '', userIds[3]]);
 
   saveDb();
-  console.log('\n  ✓ Demo data seeded (5 users, 2 projects, 13 issues, 2 wiki spaces, 7 pages)\n');
+  console.log('\n  ✓ Demo data seeded (5 users, 3 projects, 25 issues incl. 12 roadmap epics, 2 wiki spaces, 7 pages)\n');
 }
 
 async function seedDemoDataMysql(pool) {

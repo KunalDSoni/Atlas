@@ -7,8 +7,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { initials } from '@/lib/format';
 import {
-  PRIORITY_COLOR, PRIORITY_ICON, PRIORITY_LABEL, STATUS_LABEL, STATUS_TONE,
-  TYPE_COLOR, TYPE_ICON, TYPE_LABEL,
+  PRIORITY_COLOR, PRIORITY_ICON, PRIORITY_LABEL,
+  TYPE_COLOR, TYPE_ICON, TYPE_LABEL, epicColor, statusLabel, statusTone,
 } from '@/lib/domain';
 import type { IssueStatus, IssueType, Priority } from '@/lib/types';
 
@@ -34,16 +34,71 @@ export function UserAvatar({
   );
 }
 
-export function StatusPill({ status, className }: { status: IssueStatus; className?: string }) {
+export function StatusPill({
+  status,
+  label,
+  tone,
+  className,
+}: {
+  status: IssueStatus;
+  /** Custom-workflow overrides; built-in keys resolve automatically. */
+  label?: string;
+  tone?: string;
+  className?: string;
+}) {
   return (
     <span
       className={cn(
         'inline-flex items-center rounded-sm px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide',
-        STATUS_TONE[status],
+        tone ?? statusTone(status),
         className,
       )}
     >
-      {STATUS_LABEL[status]}
+      {label ?? statusLabel(status)}
+    </span>
+  );
+}
+
+/** Tinted epic chip shown on board cards and backlog rows. */
+export function EpicBadge({
+  name,
+  color,
+  className,
+}: {
+  name: string;
+  color?: string | null;
+  className?: string;
+}) {
+  return (
+    <span className={cn('inline-block max-w-32 truncate rounded px-1.5 py-0.5 text-[10px] font-semibold', epicColor(color).chip, className)}>
+      {name}
+    </span>
+  );
+}
+
+/** Compact "done/total" subtask rollup shown on board cards and backlog rows. */
+export function SubtaskProgress({
+  done,
+  total,
+  className,
+}: {
+  done: number;
+  total: number;
+  className?: string;
+}) {
+  if (total === 0) return null;
+  const Icon = TYPE_ICON.subtask;
+  return (
+    <span
+      aria-label={`${done} of ${total} subtasks done`}
+      className={cn(
+        'inline-flex items-center gap-1 text-[10px] font-semibold tabular-nums',
+        done === total ? 'text-success' : 'text-muted-foreground',
+        className,
+      )}
+    >
+      <Icon className="size-3" />
+      {done}/{total}
     </span>
   );
 }
