@@ -10,6 +10,7 @@ import type {
   IssueLink, LinkType,
   WikiComment, WikiPage, WikiRestriction, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
   WorkLog, WorkflowStatus,
+  PbCompany, PbCustomer, PbInsight, PbFeature, PbObjective, PortalFeature,
 } from './types';
 
 const TOKEN_KEY = 'atlas_token';
@@ -308,6 +309,74 @@ export const api = {
       put<{ ok: boolean; count: number }>(`/wiki/pages/${pageId}/restrictions`, { restrictions }),
     watch: (pageId: string) => post<{ ok: boolean; watching: boolean }>(`/wiki/pages/${pageId}/watch`),
     unwatch: (pageId: string) => del<{ ok: boolean; watching: boolean }>(`/wiki/pages/${pageId}/watch`),
+  },
+
+  product: {
+    // Companies & customers
+    companies: () => get<PbCompany[]>('/product/companies'),
+    createCompany: (body: { name: string; tier?: string; arr?: number | null; notes?: string }) =>
+      post<PbCompany>('/product/companies', body),
+    updateCompany: (id: string, body: Partial<Pick<PbCompany, 'name' | 'tier' | 'arr' | 'notes'>>) =>
+      put<PbCompany>(`/product/companies/${id}`, body),
+    removeCompany: (id: string) => del<{ ok: boolean }>(`/product/companies/${id}`),
+    customers: () => get<PbCustomer[]>('/product/customers'),
+    createCustomer: (body: { name: string; email?: string; company_id?: string | null }) =>
+      post<PbCustomer>('/product/customers', body),
+    updateCustomer: (id: string, body: Partial<Pick<PbCustomer, 'name' | 'email' | 'company_id'>>) =>
+      put<PbCustomer>(`/product/customers/${id}`, body),
+    removeCustomer: (id: string) => del<{ ok: boolean }>(`/product/customers/${id}`),
+
+    // Insights (feedback)
+    insights: (params: { processed?: 0 | 1; source?: string; customer_id?: string } = {}) => {
+      const qs = new URLSearchParams();
+      Object.entries(params).forEach(([k, v]) => v !== undefined && qs.set(k, String(v)));
+      return get<PbInsight[]>(`/product/insights${qs.toString() ? `?${qs}` : ''}`);
+    },
+    insight: (id: string) => get<PbInsight>(`/product/insights/${id}`),
+    createInsight: (body: { title: string; content?: string; source?: string; customer_id?: string | null }) =>
+      post<PbInsight>('/product/insights', body),
+    updateInsight: (id: string, body: Partial<Pick<PbInsight, 'title' | 'content' | 'source' | 'customer_id' | 'processed'>>) =>
+      put<PbInsight>(`/product/insights/${id}`, body),
+    removeInsight: (id: string) => del<{ ok: boolean }>(`/product/insights/${id}`),
+    linkInsight: (insightId: string, body: { feature_id: string; importance?: number; quote?: string }) =>
+      post<unknown>(`/product/insights/${insightId}/links`, body),
+    unlinkInsight: (linkId: string) => del<{ ok: boolean }>(`/product/insight-links/${linkId}`),
+
+    // Features & prioritization
+    features: (params: { project_id?: string; status?: string; timeframe?: string } = {}) => {
+      const qs = new URLSearchParams();
+      Object.entries(params).forEach(([k, v]) => v !== undefined && v !== '' && qs.set(k, String(v)));
+      return get<PbFeature[]>(`/product/features${qs.toString() ? `?${qs}` : ''}`);
+    },
+    feature: (id: string) => get<PbFeature>(`/product/features/${id}`),
+    createFeature: (body: Partial<PbFeature>) => post<PbFeature>('/product/features', body),
+    updateFeature: (id: string, body: Partial<PbFeature>) => put<PbFeature>(`/product/features/${id}`, body),
+    removeFeature: (id: string) => del<{ ok: boolean }>(`/product/features/${id}`),
+    linkIssue: (featureId: string, issue_id: string) =>
+      post<PbFeature>(`/product/features/${featureId}/issues`, { issue_id }),
+    pushToDelivery: (featureId: string, body: { project_id?: string; type?: string }) =>
+      post<PbFeature>(`/product/features/${featureId}/push`, body),
+    unlinkIssue: (linkId: string) => del<{ ok: boolean }>(`/product/feature-issues/${linkId}`),
+    voteFeature: (featureId: string) =>
+      post<{ voted: boolean; vote_count: number }>(`/product/features/${featureId}/vote`),
+
+    // Objectives
+    objectives: () => get<PbObjective[]>('/product/objectives'),
+    objective: (id: string) => get<PbObjective>(`/product/objectives/${id}`),
+    createObjective: (body: { name: string; description?: string; status?: string; target_date?: string; owner_id?: string }) =>
+      post<PbObjective>('/product/objectives', body),
+    updateObjective: (id: string, body: Partial<Pick<PbObjective, 'name' | 'description' | 'status' | 'target_date' | 'owner_id'>>) =>
+      put<PbObjective>(`/product/objectives/${id}`, body),
+    removeObjective: (id: string) => del<{ ok: boolean }>(`/product/objectives/${id}`),
+    linkObjectiveFeature: (objectiveId: string, feature_id: string) =>
+      post<PbObjective>(`/product/objectives/${objectiveId}/features`, { feature_id }),
+    unlinkObjectiveFeature: (linkId: string) => del<{ ok: boolean }>(`/product/objective-features/${linkId}`),
+  },
+
+  portal: {
+    features: () => get<PortalFeature[]>('/portal/features'),
+    submitIdea: (body: { title: string; content?: string }) => post<{ ok: boolean; id: string }>('/portal/ideas', body),
+    vote: (featureId: string) => post<{ voted: boolean; vote_count: number }>(`/product/features/${featureId}/vote`),
   },
 
   reports: {

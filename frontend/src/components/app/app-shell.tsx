@@ -3,6 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Bell, CalendarRange, ChevronsUpDown, Columns3, FileClock, Gauge, LayoutDashboard, ListTodo, LogOut, Menu, Package,
   Monitor, Moon, Rocket, Search, Settings as SettingsIcon, Shield, Sun, User as UserIcon, Users, BookOpen, Zap,
+  Inbox, Lightbulb, Target, Map as MapIcon, Building2, MessagesSquare,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -40,6 +41,16 @@ const PROJECT_NAV: NavItem[] = [
   { to: '/releases', label: 'Releases', icon: Package },
   { to: '/reports', label: 'Reports', icon: Gauge },
   { to: '/automation', label: 'Automation', icon: Zap },
+];
+
+const PRODUCT_NAV: NavItem[] = [
+  { to: '/product/insights', label: 'Insights', icon: Inbox },
+  { to: '/product/features', label: 'Features', icon: Lightbulb },
+  { to: '/product/prioritize', label: 'Prioritize', icon: Target },
+  { to: '/product/roadmap', label: 'Product roadmap', icon: MapIcon },
+  { to: '/product/objectives', label: 'Objectives', icon: Target },
+  { to: '/product/customers', label: 'Customers', icon: Building2 },
+  { to: '/portal', label: 'Ideas portal', icon: MessagesSquare },
 ];
 
 const WIKI_NAV: NavItem[] = [{ to: '/wiki', label: 'Wiki', icon: BookOpen }];
@@ -140,6 +151,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
       <ScrollArea className="flex-1">
         <NavSection title="Project" items={PROJECT_NAV} onNavigate={onNavigate} />
+        <Separator className="my-2" />
+        <NavSection title="Product" items={PRODUCT_NAV} onNavigate={onNavigate} />
         {isAdmin(user?.role) && (
           <>
             <Separator className="my-2" />

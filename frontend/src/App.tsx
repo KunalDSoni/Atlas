@@ -27,6 +27,13 @@ const AuditLog = lazy(() => import('@/screens/audit-log'));
 const WikiHome = lazy(() => import('@/screens/wiki-home'));
 const WikiSpace = lazy(() => import('@/screens/wiki-space'));
 const WikiPage = lazy(() => import('@/screens/wiki-page'));
+const ProductInsights = lazy(() => import('@/screens/product-insights'));
+const ProductFeatures = lazy(() => import('@/screens/product-features'));
+const ProductPrioritize = lazy(() => import('@/screens/product-prioritize'));
+const ProductRoadmap = lazy(() => import('@/screens/product-roadmap'));
+const ProductObjectives = lazy(() => import('@/screens/product-objectives'));
+const ProductCustomers = lazy(() => import('@/screens/product-customers'));
+const Portal = lazy(() => import('@/screens/portal'));
 
 function FullPageSpinner() {
   return (
@@ -71,6 +78,13 @@ function ProtectedLayout() {
               <Route path="/wiki" element={<WikiHome />} />
               <Route path="/wiki/space/:spaceId" element={<WikiSpace />} />
               <Route path="/wiki/page/:pageId" element={<WikiPage />} />
+              <Route path="/product/insights" element={<ProductInsights />} />
+              <Route path="/product/features" element={<ProductFeatures />} />
+              <Route path="/product/prioritize" element={<ProductPrioritize />} />
+              <Route path="/product/roadmap" element={<ProductRoadmap />} />
+              <Route path="/product/objectives" element={<ProductObjectives />} />
+              <Route path="/product/customers" element={<ProductCustomers />} />
+              <Route path="/portal" element={<Portal />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/admin" element={<RequireAdmin><AdminOverview /></RequireAdmin>} />
