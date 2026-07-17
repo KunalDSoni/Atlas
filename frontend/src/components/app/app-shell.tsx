@@ -15,6 +15,7 @@ import { Separator } from '@/components/ui/separator';
 import { useAuth } from '@/context/auth-provider';
 import { useTheme } from '@/context/theme-provider';
 import { useProjects } from '@/hooks/use-projects';
+import { useSettings } from '@/hooks/use-settings';
 import { isAdmin } from '@/lib/domain';
 import { cn } from '@/lib/utils';
 import { UserAvatar } from './primitives';
@@ -148,7 +149,15 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
 function ThemeToggle() {
   const { theme, setTheme } = useTheme();
+  const { patch } = useSettings();
   const Icon = theme === 'dark' ? Moon : theme === 'light' ? Sun : Monitor;
+
+  // Sign-in treats the account's saved theme as the source of truth, so a
+  // localStorage-only change here would revert on the next load.
+  const choose = (t: 'light' | 'dark' | 'system') => {
+    setTheme(t);
+    void patch({ theme: t });
+  };
 
   return (
     <DropdownMenu>
@@ -158,13 +167,13 @@ function ThemeToggle() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onSelect={() => setTheme('light')} className="gap-2">
+        <DropdownMenuItem onSelect={() => choose('light')} className="gap-2">
           <Sun className="size-4" /> Light {theme === 'light' && <span className="ml-auto text-xs text-primary">•</span>}
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => setTheme('dark')} className="gap-2">
+        <DropdownMenuItem onSelect={() => choose('dark')} className="gap-2">
           <Moon className="size-4" /> Dark {theme === 'dark' && <span className="ml-auto text-xs text-primary">•</span>}
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => setTheme('system')} className="gap-2">
+        <DropdownMenuItem onSelect={() => choose('system')} className="gap-2">
           <Monitor className="size-4" /> System {theme === 'system' && <span className="ml-auto text-xs text-primary">•</span>}
         </DropdownMenuItem>
       </DropdownMenuContent>
