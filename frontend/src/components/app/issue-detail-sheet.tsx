@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Eye, EyeOff, Loader2, Paperclip, Send, Trash2 } from 'lucide-react';
+import { Eye, EyeOff, Loader2, Paperclip, Plus, Send, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -54,6 +55,8 @@ export function IssueDetailSheet({
   const [loading, setLoading] = useState(false);
   const [commentBody, setCommentBody] = useState('');
   const [posting, setPosting] = useState(false);
+  const [subtaskTitle, setSubtaskTitle] = useState('');
+  const [addingSubtask, setAddingSubtask] = useState(false);
 
   const canEdit = canCreateIssues(user?.role);
 
@@ -71,7 +74,7 @@ export function IssueDetailSheet({
         api.users.list().catch(() => []),
         api.sprints.list(detail.project_id).catch(() => []),
         api.epics.list(detail.project_id).catch(() => []),
-        detail.type === 'epic' ? api.epics.children(detail.id).catch(() => []) : Promise.resolve([]),
+        detail.type !== 'subtask' ? api.epics.children(detail.id).catch(() => []) : Promise.resolve([]),
         detail.type === 'epic' ? api.issues.list(detail.project_id).catch(() => []) : Promise.resolve([]),
       ]);
       setComments(c);
@@ -82,7 +85,7 @@ export function IssueDetailSheet({
       setSprints(sp);
       setEpics(ep.filter((e) => e.id !== detail.id));
       setChildren(ch);
-      setCandidates(all.filter((i) => i.type !== 'epic' && !i.parent_id));
+      setCandidates(all.filter((i) => i.type !== 'epic' && i.type !== 'subtask' && !i.parent_id));
     } catch (e) {
       toast.error('Could not load issue', { description: e instanceof Error ? e.message : undefined });
     } finally {
@@ -120,6 +123,21 @@ export function IssueDetailSheet({
       toast.error('Could not post comment', { description: e instanceof Error ? e.message : undefined });
     } finally {
       setPosting(false);
+    }
+  }
+
+  async function addSubtask() {
+    if (!issue || !subtaskTitle.trim()) return;
+    setAddingSubtask(true);
+    try {
+      await api.issues.create(issue.project_id, { title: subtaskTitle.trim(), type: 'subtask', parent_id: issue.id });
+      setSubtaskTitle('');
+      onChanged?.();
+      void load();
+    } catch (e) {
+      toast.error('Could not add subtask', { description: e instanceof Error ? e.message : undefined });
+    } finally {
+      setAddingSubtask(false);
     }
   }
 
@@ -208,6 +226,16 @@ export function IssueDetailSheet({
                   </AlertDialog>
                 )}
               </div>
+              {issue.type === 'subtask' && issue.parent_id && issue.parent_key && (
+                <button
+                  onClick={() => onOpenIssue?.(issue.parent_id!)}
+                  className="flex w-fit max-w-full items-center gap-1.5 text-left text-xs text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {issue.parent_type && <TypeIcon type={issue.parent_type} className="size-3.5" />}
+                  <span className="font-mono">{issue.parent_key}</span>
+                  <span className="truncate">{issue.parent_title}</span>
+                </button>
+              )}
               <SheetTitle className="text-left text-lg leading-snug">{issue.title}</SheetTitle>
             </SheetHeader>
 
@@ -285,6 +313,68 @@ export function IssueDetailSheet({
                             ))}
                           </SelectContent>
                         </Select>
+                      </div>
+                    )}
+                  </section>
+                )}
+
+                {issue.type !== 'epic' && issue.type !== 'subtask' && (
+                  <section>
+                    <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Subtasks ({children.length})
+                    </h3>
+                    {children.length > 0 && (
+                      <>
+                        <div className="mb-2 flex items-center gap-2">
+                          <Progress
+                            value={Math.round((children.filter((c) => c.status === 'done').length / children.length) * 100)}
+                            className="h-1.5"
+                          />
+                          <span className="whitespace-nowrap text-[11px] tabular-nums text-muted-foreground">
+                            {children.filter((c) => c.status === 'done').length}/{children.length} done
+                          </span>
+                        </div>
+                        <ul className="divide-y divide-border-light rounded-md border border-border">
+                          {children.map((c) => (
+                            <li key={c.id}>
+                              <button
+                                onClick={() => onOpenIssue?.(c.id)}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted/60"
+                              >
+                                <TypeIcon type={c.type} />
+                                <span className="font-mono text-xs text-muted-foreground">{c.issue_key}</span>
+                                <span className="min-w-0 flex-1 truncate">{c.title}</span>
+                                <StatusPill status={c.status} className="shrink-0" />
+                                {c.assignee_name && <UserAvatar name={c.assignee_name} color={c.assignee_color} className="size-5" />}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                    {canEdit && (
+                      <div className="mt-2 flex gap-2">
+                        <Input
+                          value={subtaskTitle}
+                          onChange={(e) => setSubtaskTitle(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              void addSubtask();
+                            }
+                          }}
+                          placeholder="Add a subtask…"
+                          aria-label="New subtask title"
+                        />
+                        <Button
+                          size="icon"
+                          variant="outline"
+                          onClick={addSubtask}
+                          disabled={addingSubtask || !subtaskTitle.trim()}
+                          aria-label="Add subtask"
+                        >
+                          {addingSubtask ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+                        </Button>
                       </div>
                     )}
                   </section>
@@ -474,7 +564,7 @@ export function IssueDetailSheet({
                   </Select>
                 </div>
 
-                {issue.type !== 'epic' && (
+                {issue.type !== 'epic' && issue.type !== 'subtask' && (
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Sprint</Label>
                     <Select
@@ -493,7 +583,7 @@ export function IssueDetailSheet({
                   </div>
                 )}
 
-                {issue.type !== 'epic' && (
+                {issue.type !== 'epic' && issue.type !== 'subtask' && (
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Epic</Label>
                     <Select
