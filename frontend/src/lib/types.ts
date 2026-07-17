@@ -2,7 +2,7 @@
 
 export type Role = 'admin' | 'board_admin' | 'user' | 'client';
 export type IssueStatus = 'todo' | 'in_progress' | 'in_review' | 'done';
-export type IssueType = 'story' | 'bug' | 'task' | 'epic';
+export type IssueType = 'story' | 'bug' | 'task' | 'epic' | 'subtask';
 export type Priority = 'highest' | 'high' | 'medium' | 'low';
 export type SprintStatus = 'planned' | 'active' | 'completed';
 export type LinkType = 'relates_to' | 'blocks' | 'is_blocked_by' | 'duplicates' | 'is_duplicated_by';
@@ -88,6 +88,11 @@ export interface Issue {
   epic_key: string | null;
   epic_title: string | null;
   epic_badge_color: string | null;
+  parent_key: string | null;
+  parent_title: string | null;
+  parent_type: IssueType | null;
+  subtask_count: number;
+  subtask_done_count: number;
   labels_parsed: string[];
 }
 

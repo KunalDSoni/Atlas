@@ -2,7 +2,7 @@
 // Every screen renders status/type/priority through here so they never drift apart.
 
 import {
-  ArrowDown, ArrowUp, Bug, ChevronsUp, Bookmark, CheckSquare, Minus, Zap,
+  ArrowDown, ArrowUp, Bug, ChevronsUp, Bookmark, CheckSquare, ListChecks, Minus, Zap,
 } from 'lucide-react';
 import type { IssueStatus, IssueType, LinkType, Priority, Role, SprintStatus } from './types';
 
@@ -28,6 +28,7 @@ export const TYPE_LABEL: Record<IssueType, string> = {
   bug: 'Bug',
   task: 'Task',
   epic: 'Epic',
+  subtask: 'Subtask',
 };
 
 export const TYPE_ICON: Record<IssueType, typeof Bug> = {
@@ -35,6 +36,7 @@ export const TYPE_ICON: Record<IssueType, typeof Bug> = {
   bug: Bug,
   task: CheckSquare,
   epic: Zap,
+  subtask: ListChecks,
 };
 
 export const TYPE_COLOR: Record<IssueType, string> = {
@@ -42,6 +44,7 @@ export const TYPE_COLOR: Record<IssueType, string> = {
   bug: 'text-destructive',
   task: 'text-primary',
   epic: 'text-purple-500',
+  subtask: 'text-sky-500',
 };
 
 export const PRIORITIES: Priority[] = ['highest', 'high', 'medium', 'low'];

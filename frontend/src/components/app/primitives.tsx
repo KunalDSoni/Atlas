@@ -65,6 +65,33 @@ export function EpicBadge({
   );
 }
 
+/** Compact "done/total" subtask rollup shown on board cards and backlog rows. */
+export function SubtaskProgress({
+  done,
+  total,
+  className,
+}: {
+  done: number;
+  total: number;
+  className?: string;
+}) {
+  if (total === 0) return null;
+  const Icon = TYPE_ICON.subtask;
+  return (
+    <span
+      aria-label={`${done} of ${total} subtasks done`}
+      className={cn(
+        'inline-flex items-center gap-1 text-[10px] font-semibold tabular-nums',
+        done === total ? 'text-success' : 'text-muted-foreground',
+        className,
+      )}
+    >
+      <Icon className="size-3" />
+      {done}/{total}
+    </span>
+  );
+}
+
 export function TypeIcon({ type, className }: { type: IssueType; className?: string }) {
   const Icon = TYPE_ICON[type] ?? TYPE_ICON.task;
   return <Icon aria-label={TYPE_LABEL[type]} className={cn('size-4 shrink-0', TYPE_COLOR[type], className)} />;
