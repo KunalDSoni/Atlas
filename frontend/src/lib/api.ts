@@ -8,7 +8,7 @@ import type {
   AutomationAction, AutomationCondition, AutomationRule, AutomationTrigger, Comment, Issue, EpicSummary,
   ProfileResponse, Project, ProjectComponent, ProjectMember, ProjectStats, SavedFilter, SearchResults, Settings, Sprint, User, Version,
   IssueLink, LinkType,
-  WikiComment, WikiPage, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
+  WikiComment, WikiPage, WikiRestriction, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
   WorkLog, WorkflowStatus,
 } from './types';
 
@@ -290,7 +290,7 @@ export const api = {
 
     versions: (id: string) => get<WikiVersion[]>(`/wiki/pages/${id}/versions`),
     comments: (id: string) => get<WikiComment[]>(`/wiki/pages/${id}/comments`),
-    addComment: (id: string, body: string) => post<WikiComment>(`/wiki/pages/${id}/comments`, { body }),
+    addComment: (id: string, body: string, quote?: string) => post<WikiComment>(`/wiki/pages/${id}/comments`, { body, quote }),
     deleteComment: (id: string) => del<{ ok: boolean }>(`/wiki/comments/${id}`),
 
     like: (id: string) => post<{ liked: boolean; like_count: number }>(`/wiki/pages/${id}/like`),
@@ -300,6 +300,9 @@ export const api = {
     templates: () => get<WikiTemplate[]>('/wiki/templates'),
 
     watchState: (pageId: string) => get<{ count: number; watching: boolean }>(`/wiki/pages/${pageId}/watchers`),
+    restrictions: (pageId: string) => get<WikiRestriction[]>(`/wiki/pages/${pageId}/restrictions`),
+    setRestrictions: (pageId: string, restrictions: { user_id: string; can_edit: boolean }[]) =>
+      put<{ ok: boolean; count: number }>(`/wiki/pages/${pageId}/restrictions`, { restrictions }),
     watch: (pageId: string) => post<{ ok: boolean; watching: boolean }>(`/wiki/pages/${pageId}/watch`),
     unwatch: (pageId: string) => del<{ ok: boolean; watching: boolean }>(`/wiki/pages/${pageId}/watch`),
   },

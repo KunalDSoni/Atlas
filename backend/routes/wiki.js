@@ -7,6 +7,23 @@ const { serverError } = require('../utils/errors');
 const { sanitizeRichText } = require('../utils/sanitize');
 const router = express.Router();
 
+// ===== PAGE RESTRICTIONS =====
+// Rows grant access: a page with any restriction rows is visible only to the
+// listed users, its author, and admins. can_edit=1 rows additionally gate editing.
+async function pageAccess(db, pageId, userId, userRole) {
+  const rows = await queryAll(db, 'SELECT user_id, can_edit FROM wiki_page_restrictions WHERE page_id = ?', [pageId]);
+  const page = await queryOne(db, 'SELECT author_id FROM wiki_pages WHERE id = ?', [pageId]);
+  const isOwner = page && page.author_id === userId;
+  const isAdmin = userRole === 'admin';
+  if (rows.length === 0) return { view: true, edit: true, restricted: false };
+  if (isOwner || isAdmin) return { view: true, edit: true, restricted: true };
+  const mine = rows.find((r) => r.user_id === userId);
+  if (!mine) return { view: false, edit: false, restricted: true };
+  const anyEditRows = rows.some((r) => Number(r.can_edit) === 1);
+  return { view: true, edit: anyEditRows ? Number(mine.can_edit) === 1 : true, restricted: true };
+}
+
+
 // ===== SPACES =====
 router.get('/wiki/spaces', requireAuth, async (req, res) => {
   try {
@@ -175,6 +192,10 @@ router.get('/wiki/pages/:id', requireAuth, async (req, res) => {
       WHERE p.id = ?
     `, [req.userId, req.userId, req.params.id]);
     if (!page) return res.status(404).json({ error: 'Page not found' });
+    const access = await pageAccess(db, req.params.id, req.userId, req.userRole);
+    if (!access.view) return res.status(403).json({ error: 'This page is restricted' });
+    page.restricted = access.restricted ? 1 : 0;
+    page.can_edit_page = access.edit ? 1 : 0;
     // Increment view
     await run(db, 'UPDATE wiki_pages SET view_count = view_count + 1 WHERE id = ?', [req.params.id]);
     // Labels
@@ -200,6 +221,8 @@ router.put('/wiki/pages/:id', requireAuth, async (req, res) => {
     const db = await getDb();
     const page = await queryOne(db, 'SELECT * FROM wiki_pages WHERE id = ?', [req.params.id]);
     if (!page) return res.status(404).json({ error: 'Page not found' });
+    const access = await pageAccess(db, req.params.id, req.userId, req.userRole);
+    if (!access.edit) return res.status(403).json({ error: 'You cannot edit this restricted page' });
     const { title, parent_id, status, position, change_message } = req.body;
     const body = req.body.body === undefined ? undefined : sanitizeRichText(req.body.body);
     const updates = []; const params = [];
@@ -241,6 +264,8 @@ router.put('/wiki/pages/:id', requireAuth, async (req, res) => {
 router.delete('/wiki/pages/:id', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
+    const delAccess = await pageAccess(db, req.params.id, req.userId, req.userRole);
+    if (!delAccess.edit) return res.status(403).json({ error: 'You cannot delete this restricted page' });
     // Move children to parent
     const page = await queryOne(db, 'SELECT parent_id FROM wiki_pages WHERE id = ?', [req.params.id]);
     await run(db, 'UPDATE wiki_pages SET parent_id = ? WHERE parent_id = ?', [page?.parent_id || null, req.params.id]);
@@ -283,12 +308,12 @@ router.get('/wiki/pages/:id/comments', requireAuth, async (req, res) => {
 router.post('/wiki/pages/:id/comments', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const { parent_id } = req.body;
+    const { parent_id, quote } = req.body;
     const body = sanitizeRichText(req.body.body);
     if (!body) return res.status(400).json({ error: 'Comment body required' });
     const id = uuidv4();
-    await run(db, "INSERT INTO wiki_page_comments (id, page_id, parent_id, author_id, body) VALUES (?,?,?,?,?)",
-      [id, req.params.id, parent_id || null, req.userId, body]);
+    await run(db, "INSERT INTO wiki_page_comments (id, page_id, parent_id, author_id, body, quote) VALUES (?,?,?,?,?,?)",
+      [id, req.params.id, parent_id || null, req.userId, body, quote ? String(quote).slice(0, 500) : null]);
     const comment = await queryOne(db, `SELECT c.*, u.name as author_name, u.avatar_color as author_color FROM wiki_page_comments c LEFT JOIN users u ON c.author_id = u.id WHERE c.id = ?`, [id]);
     res.status(201).json(comment);
   } catch (e) { serverError(res, e); }
@@ -300,6 +325,38 @@ router.delete('/wiki/comments/:id', requireAuth, async (req, res) => {
     await run(db, 'DELETE FROM wiki_page_comments WHERE parent_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM wiki_page_comments WHERE id = ?', [req.params.id]);
     res.json({ ok: true });
+  } catch (e) { serverError(res, e); }
+});
+
+// ===== RESTRICTIONS API =====
+router.get('/wiki/pages/:id/restrictions', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const rows = await queryAll(db, `
+      SELECT r.user_id, r.can_edit, u.name, u.avatar_color
+      FROM wiki_page_restrictions r LEFT JOIN users u ON u.id = r.user_id
+      WHERE r.page_id = ?`, [req.params.id]);
+    res.json(rows.map((r) => ({ ...r, can_edit: Number(r.can_edit) })));
+  } catch (e) { serverError(res, e); }
+});
+
+// Replace-all semantics: only the page author or an admin may change restrictions.
+router.put('/wiki/pages/:id/restrictions', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const page = await queryOne(db, 'SELECT author_id FROM wiki_pages WHERE id = ?', [req.params.id]);
+    if (!page) return res.status(404).json({ error: 'Page not found' });
+    if (page.author_id !== req.userId && req.userRole !== 'admin') {
+      return res.status(403).json({ error: 'Only the page author or an admin can change restrictions' });
+    }
+    const restrictions = Array.isArray(req.body.restrictions) ? req.body.restrictions : [];
+    await run(db, 'DELETE FROM wiki_page_restrictions WHERE page_id = ?', [req.params.id]);
+    for (const r of restrictions) {
+      if (!r || !r.user_id) continue;
+      await run(db, 'INSERT INTO wiki_page_restrictions (page_id, user_id, can_edit) VALUES (?, ?, ?)',
+        [req.params.id, r.user_id, r.can_edit ? 1 : 0]);
+    }
+    res.json({ ok: true, count: restrictions.length });
   } catch (e) { serverError(res, e); }
 });
 

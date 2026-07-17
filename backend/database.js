@@ -191,6 +191,7 @@ const SCHEMA_SQL = [
     created_at TEXT DEFAULT (datetime('now'))
   )`,
   `CREATE TABLE IF NOT EXISTS wiki_page_comments (
+    quote TEXT,
     id TEXT PRIMARY KEY,
     page_id TEXT NOT NULL REFERENCES wiki_pages(id),
     parent_id TEXT REFERENCES wiki_page_comments(id),
@@ -293,6 +294,13 @@ const SCHEMA_SQL = [
     category TEXT DEFAULT 'in_progress' CHECK(category IN ('todo','in_progress','done')),
     position INTEGER DEFAULT 0,
     UNIQUE(project_id, key)
+  )`,
+  `CREATE TABLE IF NOT EXISTS wiki_page_restrictions (
+    page_id TEXT NOT NULL REFERENCES wiki_pages(id),
+    user_id TEXT NOT NULL REFERENCES users(id),
+    can_edit INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (page_id, user_id)
   )`,
   `CREATE TABLE IF NOT EXISTS automation_rules (
     id TEXT PRIMARY KEY,
@@ -508,6 +516,7 @@ const MYSQL_SCHEMA_SQL = [
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   ) DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS wiki_page_comments (
+    quote TEXT,
     id VARCHAR(36) PRIMARY KEY,
     page_id VARCHAR(36) NOT NULL,
     parent_id VARCHAR(36),
@@ -611,6 +620,13 @@ const MYSQL_SCHEMA_SQL = [
     position INT DEFAULT 0,
     UNIQUE(project_id, \`key\`)
   ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS wiki_page_restrictions (
+    page_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(36) NOT NULL,
+    can_edit TINYINT DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (page_id, user_id)
+  ) DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS automation_rules (
     id VARCHAR(36) PRIMARY KEY,
     project_id VARCHAR(36) NOT NULL,
@@ -661,6 +677,7 @@ async function initSqlite() {
   try { db.run("ALTER TABLE issues ADD COLUMN component_id TEXT"); } catch (e) { /* column already exists */ }
   try { db.run("ALTER TABLE issues ADD COLUMN start_date TEXT"); } catch (e) { /* column already exists */ }
   try { db.run("ALTER TABLE projects ADD COLUMN wip_limits TEXT DEFAULT '{}'"); } catch (e) { /* column already exists */ }
+  try { db.run("ALTER TABLE wiki_page_comments ADD COLUMN quote TEXT"); } catch (e) { /* column already exists */ }
 
   saveDb();
 
@@ -735,6 +752,13 @@ async function initMysqlSchema(pool) {
         ? 'ALTER TABLE issues ADD COLUMN start_date DATETIME NULL'
         : `ALTER TABLE issues ADD COLUMN ${col} VARCHAR(36)`);
     }
+  }
+
+  const [quoteCol] = await pool.query(
+    "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'wiki_page_comments' AND column_name = 'quote'"
+  );
+  if (quoteCol.length === 0) {
+    await pool.query('ALTER TABLE wiki_page_comments ADD COLUMN quote TEXT');
   }
 
   const [wipCol] = await pool.query(
@@ -950,7 +974,7 @@ function seedDemoData() {
       desc: 'Configurable statuses and board columns per project instead of the fixed four-status workflow.' },
     { title: 'Automation rules', status: 'done', color: 'blue',
       desc: 'Trigger → condition → action rules, e.g. "when all subtasks done, move parent to done".' },
-    { title: 'Wiki: collaboration', status: 'todo', color: 'teal',
+    { title: 'Wiki: collaboration', status: 'done', color: 'teal',
       desc: 'Inline comments on wiki page text and page-level restrictions/permissions.' },
     { title: 'Wiki: publishing', status: 'todo', color: 'orange',
       desc: 'Page export (PDF/Markdown), macros (table of contents, status badges, issue embeds), and blog posts per space.' },
@@ -1026,6 +1050,10 @@ function seedDemoData() {
       { title: 'Automation rules table and trigger engine', type: 'task' },
       { title: 'Rule builder screen: trigger, condition, action', type: 'story' },
       { title: 'All-subtasks-done trigger wired to issue lifecycle', type: 'task' },
+    ] },
+    { epic: 10, items: [
+      { title: 'Comment-on-selection quotes in wiki comments', type: 'story' },
+      { title: 'Page restrictions: per-user view/edit with API enforcement', type: 'story' },
     ] },
   ];
   let atlasIssueNumber = 18;

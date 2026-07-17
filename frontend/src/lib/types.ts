@@ -402,6 +402,8 @@ export interface WikiPage {
   editor_name: string | null;
   comment_count: number;
   like_count: number;
+  restricted?: number;
+  can_edit_page?: number;
   labels: string[];
   space_name?: string;
   space_key?: string;
@@ -423,9 +425,18 @@ export interface WikiComment {
   parent_id: string | null;
   author_id: string;
   body: string;
+  quote: string | null;
   created_at: string;
   author_name: string;
   author_color: string;
+}
+
+/** Row from GET /wiki/pages/:id/restrictions. */
+export interface WikiRestriction {
+  user_id: string;
+  can_edit: number;
+  name: string | null;
+  avatar_color: string | null;
 }
 
 export interface WikiVersion {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  ArrowLeft, Clock, Eye, Heart, History, Loader2, Pencil, Plus, Send, Trash2, X,
+  ArrowLeft, Clock, Eye, Heart, History, Loader2, Lock, Pencil, Plus, Quote, Send, Trash2, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -19,7 +19,11 @@ import {
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
 import { isAdmin } from '@/lib/domain';
-import type { WikiComment, WikiPage, WikiTreeNode, WikiVersion } from '@/lib/types';
+import type { User, WikiComment, WikiPage, WikiRestriction, WikiTreeNode, WikiVersion } from '@/lib/types';
+import {
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
+import { Switch } from '@/components/ui/switch';
 import { ErrorState, LabelChip, RowsSkeleton, UserAvatar } from '@/components/app/primitives';
 import { RichTextEditor, RichTextView } from '@/components/app/rich-text';
 import { WikiTree } from '@/components/app/wiki-tree';
@@ -76,6 +80,10 @@ export default function WikiPageScreen() {
   const [posting, setPosting] = useState(false);
   const [createChildOpen, setCreateChildOpen] = useState(false);
   const [watching, setWatching] = useState(false);
+  const [quote, setQuote] = useState('');
+  const [restrictOpen, setRestrictOpen] = useState(false);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [restrictions, setRestrictions] = useState<Map<string, boolean>>(new Map());
 
   const load = useCallback(async () => {
     if (!pageId) return;
@@ -135,6 +143,39 @@ export default function WikiPageScreen() {
     }
   }
 
+  function quoteSelection() {
+    const text = window.getSelection()?.toString().trim() ?? '';
+    if (!text) {
+      toast.info('Select some page text first, then click Quote.');
+      return;
+    }
+    setQuote(text.slice(0, 300));
+  }
+
+  async function openRestrictions() {
+    if (!page) return;
+    try {
+      const [u, r] = await Promise.all([api.users.list(), api.wiki.restrictions(page.id)]);
+      setAllUsers(u.filter((x) => x.is_active));
+      setRestrictions(new Map(r.map((row: WikiRestriction) => [row.user_id, Number(row.can_edit) === 1])));
+      setRestrictOpen(true);
+    } catch (e) {
+      toast.error('Could not load restrictions', { description: e instanceof Error ? e.message : undefined });
+    }
+  }
+
+  async function saveRestrictions() {
+    if (!page) return;
+    try {
+      await api.wiki.setRestrictions(page.id, [...restrictions.entries()].map(([user_id, can_edit]) => ({ user_id, can_edit })));
+      setRestrictOpen(false);
+      toast.success(restrictions.size === 0 ? 'Page is open to everyone' : 'Restrictions saved');
+      await load();
+    } catch (e) {
+      toast.error('Could not save restrictions', { description: e instanceof Error ? e.message : undefined });
+    }
+  }
+
   async function toggleWatch() {
     if (!page) return;
     try {
@@ -150,8 +191,9 @@ export default function WikiPageScreen() {
     if (!page || !commentBody.trim()) return;
     setPosting(true);
     try {
-      await api.wiki.addComment(page.id, commentBody.trim());
+      await api.wiki.addComment(page.id, commentBody.trim(), quote || undefined);
       setCommentBody('');
+      setQuote('');
       setComments(await api.wiki.comments(page.id));
     } catch (e) {
       toast.error('Could not post comment', { description: e instanceof Error ? e.message : undefined });
@@ -244,6 +286,16 @@ export default function WikiPageScreen() {
                 >
                   <Eye className="size-4" /> {watching ? 'Watching' : 'Watch'}
                 </Button>
+                {(page.author_id === user?.id || isAdmin(user?.role)) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={openRestrictions}
+                    className={page.restricted ? 'gap-1.5 text-warning' : 'gap-1.5'}
+                  >
+                    <Lock className="size-4" /> {page.restricted ? 'Restricted' : 'Restrict'}
+                  </Button>
+                )}
 
                 <Sheet>
                   <SheetTrigger asChild>
@@ -292,9 +344,11 @@ export default function WikiPageScreen() {
                   </AlertDialog>
                 )}
 
-                <Button size="sm" onClick={() => setEditing(true)}>
-                  <Pencil className="size-4" /> Edit
-                </Button>
+                {page.can_edit_page !== 0 && (
+                  <Button size="sm" onClick={() => setEditing(true)}>
+                    <Pencil className="size-4" /> Edit
+                  </Button>
+                )}
               </>
             )}
           </div>
@@ -320,17 +374,37 @@ export default function WikiPageScreen() {
 
         <section>
           <h2 className="mb-3 text-sm font-semibold">Comments ({comments.length})</h2>
+          {quote && (
+            <div className="mb-2 flex items-start gap-2 rounded-md border-l-2 border-primary bg-primary/5 px-3 py-2">
+              <Quote className="mt-0.5 size-3.5 shrink-0 text-primary" />
+              <p className="min-w-0 flex-1 text-sm italic text-muted-foreground">{quote}</p>
+              <Button variant="ghost" size="icon" className="size-6" onClick={() => setQuote('')} aria-label="Remove quote">
+                <X className="size-3.5" />
+              </Button>
+            </div>
+          )}
           <div className="mb-4 flex gap-2">
             <Textarea
               value={commentBody}
               onChange={(e) => setCommentBody(e.target.value)}
-              placeholder="Add a comment…"
+              placeholder={quote ? 'Comment on the selected text…' : 'Add a comment…'}
               rows={2}
               className="resize-none"
             />
-            <Button size="icon" onClick={addComment} disabled={posting || !commentBody.trim()} aria-label="Post comment">
-              {posting ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-            </Button>
+            <div className="flex flex-col gap-1">
+              <Button size="icon" onClick={addComment} disabled={posting || !commentBody.trim()} aria-label="Post comment">
+                {posting ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+              </Button>
+              <Button
+                size="icon"
+                variant="outline"
+                onClick={quoteSelection}
+                aria-label="Comment on selected text"
+                title="Comment on selected text"
+              >
+                <Quote className="size-4" />
+              </Button>
+            </div>
           </div>
 
           {comments.length === 0 ? (
@@ -345,6 +419,11 @@ export default function WikiPageScreen() {
                       <span className="font-semibold">{c.author_name}</span>{' '}
                       <span className="text-muted-foreground">{timeAgo(c.created_at)}</span>
                     </p>
+                    {c.quote && (
+                      <blockquote className="mt-1 border-l-2 border-primary/50 pl-2 text-sm italic text-muted-foreground">
+                        {c.quote}
+                      </blockquote>
+                    )}
                     {/* Comment bodies are user HTML too — same sanitising path. */}
                     <RichTextView html={c.body} className="mt-0.5 text-sm" />
                   </div>
@@ -374,6 +453,60 @@ export default function WikiPageScreen() {
           )}
         </section>
       </div>
+
+      <Dialog open={restrictOpen} onOpenChange={setRestrictOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Restrict “{page.title}”</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            With no one selected, everyone can view and edit. Selecting people limits viewing to
+            them (plus you and admins); the Edit switch controls who may change the page.
+          </p>
+          <ul className="max-h-72 space-y-1 overflow-y-auto">
+            {allUsers.map((u) => {
+              const included = restrictions.has(u.id);
+              const canEditPage = restrictions.get(u.id) ?? false;
+              return (
+                <li key={u.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted/60">
+                  <input
+                    type="checkbox"
+                    checked={included}
+                    onChange={(e) => {
+                      setRestrictions((prev) => {
+                        const next = new Map(prev);
+                        if (e.target.checked) next.set(u.id, false);
+                        else next.delete(u.id);
+                        return next;
+                      });
+                    }}
+                    aria-label={`Allow ${u.name} to view`}
+                    className="size-4 accent-[var(--primary)]"
+                  />
+                  <UserAvatar name={u.name} color={u.avatar_color} className="size-6" />
+                  <span className="min-w-0 flex-1 truncate text-sm">{u.name}</span>
+                  {included && (
+                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      Edit
+                      <Switch
+                        checked={canEditPage}
+                        onCheckedChange={(v) => {
+                          setRestrictions((prev) => new Map(prev).set(u.id, v));
+                        }}
+                        aria-label={`Allow ${u.name} to edit`}
+                      />
+                    </label>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRestrictOpen(false)}>Cancel</Button>
+            <Button onClick={saveRestrictions}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <CreatePageDialog
         open={createChildOpen}
