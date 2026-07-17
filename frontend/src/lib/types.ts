@@ -73,6 +73,7 @@ export interface Issue {
   story_points: number | null;
   labels: string | null;
   due_date: string | null;
+  start_date: string | null;
   board_order: number;
   created_at: string;
   updated_at: string;
@@ -111,7 +112,7 @@ export interface Issue {
 export interface EpicSummary extends Pick<Issue,
   | 'id' | 'project_id' | 'sprint_id' | 'issue_key' | 'issue_number' | 'title' | 'description'
   | 'type' | 'status' | 'priority' | 'assignee_id' | 'reporter_id' | 'parent_id'
-  | 'story_points' | 'labels' | 'due_date' | 'board_order' | 'created_at' | 'updated_at'
+  | 'story_points' | 'labels' | 'due_date' | 'start_date' | 'board_order' | 'created_at' | 'updated_at'
   | 'epic_color' | 'assignee_name' | 'assignee_color'> {
   child_count: number;
   done_count: number;

@@ -96,6 +96,7 @@ const SCHEMA_SQL = [
     story_points INTEGER,
     labels TEXT DEFAULT '[]',
     due_date TEXT,
+    start_date TEXT,
     original_estimate TEXT,
     time_spent TEXT,
     epic_color TEXT DEFAULT 'purple' CHECK(epic_color IN ('purple','blue','teal','green','yellow','orange','red','pink')),
@@ -392,6 +393,7 @@ const MYSQL_SCHEMA_SQL = [
     story_points INT,
     labels VARCHAR(2000) DEFAULT '[]',
     due_date DATETIME NULL,
+    start_date DATETIME NULL,
     original_estimate VARCHAR(50),
     time_spent VARCHAR(50),
     epic_color VARCHAR(20) DEFAULT 'purple' CHECK(epic_color IN ('purple','blue','teal','green','yellow','orange','red','pink')),
@@ -617,6 +619,7 @@ async function initSqlite() {
   try { db.run("ALTER TABLE issues ADD COLUMN epic_color TEXT DEFAULT 'purple'"); } catch (e) { /* column already exists */ }
   try { db.run("ALTER TABLE issues ADD COLUMN fix_version_id TEXT"); } catch (e) { /* column already exists */ }
   try { db.run("ALTER TABLE issues ADD COLUMN component_id TEXT"); } catch (e) { /* column already exists */ }
+  try { db.run("ALTER TABLE issues ADD COLUMN start_date TEXT"); } catch (e) { /* column already exists */ }
 
   saveDb();
 
@@ -682,12 +685,14 @@ async function initMysqlSchema(pool) {
     await pool.query("ALTER TABLE issues ADD COLUMN epic_color VARCHAR(20) DEFAULT 'purple'");
   }
 
-  for (const col of ['fix_version_id', 'component_id']) {
+  for (const col of ['fix_version_id', 'component_id', 'start_date']) {
     const [hit] = await pool.query(
       "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'issues' AND column_name = ?", [col]
     );
     if (hit.length === 0) {
-      await pool.query(`ALTER TABLE issues ADD COLUMN ${col} VARCHAR(36)`);
+      await pool.query(col === 'start_date'
+        ? 'ALTER TABLE issues ADD COLUMN start_date DATETIME NULL'
+        : `ALTER TABLE issues ADD COLUMN ${col} VARCHAR(36)`);
     }
   }
 
@@ -889,7 +894,7 @@ function seedDemoData() {
       desc: 'Original estimates, work logs, and remaining-time display on issues, building on the original_estimate and time_spent columns.' },
     { title: 'Releases & components', status: 'done', color: 'red',
       desc: 'Fix versions and components on issues, plus a release hub screen with per-version progress.' },
-    { title: 'Roadmap / timeline', status: 'todo', color: 'pink',
+    { title: 'Roadmap / timeline', status: 'done', color: 'pink',
       desc: 'Gantt-style timeline view of epics and sprints across time.' },
     { title: 'Board power-ups', status: 'todo', color: 'green',
       desc: 'Swimlanes (by assignee/epic), per-column WIP limits, and multi-select bulk edit on the board.' },
@@ -904,12 +909,19 @@ function seedDemoData() {
   ];
 
   const atlasEpicIds = [];
+  // Staggered month-long windows from 2026-07-01 so the Roadmap timeline has shape.
+  const epicWindow = (i) => {
+    const start = new Date(Date.UTC(2026, 6, 1) + i * 21 * 86400000);
+    const due = new Date(start.getTime() + 30 * 86400000);
+    return [start.toISOString().slice(0, 10), due.toISOString().slice(0, 10)];
+  };
   roadmapEpics.forEach((epic, i) => {
     const eid = uuid();
     atlasEpicIds.push(eid);
-    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, board_order)
-      VALUES (?, ?, ?, ?, ?, ?, 'epic', ?, 'high', ?, ?, ?)`,
-      [eid, projId3, `ATLAS-${i + 1}`, i + 1, epic.title, epic.desc, epic.status, userIds[0], epic.color, i]);
+    const [startDate, dueDate] = epicWindow(i);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', ?, 'high', ?, ?, ?, ?, ?)`,
+      [eid, projId3, `ATLAS-${i + 1}`, i + 1, epic.title, epic.desc, epic.status, userIds[0], epic.color, startDate, dueDate, i]);
   });
 
   // Epic 2 (Subtasks) shipped — its actual work, tracked as done children.
@@ -947,6 +959,10 @@ function seedDemoData() {
       { title: 'Versions and components tables with issue rollups', type: 'task' },
       { title: 'Releases hub screen with per-version progress', type: 'story' },
       { title: 'Fix version and component pickers on issues', type: 'task' },
+    ] },
+    { epic: 6, items: [
+      { title: 'Epic start/due date windows on issues', type: 'task' },
+      { title: 'Roadmap screen: month grid, epic and sprint bars, today line', type: 'story' },
     ] },
   ];
   let atlasIssueNumber = 18;

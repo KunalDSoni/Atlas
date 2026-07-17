@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
-  Bell, ChevronsUpDown, Columns3, FileClock, Gauge, LayoutDashboard, ListTodo, LogOut, Menu, Package,
+  Bell, CalendarRange, ChevronsUpDown, Columns3, FileClock, Gauge, LayoutDashboard, ListTodo, LogOut, Menu, Package,
   Monitor, Moon, Rocket, Search, Settings as SettingsIcon, Shield, Sun, User as UserIcon, Users, BookOpen, Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -35,6 +35,7 @@ const PROJECT_NAV: NavItem[] = [
   { to: '/board', label: 'Board', icon: Columns3 },
   { to: '/backlog', label: 'Backlog', icon: ListTodo },
   { to: '/epics', label: 'Epics', icon: Zap },
+  { to: '/roadmap', label: 'Roadmap', icon: CalendarRange },
   { to: '/sprints', label: 'Sprints', icon: Rocket },
   { to: '/releases', label: 'Releases', icon: Package },
   { to: '/reports', label: 'Reports', icon: Gauge },

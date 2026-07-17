@@ -230,7 +230,7 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid epic color' });
     }
 
-    const allowed = ['title', 'description', 'type', 'status', 'priority', 'assignee_id', 'sprint_id', 'story_points', 'board_order', 'labels', 'due_date', 'original_estimate', 'time_spent', 'parent_id', 'epic_color', 'fix_version_id', 'component_id'];
+    const allowed = ['title', 'description', 'type', 'status', 'priority', 'assignee_id', 'sprint_id', 'story_points', 'board_order', 'labels', 'due_date', 'original_estimate', 'time_spent', 'parent_id', 'epic_color', 'fix_version_id', 'component_id', 'start_date'];
     const updates = [];
     const params = [];
     const activityEntries = [];
