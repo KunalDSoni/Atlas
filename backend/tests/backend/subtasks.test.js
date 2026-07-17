@@ -249,3 +249,26 @@ describe('enrichment — parent fields and rollup counts', () => {
     expect(act.body.some((a) => a.field === 'parent')).toBe(true);
   });
 });
+
+describe('seed data', () => {
+  test('ATLAS-2 is done with done child issues', async () => {
+    const projects = await request(app).get('/api/projects').set(headers);
+    const atlas = projects.body.find((p) => p.key === 'ATLAS');
+    const epics = await request(app).get(`/api/projects/${atlas.id}/epics`).set(headers);
+    const subtasksEpic = epics.body.find((e) => e.issue_key === 'ATLAS-2');
+    expect(subtasksEpic.status).toBe('done');
+    expect(subtasksEpic.child_count).toBeGreaterThanOrEqual(4);
+    expect(subtasksEpic.done_count).toBe(subtasksEpic.child_count);
+  });
+
+  test('the ATL demo project has subtasks under ATL-1 with mixed statuses', async () => {
+    const issues = await request(app).get(`/api/projects/${projectId}/issues`).set(headers);
+    const oauth = issues.body.find((i) => i.issue_key === 'ATL-1');
+    expect(oauth.subtask_count).toBeGreaterThanOrEqual(3);
+    expect(oauth.subtask_done_count).toBeGreaterThanOrEqual(1);
+    expect(oauth.subtask_done_count).toBeLessThan(oauth.subtask_count);
+    const subs = issues.body.filter((i) => i.type === 'subtask');
+    expect(subs.length).toBeGreaterThanOrEqual(4);
+    expect(subs.every((s) => s.sprint_id === null)).toBe(true);
+  });
+});

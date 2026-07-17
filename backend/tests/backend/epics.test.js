@@ -221,6 +221,9 @@ describe('Atlas Development dogfood seed', () => {
     const first = epics.body.find((e) => e.issue_key === 'ATLAS-1');
     expect(first.title).toBe('Epic support');
     expect(first.status).toBe('done');
-    expect(epics.body.filter((e) => e.status === 'todo').length).toBe(11);
+    const second = epics.body.find((e) => e.issue_key === 'ATLAS-2');
+    expect(second.title).toBe('Subtasks');
+    expect(second.status).toBe('done');
+    expect(epics.body.filter((e) => e.status === 'todo').length).toBe(10);
   });
 });

@@ -713,11 +713,29 @@ function seedDemoData() {
     { title: 'Fix CORS issues in staging', type: 'bug', status: 'done', priority: 'high', points: 2, assignee: 2 },
   ];
 
+  const atlIssueIds = [];
   issueData.forEach((issue, i) => {
+    const iid = uuid();
+    atlIssueIds.push(iid);
     db.run(`INSERT INTO issues (id, project_id, sprint_id, issue_key, issue_number, title, type, status, priority, story_points, assignee_id, reporter_id, board_order)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [uuid(), projId1, sprintId, `ATL-${i + 1}`, i + 1, issue.title, issue.type, issue.status, issue.priority, issue.points,
+      [iid, projId1, sprintId, `ATL-${i + 1}`, i + 1, issue.title, issue.type, issue.status, issue.priority, issue.points,
        issue.assignee !== null ? userIds[issue.assignee] : null, userIds[0], i]);
+  });
+
+  // Demo subtasks: ATL-1 (OAuth2 story, in the active sprint) and ATL-7 (notification
+  // refactor). Subtasks carry no sprint_id — they follow their parent implicitly.
+  const atlSubtasks = [
+    { parent: 0, title: 'Add PKCE support to the authorization flow', status: 'done', assignee: 0 },
+    { parent: 0, title: 'Refresh-token rotation and revocation', status: 'in_progress', assignee: 1 },
+    { parent: 0, title: 'Provider buttons on the sign-in screen', status: 'todo', assignee: null },
+    { parent: 6, title: 'Extract notification templates into their own module', status: 'todo', assignee: 2 },
+  ];
+  atlSubtasks.forEach((s, i) => {
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+      VALUES (?, ?, ?, ?, ?, 'subtask', ?, 'medium', ?, ?, ?, ?)`,
+      [uuid(), projId1, `ATL-${11 + i}`, 11 + i, s.title, s.status,
+       s.assignee !== null ? userIds[s.assignee] : null, userIds[0], atlIssueIds[s.parent], i]);
   });
 
   // Seed issues for Mobile App
@@ -746,7 +764,7 @@ function seedDemoData() {
   const roadmapEpics = [
     { title: 'Epic support', status: 'done', color: 'purple',
       desc: 'Add epic as a first-class issue type: hierarchy via parent_id, Epics screen with progress rollups, epic badges on board and backlog, epic picker in the issue detail sheet.' },
-    { title: 'Subtasks', status: 'todo', color: 'blue',
+    { title: 'Subtasks', status: 'done', color: 'blue',
       desc: 'Child issues under stories, tasks, and bugs using the same parent_id column, with progress rollup on the parent issue.' },
     { title: 'Global search & filters', status: 'todo', color: 'teal',
       desc: 'Quick search across issues and wiki pages, JQL-lite filter bar (assignee, type, label, status), and saved filters.' },
@@ -770,10 +788,27 @@ function seedDemoData() {
       desc: 'Page export (PDF/Markdown), macros (table of contents, status badges, issue embeds), and blog posts per space.' },
   ];
 
+  const atlasEpicIds = [];
   roadmapEpics.forEach((epic, i) => {
+    const eid = uuid();
+    atlasEpicIds.push(eid);
     db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, board_order)
       VALUES (?, ?, ?, ?, ?, ?, 'epic', ?, 'high', ?, ?, ?)`,
-      [uuid(), projId3, `ATLAS-${i + 1}`, i + 1, epic.title, epic.desc, epic.status, userIds[0], epic.color, i]);
+      [eid, projId3, `ATLAS-${i + 1}`, i + 1, epic.title, epic.desc, epic.status, userIds[0], epic.color, i]);
+  });
+
+  // Epic 2 (Subtasks) shipped — its actual work, tracked as done children.
+  const subtasksEpicChildren = [
+    { title: 'Generalize hierarchy validation to subtask parents', type: 'task' },
+    { title: 'Parent join fields and subtask rollup counts in the issues API', type: 'task' },
+    { title: 'Subtasks section with quick-add in the issue detail sheet', type: 'story' },
+    { title: 'Subtask progress chips on board cards and backlog rows', type: 'story' },
+    { title: 'Backend test suite for subtask hierarchy rules', type: 'task' },
+  ];
+  subtasksEpicChildren.forEach((c, i) => {
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+      [uuid(), projId3, `ATLAS-${13 + i}`, 13 + i, c.title, c.type, userIds[0], userIds[0], atlasEpicIds[1], i]);
   });
 
   // ===== CONFLUENCE SEED DATA =====
