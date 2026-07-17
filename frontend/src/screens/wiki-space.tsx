@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, BookOpen, Plus, Star, Trash2, Newspaper } from 'lucide-react';
+import { BookOpen, FileText, Plus, Star, Trash2, Newspaper } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -18,8 +19,9 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
 import { isAdmin } from '@/lib/domain';
 import type { WikiPage, WikiSpace, WikiTemplate, WikiTreeNode } from '@/lib/types';
-import { EmptyState, ErrorState, PageHeader, RowsSkeleton, UserAvatar } from '@/components/app/primitives';
+import { EmptyState, ErrorState, RowsSkeleton, UserAvatar } from '@/components/app/primitives';
 import { WikiTree } from '@/components/app/wiki-tree';
+import { WikiBreadcrumb } from '@/components/app/wiki-doc';
 import { timeAgo } from '@/lib/format';
 
 const BLANK = '__blank__';
@@ -128,6 +130,7 @@ export default function WikiSpaceScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [tab, setTab] = useState<'pages' | 'blog'>('pages');
 
   const load = useCallback(async () => {
     if (!spaceId) return;
@@ -177,71 +180,71 @@ export default function WikiSpaceScreen() {
   }
 
   if (loading) {
-    return (
-      <>
-        <PageHeader title="Space" />
-        <RowsSkeleton />
-      </>
-    );
+    return <RowsSkeleton count={8} />;
   }
   if (error || !space) {
-    return (
-      <>
-        <PageHeader title="Space" />
-        <ErrorState message={error ?? 'Space not found'} onRetry={load} />
-      </>
-    );
+    return <ErrorState message={error ?? 'Space not found'} onRetry={load} />;
   }
 
   const blogPosts = pages.filter((p) => p.page_type === 'blog');
   const docPages = pages.filter((p) => p.page_type !== 'blog');
+  const shown = tab === 'blog' ? blogPosts : docPages;
 
   return (
-    <>
-      <Button asChild variant="ghost" size="sm" className="mb-2 -ml-2 text-muted-foreground">
-        <Link to="/wiki"><ArrowLeft className="size-4" /> All spaces</Link>
-      </Button>
+    <div className="mx-auto max-w-6xl">
+      <WikiBreadcrumb items={[{ label: 'Wiki', to: '/wiki' }, { label: space.name, icon: space.icon ?? undefined }]} />
 
-      <PageHeader
-        title={`${space.icon ? `${space.icon} ` : ''}${space.name}`}
-        description={space.description ?? `${space.page_count} page${space.page_count === 1 ? '' : 's'}`}
-        actions={
-          <>
-            <Button variant="ghost" size="icon" onClick={toggleStar} aria-label={space.starred ? 'Unstar space' : 'Star space'}>
-              <Star className={space.starred ? 'size-4 fill-warning text-warning' : 'size-4'} />
-            </Button>
-            {isAdmin(user?.role) && (
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="ghost" size="icon" className="text-destructive" aria-label="Delete space">
-                    <Trash2 className="size-4" />
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete {space.name}?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This permanently deletes the space and all {space.page_count} of its pages. This cannot be undone.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={removeSpace}
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    >
-                      Delete space
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            )}
-            <Button size="sm" onClick={() => setCreateOpen(true)}>
-              <Plus className="size-4" /> New page
-            </Button>
-          </>
-        }
-      />
+      {/* Space hero */}
+      <div className="mb-6 flex flex-wrap items-start gap-4">
+        <span
+          className="grid size-12 shrink-0 place-items-center rounded-lg text-2xl"
+          style={{ background: space.color ? `${space.color}1a` : 'var(--primary-muted)' }}
+        >
+          {space.icon || '📘'}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h1 className="truncate text-2xl font-bold tracking-tight">{space.name}</h1>
+            <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">{space.space_key}</span>
+          </div>
+          {space.description && <p className="mt-1 text-sm text-muted-foreground">{space.description}</p>}
+          <p className="mt-1 text-xs text-faint">{space.page_count} page{space.page_count === 1 ? '' : 's'}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Button variant="ghost" size="icon" onClick={toggleStar} aria-label={space.starred ? 'Unstar space' : 'Star space'}>
+            <Star className={space.starred ? 'size-4 fill-warning text-warning' : 'size-4'} />
+          </Button>
+          {isAdmin(user?.role) && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="ghost" size="icon" className="text-destructive" aria-label="Delete space">
+                  <Trash2 className="size-4" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete {space.name}?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This permanently deletes the space and all {space.page_count} of its pages. This cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={removeSpace}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Delete space
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            <Plus className="size-4" /> New page
+          </Button>
+        </div>
+      </div>
 
       {pages.length === 0 ? (
         <EmptyState
@@ -251,57 +254,54 @@ export default function WikiSpaceScreen() {
           action={<Button size="sm" onClick={() => setCreateOpen(true)}><Plus className="size-4" /> New page</Button>}
         />
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[240px_1fr]">
+        <div className="grid gap-6 lg:grid-cols-[240px_1fr]">
           <aside className="hidden lg:block">
-            <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-wider text-faint">Page tree</p>
-            <WikiTree nodes={tree} />
+            <div className="sticky top-6">
+              <p className="mb-2 px-1.5 text-[11px] font-semibold uppercase tracking-wider text-faint">Page tree</p>
+              <div className="max-h-[calc(100vh-8rem)] overflow-y-auto pr-1">
+                <WikiTree nodes={tree} />
+              </div>
+            </div>
           </aside>
 
-          <div className="min-w-0 space-y-4">
-          {blogPosts.length > 0 && (
-            <div>
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-faint">Blog</p>
+          <div className="min-w-0">
+            <Tabs value={tab} onValueChange={(v) => setTab(v as 'pages' | 'blog')} className="mb-3">
+              <TabsList>
+                <TabsTrigger value="pages">Pages ({docPages.length})</TabsTrigger>
+                <TabsTrigger value="blog">Blog ({blogPosts.length})</TabsTrigger>
+              </TabsList>
+            </Tabs>
+
+            {shown.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
+                {tab === 'blog' ? 'No blog posts yet.' : 'No pages yet.'}
+              </p>
+            ) : (
               <Card className="overflow-hidden py-0">
                 <ul className="divide-y divide-border-light">
-                  {blogPosts.map((p) => (
+                  {shown.map((p) => (
                     <li key={p.id}>
                       <Link
                         to={`/wiki/page/${p.id}`}
-                        className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/60"
+                        className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/60"
                       >
-                        <Newspaper className="size-4 shrink-0 text-primary" />
-                        <span className="min-w-0 flex-1 truncate text-sm">{p.title}</span>
-                        <span className="hidden w-20 shrink-0 text-right text-xs text-muted-foreground md:block">
-                          {timeAgo(p.created_at)}
+                        {p.page_type === 'blog'
+                          ? <Newspaper className="size-4 shrink-0 text-primary" />
+                          : <FileText className="size-4 shrink-0 text-faint" />}
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium">{p.title}</span>
+                        {p.page_type !== 'blog' && (
+                          <span className="hidden shrink-0 text-xs text-muted-foreground sm:block">v{p.version}</span>
+                        )}
+                        <span className="hidden w-24 shrink-0 text-right text-xs text-muted-foreground md:block">
+                          {timeAgo(p.page_type === 'blog' ? p.created_at : p.updated_at)}
                         </span>
-                        <UserAvatar name={p.author_name} color={p.author_color} className="size-5" />
+                        <UserAvatar name={p.editor_name ?? p.author_name} color={p.author_color} className="size-6" />
                       </Link>
                     </li>
                   ))}
                 </ul>
               </Card>
-            </div>
-          )}
-          <Card className="overflow-hidden py-0">
-            <ul className="divide-y divide-border-light">
-              {docPages.map((p) => (
-                <li key={p.id}>
-                  <Link
-                    to={`/wiki/page/${p.id}`}
-                    className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/60"
-                  >
-                    <BookOpen className="size-4 shrink-0 text-faint" />
-                    <span className="min-w-0 flex-1 truncate text-sm">{p.title}</span>
-                    <span className="hidden shrink-0 text-xs text-muted-foreground sm:block">v{p.version}</span>
-                    <span className="hidden w-20 shrink-0 text-right text-xs text-muted-foreground md:block">
-                      {timeAgo(p.updated_at)}
-                    </span>
-                    <UserAvatar name={p.editor_name ?? p.author_name} color={p.author_color} className="size-5" />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </Card>
+            )}
           </div>
         </div>
       )}
@@ -312,6 +312,6 @@ export default function WikiSpaceScreen() {
         spaceId={spaceId}
         onCreated={(page) => navigate(`/wiki/page/${page.id}`)}
       />
-    </>
+    </div>
   );
 }

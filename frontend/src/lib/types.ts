@@ -409,6 +409,8 @@ export interface WikiPage {
   space_name?: string;
   space_key?: string;
   space_icon?: string;
+  breadcrumb?: { id: string; title: string }[];
+  children?: { id: string; title: string; slug: string; status: string }[];
 }
 
 export interface WikiTreeNode {

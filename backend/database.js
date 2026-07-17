@@ -1316,6 +1316,35 @@ function seedDemoData() {
     });
   });
 
+  // ===== Wiki UX overhaul (epic 19) — shipped =====
+  {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(18);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, 18)`,
+      [eid, projId3, `ATLAS-${num}`, num, 'Wiki UX overhaul',
+       'Make the wiki a world-class knowledge base: document reading layout, breadcrumbs, sticky on-this-page outline, decluttered action bar, refined prose typography, space hero with Pages/Blog tabs, home polish, and a comfortable editor.',
+       userIds[0], 'teal', startDate, dueDate]);
+    [
+      { title: 'Document reading layout — centered measure, no boxed card', type: 'story' },
+      { title: 'Breadcrumbs across space and page (space › ancestors › page)', type: 'story' },
+      { title: 'Sticky "On this page" outline from headings + sticky page tree', type: 'story' },
+      { title: 'Declutter page action bar into a primary + overflow menu', type: 'task' },
+      { title: 'Refine wiki prose: headings, code, tables, quotes, reading width', type: 'task' },
+      { title: 'Space hero with icon/meta and Pages/Blog tabs', type: 'story' },
+      { title: 'Wiki home polish: space cards with color accents', type: 'task' },
+      { title: 'Comfortable editor: sticky toolbar and taller writing area', type: 'task' },
+    ].forEach((c, ci) => {
+      const cnum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${cnum}`, cnum, c.title, c.type, userIds[0], userIds[0], eid, ci]);
+    });
+  }
+
   // ===== CONFLUENCE SEED DATA =====
   const spaceEng = uuid();
   const spaceProd = uuid();
