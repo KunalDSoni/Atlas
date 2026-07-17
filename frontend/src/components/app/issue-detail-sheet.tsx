@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Eye, EyeOff, Loader2, Paperclip, Plus, Send, Trash2 } from 'lucide-react';
+import { Clock, Eye, EyeOff, Loader2, Paperclip, Plus, Send, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
@@ -18,8 +21,8 @@ import {
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
 import { EPIC_COLORS, PRIORITIES, PRIORITY_LABEL, STATUSES, STATUS_LABEL, TYPE_LABEL, canCreateIssues, epicColor, isAdmin } from '@/lib/domain';
-import type { ActivityEntry, Attachment, Comment, EpicSummary, Issue, IssueStatus, Priority, Sprint, User } from '@/lib/types';
-import { formatBytes, timeAgo } from '@/lib/format';
+import type { ActivityEntry, Attachment, Comment, EpicSummary, Issue, IssueStatus, Priority, Sprint, User, WorkLog } from '@/lib/types';
+import { formatBytes, formatDuration, timeAgo } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { PriorityIcon, StatusPill, TypeIcon, UserAvatar } from './primitives';
 import { LabelsEditor } from './labels-editor';
@@ -57,6 +60,12 @@ export function IssueDetailSheet({
   const [posting, setPosting] = useState(false);
   const [subtaskTitle, setSubtaskTitle] = useState('');
   const [addingSubtask, setAddingSubtask] = useState(false);
+  const [worklogs, setWorklogs] = useState<WorkLog[]>([]);
+  const [logOpen, setLogOpen] = useState(false);
+  const [logHours, setLogHours] = useState('');
+  const [logComment, setLogComment] = useState('');
+  const [estimateHours, setEstimateHours] = useState('');
+  const [loggingWork, setLoggingWork] = useState(false);
 
   const canEdit = canCreateIssues(user?.role);
 
@@ -66,7 +75,8 @@ export function IssueDetailSheet({
     try {
       const detail = await api.issues.get(issueId);
       setIssue(detail);
-      const [c, a, act, w, u, sp, ep, ch, all] = await Promise.all([
+      setEstimateHours(detail.original_estimate ? String(Math.round((detail.original_estimate / 60) * 10) / 10) : '');
+      const [c, a, act, w, u, sp, ep, ch, all, wl] = await Promise.all([
         api.comments.list(issueId).catch(() => []),
         api.attachments.list(issueId).catch(() => []),
         api.activity.list(issueId).catch(() => []),
@@ -76,6 +86,7 @@ export function IssueDetailSheet({
         api.epics.list(detail.project_id).catch(() => []),
         detail.type !== 'subtask' ? api.epics.children(detail.id).catch(() => []) : Promise.resolve([]),
         detail.type === 'epic' ? api.issues.list(detail.project_id).catch(() => []) : Promise.resolve([]),
+        api.worklogs.list(issueId).catch(() => []),
       ]);
       setComments(c);
       setAttachments(a);
@@ -86,6 +97,7 @@ export function IssueDetailSheet({
       setEpics(ep.filter((e) => e.id !== detail.id));
       setChildren(ch);
       setCandidates(all.filter((i) => i.type !== 'epic' && i.type !== 'subtask' && !i.parent_id));
+      setWorklogs(wl);
     } catch (e) {
       toast.error('Could not load issue', { description: e instanceof Error ? e.message : undefined });
     } finally {
@@ -139,6 +151,44 @@ export function IssueDetailSheet({
     } finally {
       setAddingSubtask(false);
     }
+  }
+
+  async function logWork() {
+    if (!issue) return;
+    const hours = parseFloat(logHours);
+    if (!Number.isFinite(hours) || hours <= 0) return;
+    setLoggingWork(true);
+    try {
+      await api.worklogs.create(issue.id, Math.round(hours * 60), logComment.trim() || undefined);
+      setLogHours('');
+      setLogComment('');
+      setWorklogs(await api.worklogs.list(issue.id));
+      const fresh = await api.issues.get(issue.id);
+      setIssue(fresh);
+      onChanged?.();
+      toast.success('Work logged');
+    } catch (e) {
+      toast.error('Could not log work', { description: e instanceof Error ? e.message : undefined });
+    } finally {
+      setLoggingWork(false);
+    }
+  }
+
+  async function removeWorkLog(id: string) {
+    if (!issue) return;
+    try {
+      await api.worklogs.remove(id);
+      setWorklogs(await api.worklogs.list(issue.id));
+      const fresh = await api.issues.get(issue.id);
+      setIssue(fresh);
+    } catch (e) {
+      toast.error('Could not delete work log', { description: e instanceof Error ? e.message : undefined });
+    }
+  }
+
+  async function saveEstimate() {
+    const hours = parseFloat(estimateHours);
+    await patch({ original_estimate: estimateHours === '' ? null : Math.round((Number.isFinite(hours) ? hours : 0) * 60) });
   }
 
   async function toggleWatch() {
@@ -629,6 +679,25 @@ export function IssueDetailSheet({
                   </div>
                 )}
 
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Time tracking</Label>
+                  {(issue.original_estimate ?? 0) > 0 && (
+                    <Progress
+                      value={Math.min(100, Math.round(((issue.time_spent ?? 0) / (issue.original_estimate ?? 1)) * 100))}
+                      className="h-1.5"
+                    />
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    {formatDuration(issue.time_spent)} logged
+                    {(issue.original_estimate ?? 0) > 0 && (
+                      <> · {formatDuration(Math.max(0, (issue.original_estimate ?? 0) - (issue.time_spent ?? 0)))} left</>
+                    )}
+                  </p>
+                  <Button variant="outline" size="sm" className="w-full gap-1.5" onClick={() => setLogOpen(true)}>
+                    <Clock className="size-3.5" /> Log work
+                  </Button>
+                </div>
+
                 <Separator />
 
                 <dl className="space-y-2 text-xs">
@@ -651,6 +720,93 @@ export function IssueDetailSheet({
                 </dl>
               </aside>
             </div>
+
+            <Dialog open={logOpen} onOpenChange={setLogOpen}>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Time tracking · {issue.issue_key}</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  {canEdit && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Original estimate (hours)</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={estimateHours}
+                          onChange={(e) => setEstimateHours(e.target.value)}
+                          placeholder="e.g. 8"
+                          aria-label="Original estimate in hours"
+                        />
+                        <Button variant="outline" onClick={saveEstimate}>Set</Button>
+                      </div>
+                    </div>
+                  )}
+                  {canEdit && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Log work</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.25"
+                          value={logHours}
+                          onChange={(e) => setLogHours(e.target.value)}
+                          placeholder="Hours"
+                          aria-label="Hours worked"
+                          className="w-28"
+                        />
+                        <Input
+                          value={logComment}
+                          onChange={(e) => setLogComment(e.target.value)}
+                          placeholder="What did you work on?"
+                          aria-label="Work description"
+                        />
+                        <Button onClick={logWork} disabled={loggingWork || !logHours}>
+                          {loggingWork ? <Loader2 className="size-4 animate-spin" /> : 'Log'}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  {worklogs.length === 0 ? (
+                    <p className="py-2 text-center text-sm text-muted-foreground">No work logged yet.</p>
+                  ) : (
+                    <ul className="max-h-56 space-y-2 overflow-y-auto">
+                      {worklogs.map((wlog) => (
+                        <li key={wlog.id} className="flex items-start gap-2.5 text-sm">
+                          <UserAvatar name={wlog.user_name} color={wlog.user_color} className="size-6" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs">
+                              <span className="font-semibold">{wlog.user_name}</span>{' '}
+                              <span className="text-muted-foreground">
+                                logged {formatDuration(wlog.minutes)} · {timeAgo(wlog.created_at)}
+                              </span>
+                            </p>
+                            {wlog.comment && <p className="mt-0.5 text-sm">{wlog.comment}</p>}
+                          </div>
+                          {(wlog.user_id === user?.id || isAdmin(user?.role)) && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="size-7 text-muted-foreground hover:text-destructive"
+                              onClick={() => removeWorkLog(wlog.id)}
+                              aria-label="Delete work log"
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setLogOpen(false)}>Close</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </>
         )}
       </SheetContent>

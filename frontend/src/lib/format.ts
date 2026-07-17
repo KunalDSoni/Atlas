@@ -32,3 +32,13 @@ export function initials(name: string | null | undefined): string {
   if (!name) return '?';
   return name.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? '').join('');
 }
+
+/** Minutes → compact "2h 30m" / "45m" / "—". */
+export function formatDuration(minutes: number | null | undefined): string {
+  if (minutes == null || minutes <= 0) return '—';
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}

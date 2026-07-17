@@ -8,6 +8,7 @@ import type {
   ProfileResponse, Project, ProjectMember, ProjectStats, SavedFilter, SearchResults, Settings, Sprint, User,
   IssueLink, LinkType,
   WikiComment, WikiPage, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
+  WorkLog,
 } from './types';
 
 const TOKEN_KEY = 'atlas_token';
@@ -155,6 +156,13 @@ export const api = {
   epics: {
     list: (projectId: string) => get<EpicSummary[]>(`/projects/${projectId}/epics`),
     children: (issueId: string) => get<Issue[]>(`/issues/${issueId}/children`),
+  },
+
+  worklogs: {
+    list: (issueId: string) => get<WorkLog[]>(`/issues/${issueId}/worklogs`),
+    create: (issueId: string, minutes: number, comment?: string) =>
+      post<WorkLog>(`/issues/${issueId}/worklogs`, { minutes, comment }),
+    remove: (id: string) => del<{ ok: boolean }>(`/worklogs/${id}`),
   },
 
   notifications: {

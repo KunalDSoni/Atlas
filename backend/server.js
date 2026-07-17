@@ -29,6 +29,7 @@ const linksRoutes = require('./routes/links');
 const auditLogRoutes = require('./routes/auditlog');
 const searchRoutes = require('./routes/search');
 const notificationsRoutes = require('./routes/notifications');
+const worklogsRoutes = require('./routes/worklogs');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -127,6 +128,9 @@ app.use('/api', searchRoutes);
 
 // Notifications + Wiki Page Watching Module
 app.use('/api', notificationsRoutes);
+
+// Time Tracking Module
+app.use('/api', worklogsRoutes);
 
 // SPA fallback (Express 5 compatible)
 app.get('/{*splat}', (req, res) => {

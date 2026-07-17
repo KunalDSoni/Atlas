@@ -272,6 +272,14 @@ const SCHEMA_SQL = [
     user_id TEXT NOT NULL REFERENCES users(id),
     created_at TEXT DEFAULT (datetime('now')),
     PRIMARY KEY (page_id, user_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS work_logs (
+    id TEXT PRIMARY KEY,
+    issue_id TEXT NOT NULL REFERENCES issues(id),
+    user_id TEXT NOT NULL REFERENCES users(id),
+    minutes INTEGER NOT NULL,
+    comment TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
   )`
 ];
 
@@ -542,6 +550,14 @@ const MYSQL_SCHEMA_SQL = [
     user_id VARCHAR(36) NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (page_id, user_id)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS work_logs (
+    id VARCHAR(36) PRIMARY KEY,
+    issue_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(36) NOT NULL,
+    minutes INT NOT NULL,
+    comment TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   ) DEFAULT CHARSET=utf8mb4`
 ];
 
@@ -822,7 +838,7 @@ function seedDemoData() {
       desc: 'Quick search across issues and wiki pages, JQL-lite filter bar (assignee, type, label, status), and saved filters.' },
     { title: 'Notifications & @mentions', status: 'done', color: 'yellow',
       desc: 'In-app notification inbox, @mentions in comments, wiki page watching — wiring up the existing notification settings toggles.' },
-    { title: 'Time tracking', status: 'todo', color: 'orange',
+    { title: 'Time tracking', status: 'done', color: 'orange',
       desc: 'Original estimates, work logs, and remaining-time display on issues, building on the original_estimate and time_spent columns.' },
     { title: 'Releases & components', status: 'todo', color: 'red',
       desc: 'Fix versions and components on issues, plus a release hub screen with per-version progress.' },
@@ -875,6 +891,10 @@ function seedDemoData() {
       { title: 'Notifications table, API, and header bell inbox', type: 'story' },
       { title: 'Assignment, watcher-comment, and @mention triggers', type: 'task' },
       { title: 'Wiki page watching with update notifications', type: 'task' },
+    ] },
+    { epic: 4, items: [
+      { title: 'Work logs table and API with time_spent rollup', type: 'task' },
+      { title: 'Time tracking panel: estimate, log work, remaining bar', type: 'story' },
     ] },
   ];
   let atlasIssueNumber = 18;

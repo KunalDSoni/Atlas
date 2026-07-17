@@ -93,6 +93,8 @@ export interface Issue {
   parent_type: IssueType | null;
   subtask_count: number;
   subtask_done_count: number;
+  original_estimate: number | null;
+  time_spent: number | null;
   labels_parsed: string[];
 }
 
@@ -170,6 +172,18 @@ export interface AppNotification {
   created_at: string;
   actor_name: string | null;
   actor_color: string | null;
+}
+
+/** Work log entry from GET /issues/:id/worklogs. Minutes-based. */
+export interface WorkLog {
+  id: string;
+  issue_id: string;
+  user_id: string;
+  minutes: number;
+  comment: string | null;
+  created_at: string;
+  user_name: string | null;
+  user_color: string | null;
 }
 
 export interface Comment {
