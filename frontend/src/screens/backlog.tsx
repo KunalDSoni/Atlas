@@ -11,7 +11,7 @@ import { useSettings } from '@/hooks/use-settings';
 import { STATUSES, STATUS_LABEL, canCreateIssues } from '@/lib/domain';
 import type { Issue, Sprint } from '@/lib/types';
 import {
-  EmptyState, EpicBadge, ErrorState, LabelChip, PageHeader, PriorityIcon, RowsSkeleton, StatusPill, TypeIcon, UserAvatar,
+  EmptyState, EpicBadge, ErrorState, LabelChip, PageHeader, PriorityIcon, RowsSkeleton, StatusPill, SubtaskProgress, TypeIcon, UserAvatar,
 } from '@/components/app/primitives';
 import { IssueDetailSheet } from '@/components/app/issue-detail-sheet';
 import { CreateIssueDialog } from '@/components/app/create-issue-dialog';
@@ -53,7 +53,7 @@ export default function BacklogScreen() {
   const backlog = useMemo(() => {
     const q = query.trim().toLowerCase();
     return issues
-      .filter((i) => i.type !== 'epic')
+      .filter((i) => i.type !== 'epic' && i.type !== 'subtask')
       .filter((i) => !i.sprint_id)
       .filter((i) => (statusFilter === 'all' ? true : i.status === statusFilter))
       .filter((i) => !q || i.title.toLowerCase().includes(q) || i.issue_key.toLowerCase().includes(q));
@@ -157,6 +157,7 @@ export default function BacklogScreen() {
                     </span>
                   ))}
                   <PriorityIcon priority={issue.priority} />
+                  <SubtaskProgress done={issue.subtask_done_count} total={issue.subtask_count} className="hidden sm:inline-flex" />
                   {issue.story_points != null && (
                     <span className="hidden size-5 shrink-0 place-items-center rounded-full bg-muted text-[10px] font-semibold tabular-nums text-muted-foreground sm:grid">
                       {issue.story_points}

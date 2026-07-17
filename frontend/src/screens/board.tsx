@@ -12,7 +12,7 @@ import { useProjects } from '@/hooks/use-projects';
 import { useSettings } from '@/hooks/use-settings';
 import { STATUS_LABEL, STATUSES, canCreateIssues, canDragIssues } from '@/lib/domain';
 import type { Issue, IssueStatus, Sprint } from '@/lib/types';
-import { EmptyState, EpicBadge, ErrorState, LabelChip, PageHeader, PriorityIcon, TypeIcon, UserAvatar } from '@/components/app/primitives';
+import { EmptyState, EpicBadge, ErrorState, LabelChip, PageHeader, PriorityIcon, SubtaskProgress, TypeIcon, UserAvatar } from '@/components/app/primitives';
 import { cn } from '@/lib/utils';
 import { IssueDetailSheet } from '@/components/app/issue-detail-sheet';
 import { CreateIssueDialog } from '@/components/app/create-issue-dialog';
@@ -86,6 +86,7 @@ function IssueCard({
             {issue.story_points}
           </span>
         )}
+        <SubtaskProgress done={issue.subtask_done_count} total={issue.subtask_count} />
         <span className="flex-1" />
         {issue.assignee_name ? (
           <UserAvatar name={issue.assignee_name} color={issue.assignee_color} className="size-5" />
@@ -151,7 +152,7 @@ export default function BoardScreen() {
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return issues.filter((i) => {
-      if (i.type === 'epic') return false;
+      if (i.type === 'epic' || i.type === 'subtask') return false;
       if (sprintFilter === 'backlog' && i.sprint_id) return false;
       if (sprintFilter !== 'all' && sprintFilter !== 'backlog' && i.sprint_id !== sprintFilter) return false;
       if (!q) return true;
