@@ -201,6 +201,32 @@ export interface ProjectComponent {
   issue_count: number;
 }
 
+/** Automation rule: trigger → conditions (all must match) → actions. */
+export type AutomationTrigger = 'issue_created' | 'status_changed' | 'all_subtasks_done';
+
+export interface AutomationCondition {
+  field: 'type' | 'priority' | 'status';
+  value: string;
+}
+
+export interface AutomationAction {
+  type: 'set_status' | 'set_assignee' | 'add_label' | 'notify_user';
+  value: string;
+}
+
+export interface AutomationRule {
+  id: string;
+  project_id: string;
+  name: string;
+  trigger_type: AutomationTrigger;
+  conditions: string;
+  actions: string;
+  enabled: number;
+  created_at: string;
+  conditions_parsed: AutomationCondition[];
+  actions_parsed: AutomationAction[];
+}
+
 /** In-app notification row from GET /notifications. */
 export interface AppNotification {
   id: string;

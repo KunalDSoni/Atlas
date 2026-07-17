@@ -14,6 +14,7 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
 const { notify } = require('../utils/notify');
 const { projectStatuses } = require('./workflows');
+const { runAutomation, checkAllSubtasksDone } = require('../utils/automation');
 
 const requireBoardAdmin = requireRole('admin', 'board_admin');
 
@@ -196,7 +197,9 @@ router.post('/projects/:projectId/issues', requireAuth, requireBoardAdmin, async
        story_points || null, due_date || null, labels || '[]', original_estimate || null,
        parent_id || null, epic_color || 'purple']);
 
-    const issue = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [id]);
+    let issue = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [id]);
+    await runAutomation(db, { type: 'issue_created', issue, actorId: req.userId });
+    issue = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [id]);
     auditLog({ userId: req.userId, action: 'Created issue', category: 'issues', entityType: 'issue', entityId: id, entityName: issue.issue_key, details: { title, type: type || 'task', priority: priority || 'medium' } });
     res.status(201).json(await enrichIssue(db, issue));
   } catch (e) { serverError(res, e); }
@@ -285,7 +288,12 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
       });
     }
 
-    const updated = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
+    let updated = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
+    if (req.body.status !== undefined && req.body.status !== issue.status) {
+      await runAutomation(db, { type: 'status_changed', issue: updated, actorId: req.userId });
+      await checkAllSubtasksDone(db, updated, req.userId);
+      updated = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
+    }
     res.json(await enrichIssue(db, updated));
   } catch (e) { serverError(res, e); }
 });
@@ -339,7 +347,12 @@ router.put('/issues/:id/move', requireAuth, async (req, res) => {
     params.push(req.params.id);
     await run(db, `UPDATE issues SET ${updates.join(', ')} WHERE id = ?`, params);
 
-    const updated = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
+    let updated = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
+    if (status !== undefined && status !== issue.status) {
+      await runAutomation(db, { type: 'status_changed', issue: updated, actorId: req.userId });
+      await checkAllSubtasksDone(db, updated, req.userId);
+      updated = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
+    }
     res.json(await enrichIssue(db, updated));
   } catch (e) { serverError(res, e); }
 });

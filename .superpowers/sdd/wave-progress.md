@@ -10,7 +10,7 @@ Scopes (locked by controller):
 - E7 roadmap: issues.start_date ALTER (epics), /roadmap screen: month-grid timeline, epic bars (start_date..due_date fallback created..+30d), sprint bars. [x]
 - E8 board power-ups: swimlanes (none/assignee/epic), WIP limits (projects.wip_limits JSON, header count/limit + red), bulk edit (multi-select + set status/assignee/delete). [ ]
 - E9 custom workflows: project_statuses table (key,label,category todo|in_progress|done,position), defaults seeded, project settings editor, board/backlog/sheet read dynamic statuses; category drives done-rollups. [x]
-- E10 automation: automation_rules table (trigger,conditions,actions JSON), engine on create/status-change/all-subtasks-done, actions set_status/set_assignee/add_label/notify, project Automation screen builder. [ ]
+- E10 automation: automation_rules table (trigger,conditions,actions JSON), engine on create/status-change/all-subtasks-done, actions set_status/set_assignee/add_label/notify, project Automation screen builder. [x]
 - E11 wiki collab: wiki comment quote anchoring (comment on selection), wiki_page_restrictions (view/edit per user)+API enforcement+restrict dialog. [ ]
 - E12 wiki publishing: export MD/HTML endpoints+menu, macros (TOC from headings, ATLAS-123 issue chips), blog posts (wiki_pages.page_type + space Blog tab). [ ]
 

@@ -4,7 +4,8 @@
 // and role from that token alone — client-supplied identity headers are ignored.
 
 import type {
-  ActivityEntry, AdminStats, AppNotification, Attachment, AuditLogPage, AuthUser, Comment, Issue, EpicSummary,
+  ActivityEntry, AdminStats, AppNotification, Attachment, AuditLogPage, AuthUser,
+  AutomationAction, AutomationCondition, AutomationRule, AutomationTrigger, Comment, Issue, EpicSummary,
   ProfileResponse, Project, ProjectComponent, ProjectMember, ProjectStats, SavedFilter, SearchResults, Settings, Sprint, User, Version,
   IssueLink, LinkType,
   WikiComment, WikiPage, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
@@ -156,6 +157,19 @@ export const api = {
   epics: {
     list: (projectId: string) => get<EpicSummary[]>(`/projects/${projectId}/epics`),
     children: (issueId: string) => get<Issue[]>(`/issues/${issueId}/children`),
+  },
+
+  automations: {
+    list: (projectId: string) => get<AutomationRule[]>(`/projects/${projectId}/automations`),
+    create: (projectId: string, body: {
+      name: string;
+      trigger_type: AutomationTrigger;
+      conditions: AutomationCondition[];
+      actions: AutomationAction[];
+    }) => post<AutomationRule>(`/projects/${projectId}/automations`, body),
+    update: (id: string, body: Partial<{ name: string; enabled: boolean; conditions: AutomationCondition[]; actions: AutomationAction[] }>) =>
+      put<AutomationRule>(`/automations/${id}`, body),
+    remove: (id: string) => del<{ ok: boolean }>(`/automations/${id}`),
   },
 
   workflow: {

@@ -39,6 +39,7 @@ const PROJECT_NAV: NavItem[] = [
   { to: '/sprints', label: 'Sprints', icon: Rocket },
   { to: '/releases', label: 'Releases', icon: Package },
   { to: '/reports', label: 'Reports', icon: Gauge },
+  { to: '/automation', label: 'Automation', icon: Zap },
 ];
 
 const WIKI_NAV: NavItem[] = [{ to: '/wiki', label: 'Wiki', icon: BookOpen }];

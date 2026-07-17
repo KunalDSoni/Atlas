@@ -32,6 +32,7 @@ const notificationsRoutes = require('./routes/notifications');
 const worklogsRoutes = require('./routes/worklogs');
 const releasesRoutes = require('./routes/releases');
 const workflowsRoutes = require('./routes/workflows');
+const automationsRoutes = require('./routes/automations');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -139,6 +140,9 @@ app.use('/api', releasesRoutes);
 
 // Custom Workflows Module
 app.use('/api', workflowsRoutes);
+
+// Automation Rules Module
+app.use('/api', automationsRoutes);
 
 // SPA fallback (Express 5 compatible)
 app.get('/{*splat}', (req, res) => {

@@ -294,6 +294,16 @@ const SCHEMA_SQL = [
     position INTEGER DEFAULT 0,
     UNIQUE(project_id, key)
   )`,
+  `CREATE TABLE IF NOT EXISTS automation_rules (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    name TEXT NOT NULL,
+    trigger_type TEXT NOT NULL CHECK(trigger_type IN ('issue_created','status_changed','all_subtasks_done')),
+    conditions TEXT NOT NULL DEFAULT '[]',
+    actions TEXT NOT NULL DEFAULT '[]',
+    enabled INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
   `CREATE TABLE IF NOT EXISTS versions (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL REFERENCES projects(id),
@@ -600,6 +610,16 @@ const MYSQL_SCHEMA_SQL = [
     category VARCHAR(20) DEFAULT 'in_progress' CHECK(category IN ('todo','in_progress','done')),
     position INT DEFAULT 0,
     UNIQUE(project_id, \`key\`)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS automation_rules (
+    id VARCHAR(36) PRIMARY KEY,
+    project_id VARCHAR(36) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    trigger_type VARCHAR(40) NOT NULL,
+    conditions TEXT NOT NULL,
+    actions TEXT NOT NULL,
+    enabled TINYINT DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   ) DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS versions (
     id VARCHAR(36) PRIMARY KEY,
@@ -928,7 +948,7 @@ function seedDemoData() {
       desc: 'Swimlanes (by assignee/epic), per-column WIP limits, and multi-select bulk edit on the board.' },
     { title: 'Custom workflows', status: 'done', color: 'purple',
       desc: 'Configurable statuses and board columns per project instead of the fixed four-status workflow.' },
-    { title: 'Automation rules', status: 'todo', color: 'blue',
+    { title: 'Automation rules', status: 'done', color: 'blue',
       desc: 'Trigger → condition → action rules, e.g. "when all subtasks done, move parent to done".' },
     { title: 'Wiki: collaboration', status: 'todo', color: 'teal',
       desc: 'Inline comments on wiki page text and page-level restrictions/permissions.' },
@@ -1001,6 +1021,11 @@ function seedDemoData() {
       { title: 'Per-project status table with categories and positions', type: 'task' },
       { title: 'Workflow editor: add, rename category, reorder, delete with migration', type: 'story' },
       { title: 'Board, backlog, and issue sheet render dynamic statuses', type: 'story' },
+    ] },
+    { epic: 9, items: [
+      { title: 'Automation rules table and trigger engine', type: 'task' },
+      { title: 'Rule builder screen: trigger, condition, action', type: 'story' },
+      { title: 'All-subtasks-done trigger wired to issue lifecycle', type: 'task' },
     ] },
   ];
   let atlasIssueNumber = 18;
