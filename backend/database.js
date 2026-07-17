@@ -89,7 +89,7 @@ const SCHEMA_SQL = [
     title TEXT NOT NULL,
     description TEXT,
     type TEXT DEFAULT 'task' CHECK(type IN ('story','task','bug','epic','subtask')),
-    status TEXT DEFAULT 'todo' CHECK(status IN ('todo','in_progress','in_review','done')),
+    status TEXT DEFAULT 'todo',
     priority TEXT DEFAULT 'medium' CHECK(priority IN ('highest','high','medium','low','lowest')),
     assignee_id TEXT REFERENCES users(id),
     reporter_id TEXT REFERENCES users(id),
@@ -285,6 +285,15 @@ const SCHEMA_SQL = [
     comment TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   )`,
+  `CREATE TABLE IF NOT EXISTS project_statuses (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    key TEXT NOT NULL,
+    label TEXT NOT NULL,
+    category TEXT DEFAULT 'in_progress' CHECK(category IN ('todo','in_progress','done')),
+    position INTEGER DEFAULT 0,
+    UNIQUE(project_id, key)
+  )`,
   `CREATE TABLE IF NOT EXISTS versions (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL REFERENCES projects(id),
@@ -387,7 +396,7 @@ const MYSQL_SCHEMA_SQL = [
     title VARCHAR(512) NOT NULL,
     description TEXT,
     type VARCHAR(20) DEFAULT 'task' CHECK(type IN ('story','task','bug','epic','subtask')),
-    status VARCHAR(20) DEFAULT 'todo' CHECK(status IN ('todo','in_progress','in_review','done')),
+    status VARCHAR(20) DEFAULT 'todo',
     priority VARCHAR(20) DEFAULT 'medium' CHECK(priority IN ('highest','high','medium','low','lowest')),
     assignee_id VARCHAR(36),
     reporter_id VARCHAR(36),
@@ -582,6 +591,15 @@ const MYSQL_SCHEMA_SQL = [
     minutes INT NOT NULL,
     comment TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS project_statuses (
+    id VARCHAR(36) PRIMARY KEY,
+    project_id VARCHAR(36) NOT NULL,
+    \`key\` VARCHAR(50) NOT NULL,
+    label VARCHAR(255) NOT NULL,
+    category VARCHAR(20) DEFAULT 'in_progress' CHECK(category IN ('todo','in_progress','done')),
+    position INT DEFAULT 0,
+    UNIQUE(project_id, \`key\`)
   ) DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS versions (
     id VARCHAR(36) PRIMARY KEY,
@@ -908,7 +926,7 @@ function seedDemoData() {
       desc: 'Gantt-style timeline view of epics and sprints across time.' },
     { title: 'Board power-ups', status: 'done', color: 'green',
       desc: 'Swimlanes (by assignee/epic), per-column WIP limits, and multi-select bulk edit on the board.' },
-    { title: 'Custom workflows', status: 'todo', color: 'purple',
+    { title: 'Custom workflows', status: 'done', color: 'purple',
       desc: 'Configurable statuses and board columns per project instead of the fixed four-status workflow.' },
     { title: 'Automation rules', status: 'todo', color: 'blue',
       desc: 'Trigger → condition → action rules, e.g. "when all subtasks done, move parent to done".' },
@@ -978,6 +996,11 @@ function seedDemoData() {
       { title: 'Swimlanes by assignee and epic', type: 'story' },
       { title: 'Per-column WIP limits with over-limit warning', type: 'task' },
       { title: 'Multi-select bulk edit bar: status, assignee, delete', type: 'story' },
+    ] },
+    { epic: 8, items: [
+      { title: 'Per-project status table with categories and positions', type: 'task' },
+      { title: 'Workflow editor: add, rename category, reorder, delete with migration', type: 'story' },
+      { title: 'Board, backlog, and issue sheet render dynamic statuses', type: 'story' },
     ] },
   ];
   let atlasIssueNumber = 18;

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Check, Columns3, Plus, Rows3, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, Columns3, Plus, Rows3, Search, SlidersHorizontal, Trash2, Workflow, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,8 +14,9 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
 import { useProjects } from '@/hooks/use-projects';
 import { useSettings } from '@/hooks/use-settings';
-import { STATUS_LABEL, STATUSES, canCreateIssues, canDragIssues, canManageSprints } from '@/lib/domain';
-import type { Issue, IssueStatus, Sprint } from '@/lib/types';
+import { useWorkflow } from '@/hooks/use-workflow';
+import { STATUSES, canCreateIssues, canDragIssues, canManageSprints, statusTone } from '@/lib/domain';
+import type { Issue, IssueStatus, Sprint, StatusCategory } from '@/lib/types';
 import { EmptyState, EpicBadge, ErrorState, LabelChip, PageHeader, PriorityIcon, SubtaskProgress, TypeIcon, UserAvatar } from '@/components/app/primitives';
 import { cn } from '@/lib/utils';
 import { IssueDetailSheet } from '@/components/app/issue-detail-sheet';
@@ -140,7 +141,11 @@ export default function BoardScreen() {
   const [wipOpen, setWipOpen] = useState(false);
   const [wipDraft, setWipDraft] = useState<Record<string, string>>({});
   const [wipOverride, setWipOverride] = useState<Record<string, number> | null>(null);
+  const [workflowOpen, setWorkflowOpen] = useState(false);
+  const [newStatusLabel, setNewStatusLabel] = useState('');
+  const [newStatusCategory, setNewStatusCategory] = useState<StatusCategory>('in_progress');
   const [searchParams, setSearchParams] = useSearchParams();
+  const workflow = useWorkflow(currentProjectId);
 
   const canDrag = canDragIssues(user?.role);
   const canAdmin = canManageSprints(user?.role);
@@ -222,19 +227,19 @@ export default function BoardScreen() {
 
   const columnsFor = useCallback((laneIssues: Issue[]) => {
     const map = {} as Record<IssueStatus, Issue[]>;
-    STATUSES.forEach((s) => (map[s] = []));
+    workflow.keys.forEach((s) => (map[s] = []));
     laneIssues.forEach((i) => map[i.status]?.push(i));
-    STATUSES.forEach((s) => map[s].sort((a, b) => (a.board_order ?? 0) - (b.board_order ?? 0)));
+    workflow.keys.forEach((s) => map[s].sort((a, b) => (a.board_order ?? 0) - (b.board_order ?? 0)));
     return map;
-  }, []);
+  }, [workflow.keys]);
 
   // Column totals across all lanes (WIP limits are per status, not per lane).
   const statusTotals = useMemo(() => {
     const totals = {} as Record<IssueStatus, number>;
-    STATUSES.forEach((s) => (totals[s] = 0));
+    workflow.keys.forEach((s) => (totals[s] = 0));
     visible.forEach((i) => { totals[i.status] = (totals[i.status] ?? 0) + 1; });
     return totals;
-  }, [visible]);
+  }, [visible, workflow.keys]);
 
   async function handleDrop(status: IssueStatus) {
     setDragOver(null);
@@ -300,7 +305,7 @@ export default function BoardScreen() {
 
   function openWipDialog() {
     const draft: Record<string, string> = {};
-    STATUSES.forEach((s) => { draft[s] = wipLimits[s] ? String(wipLimits[s]) : ''; });
+    workflow.keys.forEach((s) => { draft[s] = wipLimits[s] ? String(wipLimits[s]) : ''; });
     setWipDraft(draft);
     setWipOpen(true);
   }
@@ -308,7 +313,7 @@ export default function BoardScreen() {
   async function saveWipLimits() {
     if (!currentProjectId) return;
     const limits: Record<string, number> = {};
-    STATUSES.forEach((s) => {
+    workflow.keys.forEach((s) => {
       const n = parseInt(wipDraft[s] ?? '', 10);
       if (Number.isFinite(n) && n > 0) limits[s] = n;
     });
@@ -319,6 +324,54 @@ export default function BoardScreen() {
       toast.success('WIP limits saved');
     } catch (e) {
       toast.error('Could not save WIP limits', { description: e instanceof Error ? e.message : undefined });
+    }
+  }
+
+  async function addStatus() {
+    if (!currentProjectId || !newStatusLabel.trim()) return;
+    try {
+      await api.workflow.create(currentProjectId, { label: newStatusLabel.trim(), category: newStatusCategory });
+      setNewStatusLabel('');
+      await workflow.reload();
+      toast.success('Status added');
+    } catch (e) {
+      toast.error('Could not add status', { description: e instanceof Error ? e.message : undefined });
+    }
+  }
+
+  async function moveStatus(id: string, dir: -1 | 1) {
+    const list = workflow.statuses;
+    const idx = list.findIndex((s) => s.id === id);
+    const other = list[idx + dir];
+    if (idx < 0 || !other) return;
+    try {
+      await Promise.all([
+        api.workflow.update(list[idx].id, { position: other.position }),
+        api.workflow.update(other.id, { position: list[idx].position }),
+      ]);
+      await workflow.reload();
+    } catch (e) {
+      toast.error('Could not reorder', { description: e instanceof Error ? e.message : undefined });
+    }
+  }
+
+  async function deleteStatus(id: string) {
+    try {
+      await api.workflow.remove(id);
+      await workflow.reload();
+      void load();
+      toast.success('Status removed — its issues moved to the first remaining column');
+    } catch (e) {
+      toast.error('Could not delete status', { description: e instanceof Error ? e.message : undefined });
+    }
+  }
+
+  async function setStatusCategory(id: string, category: StatusCategory) {
+    try {
+      await api.workflow.update(id, { category });
+      await workflow.reload();
+    } catch (e) {
+      toast.error('Could not update category', { description: e instanceof Error ? e.message : undefined });
     }
   }
 
@@ -425,6 +478,11 @@ export default function BoardScreen() {
             <SlidersHorizontal className="size-4" />
           </Button>
         )}
+        {canAdmin && (
+          <Button variant="outline" size="icon" onClick={() => setWorkflowOpen(true)} aria-label="Edit workflow" title="Edit workflow">
+            <Workflow className="size-4" />
+          </Button>
+        )}
       </div>
 
       <div className="space-y-6">
@@ -438,8 +496,10 @@ export default function BoardScreen() {
                   <span className="text-xs font-normal text-muted-foreground">({lane.issues.length})</span>
                 </h3>
               )}
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                {STATUSES.map((status) => {
+              <div className={cn('grid gap-3 md:grid-cols-2', `board-columns-${workflow.keys.length}`)}>
+                <style>{`@media (min-width: 1280px) { .board-columns-${workflow.keys.length} { grid-template-columns: repeat(${workflow.keys.length}, minmax(0, 1fr)); } }`}</style>
+                {workflow.statuses.map((ws) => {
+                  const status = ws.key;
                   const limit = wipLimits[status];
                   const over = limit ? statusTotals[status] > limit : false;
                   return (
@@ -456,7 +516,7 @@ export default function BoardScreen() {
                         e.preventDefault();
                         void handleDrop(status);
                       }}
-                      aria-label={STATUS_LABEL[status]}
+                      aria-label={ws.label}
                       className={cn(
                         'flex min-h-40 flex-col rounded-lg border border-transparent bg-surface p-2 transition-colors',
                         swimlane === NO_SWIMLANE && 'min-h-72',
@@ -466,7 +526,7 @@ export default function BoardScreen() {
                     >
                       <header className="mb-2 flex items-center justify-between px-1">
                         <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                          {STATUS_LABEL[status]}
+                          {ws.label}
                         </h2>
                         <span
                           className={cn(
@@ -519,8 +579,8 @@ export default function BoardScreen() {
               <SelectValue placeholder="Set status…" />
             </SelectTrigger>
             <SelectContent>
-              {STATUSES.map((s) => (
-                <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>
+              {workflow.statuses.map((s) => (
+                <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -546,6 +606,78 @@ export default function BoardScreen() {
         </div>
       )}
 
+      <Dialog open={workflowOpen} onOpenChange={setWorkflowOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Workflow · {currentProject?.name}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Columns on this project's board. Adding a status converts the project to a custom
+            workflow; deleting one moves its issues to the first remaining column.
+          </p>
+          <ul className="space-y-2">
+            {workflow.statuses.map((s, i) => (
+              <li key={s.id} className="flex items-center gap-2">
+                <span className={cn('inline-flex min-w-0 flex-1 items-center rounded-sm px-2 py-1 text-xs font-semibold uppercase tracking-wide', statusTone(s.key, workflow.statuses))}>
+                  <span className="truncate">{s.label}</span>
+                </span>
+                <Select
+                  value={s.category}
+                  onValueChange={(v) => void setStatusCategory(s.id, v as StatusCategory)}
+                  disabled={s.builtin}
+                >
+                  <SelectTrigger className="w-32" aria-label={`Category for ${s.label}`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todo">To do</SelectItem>
+                    <SelectItem value="in_progress">In progress</SelectItem>
+                    <SelectItem value="done">Done</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="ghost" size="icon" className="size-7" disabled={s.builtin || i === 0} onClick={() => void moveStatus(s.id, -1)} aria-label={`Move ${s.label} up`}>
+                  <ArrowUp className="size-3.5" />
+                </Button>
+                <Button variant="ghost" size="icon" className="size-7" disabled={s.builtin || i === workflow.statuses.length - 1} onClick={() => void moveStatus(s.id, 1)} aria-label={`Move ${s.label} down`}>
+                  <ArrowDown className="size-3.5" />
+                </Button>
+                <Button variant="ghost" size="icon" className="size-7 text-muted-foreground hover:text-destructive" disabled={s.builtin || workflow.statuses.length <= 1} onClick={() => void deleteStatus(s.id)} aria-label={`Delete ${s.label}`}>
+                  <Trash2 className="size-3.5" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+          <div className="flex gap-2">
+            <Input
+              value={newStatusLabel}
+              onChange={(e) => setNewStatusLabel(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void addStatus();
+                }
+              }}
+              placeholder="New status name…"
+              aria-label="New status name"
+            />
+            <Select value={newStatusCategory} onValueChange={(v) => setNewStatusCategory(v as StatusCategory)}>
+              <SelectTrigger className="w-32" aria-label="New status category">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todo">To do</SelectItem>
+                <SelectItem value="in_progress">In progress</SelectItem>
+                <SelectItem value="done">Done</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button onClick={addStatus} disabled={!newStatusLabel.trim()}>Add</Button>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setWorkflowOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={wipOpen} onOpenChange={setWipOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
@@ -555,16 +687,16 @@ export default function BoardScreen() {
             Column counts turn red when a limit is exceeded. Leave blank for no limit.
           </p>
           <div className="space-y-3">
-            {STATUSES.map((s) => (
-              <div key={s} className="flex items-center justify-between gap-3">
-                <Label className="text-sm">{STATUS_LABEL[s]}</Label>
+            {workflow.statuses.map((s) => (
+              <div key={s.key} className="flex items-center justify-between gap-3">
+                <Label className="text-sm">{s.label}</Label>
                 <Input
                   type="number"
                   min="0"
-                  value={wipDraft[s] ?? ''}
-                  onChange={(e) => setWipDraft((prev) => ({ ...prev, [s]: e.target.value }))}
+                  value={wipDraft[s.key] ?? ''}
+                  onChange={(e) => setWipDraft((prev) => ({ ...prev, [s.key]: e.target.value }))}
                   className="w-24"
-                  aria-label={`WIP limit for ${STATUS_LABEL[s]}`}
+                  aria-label={`WIP limit for ${s.label}`}
                 />
               </div>
             ))}

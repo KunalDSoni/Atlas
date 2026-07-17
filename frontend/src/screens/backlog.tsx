@@ -12,7 +12,8 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
 import { useProjects } from '@/hooks/use-projects';
 import { useSettings } from '@/hooks/use-settings';
-import { STATUSES, STATUS_LABEL, TYPE_LABEL, canCreateIssues } from '@/lib/domain';
+import { useWorkflow } from '@/hooks/use-workflow';
+import { TYPE_LABEL, canCreateIssues, statusTone } from '@/lib/domain';
 import type { Issue, IssueType, SavedFilter, Sprint } from '@/lib/types';
 import {
   EmptyState, EpicBadge, ErrorState, LabelChip, PageHeader, PriorityIcon, RowsSkeleton, StatusPill, SubtaskProgress, TypeIcon, UserAvatar,
@@ -40,6 +41,7 @@ export default function BacklogScreen() {
   const [error, setError] = useState<string | null>(null);
   const [openIssueId, setOpenIssueId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const workflow = useWorkflow(currentProjectId);
 
   const load = useCallback(async () => {
     if (!currentProjectId) return;
@@ -194,8 +196,8 @@ export default function BacklogScreen() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All statuses</SelectItem>
-            {STATUSES.map((s) => (
-              <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>
+            {workflow.statuses.map((s) => (
+              <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -327,7 +329,7 @@ export default function BacklogScreen() {
                       {issue.story_points}
                     </span>
                   )}
-                  <StatusPill status={issue.status} className="hidden shrink-0 md:inline-flex" />
+                  <StatusPill status={issue.status} label={workflow.label(issue.status)} tone={statusTone(issue.status, workflow.statuses)} className="hidden shrink-0 md:inline-flex" />
                   {issue.assignee_name ? (
                     <UserAvatar name={issue.assignee_name} color={issue.assignee_color} />
                   ) : (

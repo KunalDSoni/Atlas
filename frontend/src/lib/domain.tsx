@@ -23,6 +23,27 @@ export const STATUS_TONE: Record<IssueStatus, string> = {
   done: 'bg-success-muted text-success',
 };
 
+/** Pill tone by workflow category, for custom statuses with no built-in tone. */
+export const CATEGORY_TONE: Record<string, string> = {
+  todo: 'bg-muted text-muted-foreground',
+  in_progress: 'bg-primary-muted text-accent-foreground',
+  done: 'bg-success-muted text-success',
+};
+
+/** Label for any status key: built-in name, else humanized key ("code_review" → "Code Review"). */
+export function statusLabel(status: string, custom?: { key: string; label: string }[]) {
+  const hit = custom?.find((s) => s.key === status);
+  if (hit) return hit.label;
+  return STATUS_LABEL[status] ?? status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/** Tone for any status key: built-in tone, else category tone, else muted. */
+export function statusTone(status: string, custom?: { key: string; category: string }[]) {
+  if (STATUS_TONE[status]) return STATUS_TONE[status];
+  const hit = custom?.find((s) => s.key === status);
+  return (hit && CATEGORY_TONE[hit.category]) || 'bg-muted text-muted-foreground';
+}
+
 export const TYPE_LABEL: Record<IssueType, string> = {
   story: 'Story',
   bug: 'Bug',

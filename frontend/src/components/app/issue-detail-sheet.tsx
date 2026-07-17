@@ -20,7 +20,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
-import { EPIC_COLORS, PRIORITIES, PRIORITY_LABEL, STATUSES, STATUS_LABEL, TYPE_LABEL, canCreateIssues, epicColor, isAdmin } from '@/lib/domain';
+import { useWorkflow } from '@/hooks/use-workflow';
+import { EPIC_COLORS, PRIORITIES, PRIORITY_LABEL, TYPE_LABEL, canCreateIssues, epicColor, isAdmin } from '@/lib/domain';
 import type { ActivityEntry, Attachment, Comment, EpicSummary, Issue, IssueStatus, Priority, ProjectComponent, Sprint, User, Version, WorkLog } from '@/lib/types';
 import { formatBytes, formatDuration, timeAgo } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -72,6 +73,7 @@ export function IssueDetailSheet({
   const [loggingWork, setLoggingWork] = useState(false);
 
   const canEdit = canCreateIssues(user?.role);
+  const workflow = useWorkflow(issue?.project_id);
 
   const load = useCallback(async () => {
     if (!issueId) return;
@@ -580,8 +582,8 @@ export function IssueDetailSheet({
                   >
                     <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {STATUSES.map((s) => (
-                        <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>
+                      {workflow.statuses.map((s) => (
+                        <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

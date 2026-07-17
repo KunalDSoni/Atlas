@@ -13,6 +13,7 @@ const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
 const { notify } = require('../utils/notify');
+const { projectStatuses } = require('./workflows');
 
 const requireBoardAdmin = requireRole('admin', 'board_admin');
 
@@ -183,10 +184,14 @@ router.post('/projects/:projectId/issues', requireAuth, requireBoardAdmin, async
       return res.status(400).json({ error: 'Invalid epic color' });
     }
 
+    // New issues land in the project's first workflow column.
+    const statuses = await projectStatuses(db, req.params.projectId);
+    const defaultStatus = statuses[0]?.key || 'todo';
+
     await run(db, `INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, assignee_id, reporter_id, sprint_id, story_points, due_date, labels, original_estimate, parent_id, epic_color, board_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
       [id, req.params.projectId, `${project.key}-${issueNumber}`, issueNumber,
-       title, description || '', type || 'task', priority || 'medium',
+       title, description || '', type || 'task', defaultStatus, priority || 'medium',
        assignee_id || null, reporter_id || req.userId, sprint_id || null,
        story_points || null, due_date || null, labels || '[]', original_estimate || null,
        parent_id || null, epic_color || 'purple']);
@@ -228,6 +233,13 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
 
     if (req.body.epic_color !== undefined && !EPIC_COLORS.includes(req.body.epic_color)) {
       return res.status(400).json({ error: 'Invalid epic color' });
+    }
+
+    if (req.body.status !== undefined) {
+      const statuses = await projectStatuses(db, issue.project_id);
+      if (!statuses.some((s) => s.key === req.body.status)) {
+        return res.status(400).json({ error: 'Unknown status for this project' });
+      }
     }
 
     const allowed = ['title', 'description', 'type', 'status', 'priority', 'assignee_id', 'sprint_id', 'story_points', 'board_order', 'labels', 'due_date', 'original_estimate', 'time_spent', 'parent_id', 'epic_color', 'fix_version_id', 'component_id', 'start_date'];
@@ -311,6 +323,12 @@ router.put('/issues/:id/move', requireAuth, async (req, res) => {
     }
 
     const { status, sprint_id, board_order } = req.body;
+    if (status !== undefined) {
+      const statuses = await projectStatuses(db, issue.project_id);
+      if (!statuses.some((s) => s.key === status)) {
+        return res.status(400).json({ error: 'Unknown status for this project' });
+      }
+    }
     const updates = [];
     const params = [];
     if (status !== undefined) { updates.push('status = ?'); params.push(status); }

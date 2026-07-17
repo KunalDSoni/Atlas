@@ -1,7 +1,20 @@
 // Domain types mirroring the Atlas API responses.
 
 export type Role = 'admin' | 'board_admin' | 'user' | 'client';
-export type IssueStatus = 'todo' | 'in_progress' | 'in_review' | 'done';
+/** Status keys are per-project since custom workflows; the four defaults remain common. */
+export type IssueStatus = string;
+export type StatusCategory = 'todo' | 'in_progress' | 'done';
+
+/** Row from GET /projects/:id/statuses (id is "default-<key>" until customized). */
+export interface WorkflowStatus {
+  id: string;
+  project_id: string;
+  key: string;
+  label: string;
+  category: StatusCategory;
+  position: number;
+  builtin: boolean;
+}
 export type IssueType = 'story' | 'bug' | 'task' | 'epic' | 'subtask';
 export type Priority = 'highest' | 'high' | 'medium' | 'low';
 export type SprintStatus = 'planned' | 'active' | 'completed';

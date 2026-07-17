@@ -8,7 +8,7 @@ import type {
   ProfileResponse, Project, ProjectComponent, ProjectMember, ProjectStats, SavedFilter, SearchResults, Settings, Sprint, User, Version,
   IssueLink, LinkType,
   WikiComment, WikiPage, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
-  WorkLog,
+  WorkLog, WorkflowStatus,
 } from './types';
 
 const TOKEN_KEY = 'atlas_token';
@@ -156,6 +156,16 @@ export const api = {
   epics: {
     list: (projectId: string) => get<EpicSummary[]>(`/projects/${projectId}/epics`),
     children: (issueId: string) => get<Issue[]>(`/issues/${issueId}/children`),
+  },
+
+  workflow: {
+    list: (projectId: string) => get<WorkflowStatus[]>(`/projects/${projectId}/statuses`),
+    create: (projectId: string, body: { label: string; key?: string; category?: string }) =>
+      post<WorkflowStatus>(`/projects/${projectId}/statuses`, body),
+    update: (id: string, body: Partial<Pick<WorkflowStatus, 'label' | 'category' | 'position'>>) =>
+      put<WorkflowStatus>(`/statuses/${id}`, body),
+    remove: (id: string, migrateTo?: string) =>
+      del<{ ok: boolean; migrated_to: string }>(`/statuses/${id}${migrateTo ? `?migrate_to=${encodeURIComponent(migrateTo)}` : ''}`),
   },
 
   versions: {
