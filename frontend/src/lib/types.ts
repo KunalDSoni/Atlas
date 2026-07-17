@@ -33,6 +33,7 @@ export interface Project {
   name: string;
   key: string;
   description: string | null;
+  wip_limits: string | null;
   lead_id: string | null;
   created_at: string;
   lead_name: string | null;

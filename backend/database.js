@@ -58,6 +58,7 @@ const SCHEMA_SQL = [
     name TEXT NOT NULL,
     key TEXT UNIQUE NOT NULL,
     description TEXT,
+    wip_limits TEXT DEFAULT '{}',
     lead_id TEXT REFERENCES users(id),
     created_at TEXT DEFAULT (datetime('now'))
   )`,
@@ -355,6 +356,7 @@ const MYSQL_SCHEMA_SQL = [
     name VARCHAR(255) NOT NULL,
     \`key\` VARCHAR(50) UNIQUE NOT NULL,
     description TEXT,
+    wip_limits VARCHAR(2000),
     lead_id VARCHAR(36),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   ) DEFAULT CHARSET=utf8mb4`,
@@ -620,6 +622,7 @@ async function initSqlite() {
   try { db.run("ALTER TABLE issues ADD COLUMN fix_version_id TEXT"); } catch (e) { /* column already exists */ }
   try { db.run("ALTER TABLE issues ADD COLUMN component_id TEXT"); } catch (e) { /* column already exists */ }
   try { db.run("ALTER TABLE issues ADD COLUMN start_date TEXT"); } catch (e) { /* column already exists */ }
+  try { db.run("ALTER TABLE projects ADD COLUMN wip_limits TEXT DEFAULT '{}'"); } catch (e) { /* column already exists */ }
 
   saveDb();
 
@@ -694,6 +697,13 @@ async function initMysqlSchema(pool) {
         ? 'ALTER TABLE issues ADD COLUMN start_date DATETIME NULL'
         : `ALTER TABLE issues ADD COLUMN ${col} VARCHAR(36)`);
     }
+  }
+
+  const [wipCol] = await pool.query(
+    "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'projects' AND column_name = 'wip_limits'"
+  );
+  if (wipCol.length === 0) {
+    await pool.query('ALTER TABLE projects ADD COLUMN wip_limits VARCHAR(2000)');
   }
 
   const [rows] = await pool.query('SELECT COUNT(*) as c FROM users');
@@ -896,7 +906,7 @@ function seedDemoData() {
       desc: 'Fix versions and components on issues, plus a release hub screen with per-version progress.' },
     { title: 'Roadmap / timeline', status: 'done', color: 'pink',
       desc: 'Gantt-style timeline view of epics and sprints across time.' },
-    { title: 'Board power-ups', status: 'todo', color: 'green',
+    { title: 'Board power-ups', status: 'done', color: 'green',
       desc: 'Swimlanes (by assignee/epic), per-column WIP limits, and multi-select bulk edit on the board.' },
     { title: 'Custom workflows', status: 'todo', color: 'purple',
       desc: 'Configurable statuses and board columns per project instead of the fixed four-status workflow.' },
@@ -963,6 +973,11 @@ function seedDemoData() {
     { epic: 6, items: [
       { title: 'Epic start/due date windows on issues', type: 'task' },
       { title: 'Roadmap screen: month grid, epic and sprint bars, today line', type: 'story' },
+    ] },
+    { epic: 7, items: [
+      { title: 'Swimlanes by assignee and epic', type: 'story' },
+      { title: 'Per-column WIP limits with over-limit warning', type: 'task' },
+      { title: 'Multi-select bulk edit bar: status, assignee, delete', type: 'story' },
     ] },
   ];
   let atlasIssueNumber = 18;
