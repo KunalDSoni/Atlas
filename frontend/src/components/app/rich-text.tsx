@@ -34,6 +34,29 @@ export function sanitizeHtml(html: string): string {
 
 const ISSUE_KEY_RE = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/;
 
+/** Stable heading id, shared by applyMacros and the right-rail TOC so anchors match. */
+function headingId(text: string, index: number): string {
+  return `h-${index}-${text.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`;
+}
+
+export interface HeadingEntry {
+  id: string;
+  text: string;
+  level: 1 | 2 | 3;
+}
+
+/** Extract h1–h3 from a page body for the "On this page" outline. Uses the same
+ *  id scheme applyMacros stamps onto the rendered headings. */
+export function extractHeadings(html: string): HeadingEntry[] {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = sanitizeHtml(html);
+  return [...tpl.content.querySelectorAll('h1, h2, h3')].map((h, i) => ({
+    id: headingId(h.textContent || '', i),
+    text: (h.textContent || '').trim(),
+    level: Number(h.tagName[1]) as 1 | 2 | 3,
+  })).filter((h) => h.text.length > 0);
+}
+
 /**
  * Wiki macros, applied AFTER sanitising (everything injected here is built from
  * textContent, never raw user HTML):
@@ -47,7 +70,7 @@ function applyMacros(html: string): string {
 
   const headings = [...root.querySelectorAll('h1, h2, h3')];
   headings.forEach((h, i) => {
-    h.id = `h-${i}-${(h.textContent || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`;
+    h.id = headingId(h.textContent || '', i);
   });
 
   root.querySelectorAll('p, div').forEach((el) => {
@@ -225,8 +248,8 @@ export function RichTextEditor({
   ];
 
   return (
-    <div className={cn('rounded-lg border border-border bg-card', className)}>
-      <div className="flex flex-wrap items-center gap-0.5 border-b border-border p-1.5">
+    <div className={cn('overflow-hidden rounded-lg border border-border bg-card', className)}>
+      <div className="sticky top-14 z-20 flex flex-wrap items-center gap-0.5 border-b border-border bg-card/95 p-1.5 backdrop-blur">
         {groups.map((group, gi) => (
           <div key={gi} className="flex items-center gap-0.5">
             {gi > 0 && <Separator orientation="vertical" className="mx-1 h-5" />}
@@ -300,7 +323,7 @@ export function RichTextEditor({
         aria-label="Page content"
         onInput={emit}
         onBlur={emit}
-        className="wiki-prose min-h-80 px-4 py-3 focus:outline-none"
+        className="wiki-prose min-h-[60vh] px-5 py-4 focus:outline-none"
       />
     </div>
   );
