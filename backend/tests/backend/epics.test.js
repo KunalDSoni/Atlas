@@ -224,6 +224,7 @@ describe('Atlas Development dogfood seed', () => {
     const second = epics.body.find((e) => e.issue_key === 'ATLAS-2');
     expect(second.title).toBe('Subtasks');
     expect(second.status).toBe('done');
-    expect(epics.body.filter((e) => e.status === 'todo').length).toBe(10);
+    // The whole parity roadmap has shipped — every epic is seeded done.
+    expect(epics.body.filter((e) => e.status === 'done').length).toBe(12);
   });
 });
