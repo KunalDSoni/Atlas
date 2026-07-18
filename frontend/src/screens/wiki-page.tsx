@@ -437,7 +437,7 @@ export default function WikiPageScreen() {
           {editing ? (
             <RichTextEditor value={draftBody} onChange={setDraftBody} pageId={page.id} />
           ) : page.body ? (
-            <RichTextView html={page.body} macros />
+            <RichTextView html={page.body} macros issues={page.linked_issues} />
           ) : (
             <div className="rounded-lg border border-dashed border-border bg-card/50 px-6 py-12 text-center">
               <FileText className="mx-auto mb-2 size-7 text-faint" />

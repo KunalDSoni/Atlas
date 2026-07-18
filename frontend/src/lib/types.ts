@@ -70,6 +70,29 @@ export interface Sprint {
   done_points: number;
 }
 
+/** Compact issue state for wiki chips — what a hover card shows. */
+export interface LinkedIssueSummary {
+  id: string;
+  issue_key: string;
+  title: string;
+  status: IssueStatus;
+  type: string;
+  priority: string;
+  assignee_name: string | null;
+  assignee_color: string | null;
+}
+
+/** A wiki page that mentions an issue, for the issue's back-link panel. */
+export interface MentioningPage {
+  id: string;
+  title: string;
+  slug: string;
+  space_id: string;
+  space_name: string;
+  space_key: string;
+  updated_at: string;
+}
+
 export interface Issue {
   id: string;
   project_id: string;
@@ -410,6 +433,8 @@ export interface WikiPage {
   space_name?: string;
   space_key?: string;
   space_icon?: string;
+  /** Issues this page mentions, resolved server-side at write time. */
+  linked_issues?: LinkedIssueSummary[];
   breadcrumb?: { id: string; title: string }[];
   children?: { id: string; title: string; slug: string; status: string }[];
 }
