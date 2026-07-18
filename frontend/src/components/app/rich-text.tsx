@@ -9,12 +9,20 @@ import { useNavigate } from 'react-router-dom';
 import DOMPurify, { type Config } from 'dompurify';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
-import { Bold, Code, Heading2, Heading3, Italic, Link2, List, ListOrdered, Quote, Strikethrough } from 'lucide-react';
+import { Bold, Code, Heading2, Heading3, Italic, Link2, List, ListOrdered, Loader2, Quote, Sparkles, Strikethrough } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { useAIEnabled } from '@/hooks/use-ai';
 import { cn } from '@/lib/utils';
 
 const PURIFY_CONFIG: Config = {
@@ -189,6 +197,10 @@ export function RichTextEditor({
   className?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const aiEnabled = useAIEnabled();
+  const [aiBusy, setAiBusy] = useState(false);
+  const [draftOpen, setDraftOpen] = useState(false);
+  const [draftPrompt, setDraftPrompt] = useState('');
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
   // execCommand acts on the live selection, which is lost when focus moves to the
@@ -213,6 +225,63 @@ export function RichTextEditor({
 
   function emit() {
     if (ref.current) onChange(sanitizeHtml(ref.current.innerHTML));
+  }
+
+  // Whether the current selection sits inside the editor and isn't collapsed.
+  function editorSelectionText(): string {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return '';
+    if (!ref.current?.contains(sel.anchorNode)) return '';
+    return sel.toString().trim();
+  }
+
+  // Transform the selection (if any) or the whole document via the AI writer.
+  async function runWrite(action: 'improve' | 'shorten' | 'expand' | 'fix') {
+    if (!ref.current) return;
+    const selText = editorSelectionText();
+    const target = selText || ref.current.innerText;
+    if (!target.trim()) { toast.info('Write something first, then use AI.'); return; }
+    setAiBusy(true);
+    try {
+      const { html } = await api.ai.write({ action, text: selText || ref.current.innerHTML });
+      const clean = sanitizeHtml(html);
+      if (selText) {
+        ref.current.focus();
+        document.execCommand('insertHTML', false, clean);
+      } else {
+        ref.current.innerHTML = clean;
+      }
+      emit();
+      toast.success('Updated with AI');
+    } catch (e) {
+      toast.error('AI request failed', { description: e instanceof Error ? e.message : undefined });
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
+  async function runDraft() {
+    if (!ref.current || !draftPrompt.trim()) return;
+    setAiBusy(true);
+    try {
+      const { html } = await api.ai.write({ action: 'draft', prompt: draftPrompt.trim() });
+      const clean = sanitizeHtml(html);
+      ref.current.focus();
+      // Insert at the caret; fall back to appending if there's no editor selection.
+      if (editorSelectionText() || window.getSelection()?.anchorNode && ref.current.contains(window.getSelection()!.anchorNode)) {
+        document.execCommand('insertHTML', false, clean);
+      } else {
+        ref.current.innerHTML = ref.current.innerHTML + clean;
+      }
+      emit();
+      setDraftOpen(false);
+      setDraftPrompt('');
+      toast.success('Draft inserted');
+    } catch (e) {
+      toast.error('AI request failed', { description: e instanceof Error ? e.message : undefined });
+    } finally {
+      setAiBusy(false);
+    }
   }
 
   function applyLink() {
@@ -312,7 +381,51 @@ export function RichTextEditor({
             </form>
           </PopoverContent>
         </Popover>
+
+        {aiEnabled && (
+          <>
+            <Separator orientation="vertical" className="mx-1 h-5" />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2 text-primary" disabled={aiBusy}
+                  onMouseDown={(e) => e.preventDefault()} aria-label="AI writing assistant">
+                  {aiBusy ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                  <span className="text-xs font-medium">AI</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-52">
+                <DropdownMenuItem onSelect={() => setDraftOpen(true)}>
+                  <Sparkles className="size-4" /> Draft from a prompt…
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => void runWrite('improve')}>Improve writing</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void runWrite('fix')}>Fix spelling & grammar</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void runWrite('shorten')}>Make shorter</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void runWrite('expand')}>Make longer</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        )}
       </div>
+
+      <Dialog open={draftOpen} onOpenChange={setDraftOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><Sparkles className="size-4 text-primary" /> Draft with AI</DialogTitle></DialogHeader>
+          <Textarea
+            autoFocus
+            rows={3}
+            placeholder="What should this section cover? e.g. 'onboarding steps for a new engineer'"
+            value={draftPrompt}
+            onChange={(e) => setDraftPrompt(e.target.value)}
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDraftOpen(false)}>Cancel</Button>
+            <Button onClick={() => void runDraft()} disabled={aiBusy || !draftPrompt.trim()}>
+              {aiBusy && <Loader2 className="size-4 animate-spin" />} Generate
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div
         ref={ref}

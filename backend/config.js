@@ -42,6 +42,14 @@ const config = {
     password: process.env.ADMIN_PASSWORD || 'changeme123',
   },
 
+  // AI (Rovo-style wiki assistant). Powered by the Anthropic API — the key
+  // stays server-side; the frontend only ever talks to our /api/ai/* proxy.
+  ai: {
+    apiKey: process.env.ANTHROPIC_API_KEY || null,
+    model: process.env.ANTHROPIC_MODEL || 'claude-opus-4-8',
+    enabled: () => Boolean(process.env.ANTHROPIC_API_KEY),
+  },
+
   // Helpers
   isDev: () => config.env === 'development',
   isProd: () => config.env === 'production',

@@ -379,6 +379,16 @@ export const api = {
     vote: (featureId: string) => post<{ voted: boolean; vote_count: number }>(`/product/features/${featureId}/vote`),
   },
 
+  ai: {
+    status: () => get<{ enabled: boolean; model: string | null }>('/ai/status'),
+    summarize: (body: { page_id?: string; text?: string; title?: string }) =>
+      post<{ summary: string }>('/ai/summarize', body),
+    write: (body: { action: 'draft' | 'improve' | 'shorten' | 'expand' | 'fix'; text?: string; prompt?: string }) =>
+      post<{ html: string }>('/ai/write', body),
+    ask: (body: { question: string; space_id?: string }) =>
+      post<{ answer: string; sources: { index: number; id: string; title: string; space_id: string }[] }>('/ai/ask', body),
+  },
+
   reports: {
     velocity: (projectId: string) => get<unknown>(`/projects/${projectId}/reports/velocity`),
     sprint: (projectId: string) => get<unknown>(`/projects/${projectId}/reports/sprint`),

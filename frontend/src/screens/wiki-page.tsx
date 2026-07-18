@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   Clock, Download, Eye, FileText, Heart, History, Loader2, Lock, MoreHorizontal,
-  Pencil, Plus, Quote, Send, Trash2, X,
+  Pencil, Plus, Quote, Send, Sparkles, Trash2, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -31,6 +31,7 @@ import { ErrorState, LabelChip, RowsSkeleton, UserAvatar } from '@/components/ap
 import { RichTextEditor, RichTextView, extractHeadings } from '@/components/app/rich-text';
 import { WikiTree } from '@/components/app/wiki-tree';
 import { WikiBreadcrumb, OnThisPage, type Crumb } from '@/components/app/wiki-doc';
+import { useAIEnabled } from '@/hooks/use-ai';
 import { CreatePageDialog } from './wiki-space';
 import { timeAgo } from '@/lib/format';
 
@@ -96,6 +97,9 @@ export default function WikiPageScreen() {
   const [restrictions, setRestrictions] = useState<Map<string, boolean>>(new Map());
   const [historyOpen, setHistoryOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const aiEnabled = useAIEnabled();
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [summarizing, setSummarizing] = useState(false);
 
   const load = useCallback(async () => {
     if (!pageId) return;
@@ -124,7 +128,21 @@ export default function WikiPageScreen() {
   useEffect(() => {
     void load();
     setEditing(false);
+    setAiSummary(null);
   }, [load]);
+
+  async function summarize() {
+    if (!page) return;
+    setSummarizing(true);
+    try {
+      const { summary } = await api.ai.summarize({ page_id: page.id });
+      setAiSummary(summary);
+    } catch (e) {
+      toast.error('Could not summarize', { description: e instanceof Error ? e.message : undefined });
+    } finally {
+      setSummarizing(false);
+    }
+  }
 
   async function save() {
     if (!page) return;
@@ -317,6 +335,11 @@ export default function WikiPageScreen() {
                         <DropdownMenuItem onSelect={() => void toggleWatch()}>
                           <Eye className="size-4" /> {watching ? 'Stop watching' : 'Watch page'}
                         </DropdownMenuItem>
+                        {aiEnabled && (
+                          <DropdownMenuItem onSelect={() => void summarize()} disabled={summarizing}>
+                            <Sparkles className="size-4" /> Summarize with AI
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem onSelect={() => setCreateChildOpen(true)}>
                           <Plus className="size-4" /> Add child page
                         </DropdownMenuItem>
@@ -383,6 +406,30 @@ export default function WikiPageScreen() {
               </div>
             )}
           </header>
+
+          {(summarizing || aiSummary) && !editing && (
+            <div className="mb-5 rounded-lg border border-primary/30 bg-primary/5 p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-sm font-semibold text-primary">
+                  <Sparkles className="size-4" /> AI summary
+                </span>
+                {aiSummary && (
+                  <Button variant="ghost" size="icon" className="size-6 text-muted-foreground" onClick={() => setAiSummary(null)} aria-label="Dismiss summary">
+                    <X className="size-3.5" />
+                  </Button>
+                )}
+              </div>
+              {summarizing ? (
+                <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Summarizing…</p>
+              ) : (
+                <ul className="space-y-1 text-sm">
+                  {aiSummary!.split('\n').map((l) => l.replace(/^[-*]\s*/, '').trim()).filter(Boolean).map((line, i) => (
+                    <li key={i} className="flex gap-2"><span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary/60" /><span>{line}</span></li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
 
           {editing ? (
             <RichTextEditor value={draftBody} onChange={setDraftBody} />
