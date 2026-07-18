@@ -92,7 +92,9 @@ extractIssueKeys(html) → ['ATLAS-29', 'ATLAS-3']
 - Strips `<code>`, `<pre>`, and `<a>` blocks before matching, so keys inside
   code samples and existing links are not treated as references. This mirrors
   the exclusion `applyMacros` already applies client-side.
-- Matches `\b[A-Z][A-Z0-9]{1,9}-\d+\b`, uppercases, and dedupes.
+- Matches `\b[A-Z][A-Z0-9]{1,9}-\d+\b` and dedupes. No case folding: the pattern
+  is uppercase-only by construction, matching the client-side regex, so a
+  lowercase `atlas-29` is not a reference.
 - Returns `[]` for empty or non-string input.
 
 Wired into `POST /api/wiki/spaces/:spaceId/pages` and
