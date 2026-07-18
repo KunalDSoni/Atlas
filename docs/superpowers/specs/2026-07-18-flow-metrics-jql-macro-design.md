@@ -126,8 +126,11 @@ live, never snapshotted into the stored page.
 
 ### 34.3 Table
 
-Columns: type icon, key (chip-styled, navigates by id exactly like issue
-chips), title, status pill, assignee. The search payload has no assignee today,
+Columns: key (chip-styled, navigates by id exactly like issue chips — the
+issue type rides along as a `data-issue-type` attribute so epics route to
+/epics), title, status (text), assignee. The table is DOM-built inside the
+macro pipeline, so React components (TypeIcon, StatusPill) are out of reach
+without extra machinery this feature doesn't justify. The search payload has no assignee today,
 so the JQL branch of the search SELECT gains
 `u.name AS assignee_name` via a LEFT JOIN — one column in one existing query.
 Footer shows "Showing 50 — refine your query" when the row cap is hit
