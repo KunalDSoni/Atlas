@@ -83,6 +83,8 @@ async function createTestApp() {
   testApp.use('/api', require('../../routes/portal'));
   testApp.use('/api', require('../../routes/ai'));
   testApp.use('/api', require('../../routes/wiki-attachments'));
+  testApp.use('/api', require('../../routes/tokens'));
+  testApp.use('/api', require('../../routes/webhooks'));
 
   app = testApp;
   return testApp;

@@ -15,6 +15,7 @@ const { serverError } = require('../utils/errors');
 const { notify } = require('../utils/notify');
 const { projectStatuses } = require('./workflows');
 const { runAutomation, checkAllSubtasksDone } = require('../utils/automation');
+const { dispatch: dispatchWebhook } = require('../utils/webhooks');
 
 const requireBoardAdmin = requireRole('admin', 'board_admin');
 
@@ -211,6 +212,7 @@ router.post('/projects/:projectId/issues', requireAuth, requireBoardAdmin, async
     await runAutomation(db, { type: 'issue_created', issue, actorId: req.userId });
     issue = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [id]);
     auditLog({ userId: req.userId, action: 'Created issue', category: 'issues', entityType: 'issue', entityId: id, entityName: issue.issue_key, details: { title, type: type || 'task', priority: priority || 'medium' } });
+    dispatchWebhook(db, req.params.projectId, 'issue.created', { id: issue.id, issue_key: issue.issue_key, title: issue.title, type: issue.type, status: issue.status });
     res.status(201).json(await enrichIssue(db, issue));
   } catch (e) { serverError(res, e); }
 });
@@ -304,6 +306,7 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
       await checkAllSubtasksDone(db, updated, req.userId);
       updated = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
     }
+    dispatchWebhook(db, updated.project_id, 'issue.updated', { id: updated.id, issue_key: updated.issue_key, title: updated.title, type: updated.type, status: updated.status });
     res.json(await enrichIssue(db, updated));
   } catch (e) { serverError(res, e); }
 });
@@ -322,6 +325,7 @@ router.delete('/issues/:id', requireAuth, requireBoardAdmin, async (req, res) =>
     await run(db, 'DELETE FROM issue_links WHERE source_issue_id = ? OR target_issue_id = ?', [req.params.id, req.params.id]);
     await run(db, 'DELETE FROM issues WHERE id = ?', [req.params.id]);
     auditLog({ userId: req.userId, action: 'Deleted issue', category: 'issues', entityType: 'issue', entityId: req.params.id, entityName: issue ? issue.issue_key : req.params.id });
+    if (issue) dispatchWebhook(db, issue.project_id, 'issue.deleted', { id: issue.id, issue_key: issue.issue_key });
     res.json({ ok: true });
   } catch (e) { serverError(res, e); }
 });

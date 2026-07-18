@@ -413,6 +413,27 @@ export interface WikiPage {
   children?: { id: string; title: string; slug: string; status: string }[];
 }
 
+export interface ApiToken {
+  id: string;
+  name: string;
+  prefix: string;
+  last_used_at: string | null;
+  created_at: string;
+  token?: string; // only present in the create response
+}
+
+export interface Webhook {
+  id: string;
+  project_id: string;
+  url: string;
+  events: string[];
+  enabled: number;
+  last_status: number | null;
+  last_delivered_at: string | null;
+  created_at: string;
+  secret?: string; // only present in the create response
+}
+
 export interface WikiAttachment {
   id: string;
   page_id: string;

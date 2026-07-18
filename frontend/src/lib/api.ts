@@ -9,7 +9,7 @@ import type {
   ProfileResponse, Project, ProjectComponent, ProjectMember, ProjectStats, SavedFilter, SearchResults, Settings, Sprint, User, Version,
   IssueLink, LinkType,
   WikiComment, WikiPage, WikiRestriction, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
-  WikiAttachment,
+  WikiAttachment, ApiToken, Webhook,
   WorkLog, WorkflowStatus,
   PbCompany, PbCustomer, PbInsight, PbFeature, PbObjective, PortalFeature,
 } from './types';
@@ -387,6 +387,19 @@ export const api = {
     features: () => get<PortalFeature[]>('/portal/features'),
     submitIdea: (body: { title: string; content?: string }) => post<{ ok: boolean; id: string }>('/portal/ideas', body),
     vote: (featureId: string) => post<{ voted: boolean; vote_count: number }>(`/product/features/${featureId}/vote`),
+  },
+
+  tokens: {
+    list: () => get<ApiToken[]>('/tokens'),
+    create: (name: string) => post<ApiToken>('/tokens', { name }),
+    remove: (id: string) => del<{ ok: boolean }>(`/tokens/${id}`),
+  },
+
+  webhooks: {
+    list: (projectId: string) => get<Webhook[]>(`/projects/${projectId}/webhooks`),
+    create: (projectId: string, body: { url: string; events: string[] }) => post<Webhook>(`/projects/${projectId}/webhooks`, body),
+    update: (id: string, body: Partial<Pick<Webhook, 'url' | 'events'>> & { enabled?: boolean }) => put<Webhook>(`/webhooks/${id}`, body),
+    remove: (id: string) => del<{ ok: boolean }>(`/webhooks/${id}`),
   },
 
   ai: {

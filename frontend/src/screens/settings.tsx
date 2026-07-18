@@ -9,6 +9,7 @@ import { useSettings } from '@/hooks/use-settings';
 import { api } from '@/lib/api';
 import type { Settings } from '@/lib/types';
 import { ErrorState, PageHeader, RowsSkeleton } from '@/components/app/primitives';
+import { DeveloperSettings } from '@/components/app/developer-settings';
 
 const NOTIFICATION_TOGGLES: { key: keyof Settings; label: string; hint: string }[] = [
   { key: 'email_notifications', label: 'Email notifications', hint: 'Receive updates by email.' },
@@ -116,6 +117,8 @@ export default function SettingsScreen() {
             ))}
           </CardContent>
         </Card>
+
+        <DeveloperSettings />
       </div>
     </>
   );
