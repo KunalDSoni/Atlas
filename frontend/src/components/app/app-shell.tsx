@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Bell, CalendarRange, ChevronsUpDown, Columns3, FileClock, Gauge, LayoutDashboard, ListTodo, LogOut, Menu, Package,
-  Monitor, Moon, Rocket, Search, Settings as SettingsIcon, Shield, Sun, User as UserIcon, Users, BookOpen, Zap,
+  Rocket, Search, Settings as SettingsIcon, Shield, User as UserIcon, Users, BookOpen, Zap,
+  Inbox, Lightbulb, Target, Map as MapIcon, Building2, MessagesSquare,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,15 +15,14 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
-import { useTheme } from '@/context/theme-provider';
 import { useProjects } from '@/hooks/use-projects';
-import { useSettings } from '@/hooks/use-settings';
 import { isAdmin } from '@/lib/domain';
 import type { AppNotification } from '@/lib/types';
 import { timeAgo } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { UserAvatar } from './primitives';
 import { CommandPalette } from './command-palette';
+import { useLiveEvents } from '@/hooks/use-live-events';
 
 interface NavItem {
   to: string;
@@ -40,6 +40,16 @@ const PROJECT_NAV: NavItem[] = [
   { to: '/releases', label: 'Releases', icon: Package },
   { to: '/reports', label: 'Reports', icon: Gauge },
   { to: '/automation', label: 'Automation', icon: Zap },
+];
+
+const PRODUCT_NAV: NavItem[] = [
+  { to: '/product/insights', label: 'Insights', icon: Inbox },
+  { to: '/product/features', label: 'Features', icon: Lightbulb },
+  { to: '/product/prioritize', label: 'Prioritize', icon: Target },
+  { to: '/product/roadmap', label: 'Product roadmap', icon: MapIcon },
+  { to: '/product/objectives', label: 'Objectives', icon: Target },
+  { to: '/product/customers', label: 'Customers', icon: Building2 },
+  { to: '/portal', label: 'Ideas portal', icon: MessagesSquare },
 ];
 
 const WIKI_NAV: NavItem[] = [{ to: '/wiki', label: 'Wiki', icon: BookOpen }];
@@ -140,6 +150,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
       <ScrollArea className="flex-1">
         <NavSection title="Project" items={PROJECT_NAV} onNavigate={onNavigate} />
+        <Separator className="my-2" />
+        <NavSection title="Product" items={PRODUCT_NAV} onNavigate={onNavigate} />
         {isAdmin(user?.role) && (
           <>
             <Separator className="my-2" />
@@ -150,40 +162,6 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         <NavSection title="Knowledge" items={WIKI_NAV} onNavigate={onNavigate} />
       </ScrollArea>
     </div>
-  );
-}
-
-function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
-  const { patch } = useSettings();
-  const Icon = theme === 'dark' ? Moon : theme === 'light' ? Sun : Monitor;
-
-  // Sign-in treats the account's saved theme as the source of truth, so a
-  // localStorage-only change here would revert on the next load.
-  const choose = (t: 'light' | 'dark' | 'system') => {
-    setTheme(t);
-    void patch({ theme: t });
-  };
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label="Change theme">
-          <Icon className="size-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onSelect={() => choose('light')} className="gap-2">
-          <Sun className="size-4" /> Light {theme === 'light' && <span className="ml-auto text-xs text-primary">•</span>}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => choose('dark')} className="gap-2">
-          <Moon className="size-4" /> Dark {theme === 'dark' && <span className="ml-auto text-xs text-primary">•</span>}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => choose('system')} className="gap-2">
-          <Monitor className="size-4" /> System {theme === 'system' && <span className="ml-auto text-xs text-primary">•</span>}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 
@@ -202,6 +180,14 @@ function NotificationBell() {
     const t = setInterval(refreshCount, 60_000);
     return () => clearInterval(t);
   }, [refreshCount]);
+
+  // Live: bump the unread count the instant the server pushes a notification.
+  useLiveEvents((e) => {
+    if (e.type === 'notification') {
+      refreshCount();
+      if (open) api.notifications.list().then(setItems).catch(() => undefined);
+    }
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -354,7 +340,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           <div className="flex-1" />
           <NotificationBell />
-          <ThemeToggle />
           <UserMenu />
         </header>
 

@@ -244,78 +244,111 @@
 
 /* ===== Wiki prose =====
    Wiki bodies are user-authored HTML with no classes of their own, so element
-   selectors are the only hook available. Scoped to .wiki-prose so it never leaks. */
+   selectors are the only hook available. Scoped to .wiki-prose so it never leaks.
+   Tuned for long-form reading: a comfortable measure, a clear type scale, and
+   quiet chrome on code/tables/quotes. */
 .wiki-prose {
   color: var(--foreground);
   font-size: 0.9375rem;
-  line-height: 1.7;
+  line-height: 1.75;
+  overflow-wrap: break-word;
 }
 .wiki-prose > :first-child { margin-top: 0; }
 .wiki-prose > :last-child { margin-bottom: 0; }
 .wiki-prose h1,
 .wiki-prose h2,
 .wiki-prose h3,
-.wiki-prose h4 {
-  font-weight: 600;
+.wiki-prose h4,
+.wiki-prose h5,
+.wiki-prose h6 {
+  font-weight: 650;
   line-height: 1.3;
-  letter-spacing: -0.01em;
-  margin: 1.5em 0 0.5em;
+  letter-spacing: -0.012em;
+  color: var(--foreground);
+  scroll-margin-top: 5rem; /* so TOC anchors don't hide under the sticky header */
 }
-.wiki-prose h1 { font-size: 1.75rem; }
-.wiki-prose h2 { font-size: 1.375rem; }
-.wiki-prose h3 { font-size: 1.125rem; }
-.wiki-prose h4 { font-size: 1rem; }
-.wiki-prose p { margin: 0.75em 0; }
+.wiki-prose h1 { font-size: 1.875rem; margin: 1.6em 0 0.55em; }
+.wiki-prose h2 { font-size: 1.4rem; margin: 1.8em 0 0.5em; padding-bottom: 0.3em; border-bottom: 1px solid var(--border-light); }
+.wiki-prose h3 { font-size: 1.15rem; margin: 1.6em 0 0.45em; }
+.wiki-prose h4 { font-size: 1rem; margin: 1.4em 0 0.4em; }
+.wiki-prose h5, .wiki-prose h6 { font-size: 0.875rem; margin: 1.2em 0 0.35em; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted-foreground); }
+.wiki-prose h2 + *, .wiki-prose h3 + * { margin-top: 0.35em; }
+.wiki-prose p { margin: 0.85em 0; }
 .wiki-prose a {
   color: var(--primary);
   text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--primary) 35%, transparent);
   text-underline-offset: 2px;
+  transition: text-decoration-color 0.12s ease;
 }
-.wiki-prose a:hover { color: var(--primary-hover); }
+.wiki-prose a:hover { color: var(--primary-hover); text-decoration-color: currentColor; }
 .wiki-prose ul,
-.wiki-prose ol { margin: 0.75em 0; padding-left: 1.5em; }
+.wiki-prose ol { margin: 0.85em 0; padding-left: 1.5em; }
 .wiki-prose ul { list-style: disc; }
 .wiki-prose ol { list-style: decimal; }
-.wiki-prose li { margin: 0.25em 0; }
+.wiki-prose li { margin: 0.3em 0; padding-left: 0.2em; }
+.wiki-prose li::marker { color: var(--faint); }
+.wiki-prose ul ul, .wiki-prose ol ol, .wiki-prose ul ol, .wiki-prose ol ul { margin: 0.3em 0; }
 .wiki-prose blockquote {
-  border-left: 3px solid var(--border);
-  padding-left: 1em;
-  margin: 1em 0;
-  color: var(--muted-foreground);
+  border-left: 3px solid var(--primary);
+  background: var(--primary-muted);
+  padding: 0.5em 1em;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  margin: 1.1em 0;
+  color: var(--surface-foreground);
 }
+.wiki-prose blockquote > :first-child { margin-top: 0; }
+.wiki-prose blockquote > :last-child { margin-bottom: 0; }
 .wiki-prose code {
   background: var(--muted);
-  padding: 0.125em 0.35em;
+  border: 1px solid var(--border-light);
+  padding: 0.1em 0.35em;
   border-radius: var(--radius-sm);
   font-size: 0.85em;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 .wiki-prose pre {
-  background: var(--muted);
-  padding: 0.875em 1em;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 0.9em 1.1em;
   border-radius: var(--radius-md);
   overflow-x: auto;
-  margin: 1em 0;
+  margin: 1.1em 0;
+  line-height: 1.6;
+  font-size: 0.85em;
 }
-.wiki-prose pre code { background: none; padding: 0; }
+.wiki-prose pre code { background: none; border: 0; padding: 0; font-size: 1em; }
 .wiki-prose table {
   width: 100%;
   border-collapse: collapse;
-  margin: 1em 0;
+  margin: 1.2em 0;
   font-size: 0.875rem;
   display: block;
   overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
 }
 .wiki-prose th,
 .wiki-prose td {
-  border: 1px solid var(--border);
-  padding: 0.5em 0.75em;
+  border-bottom: 1px solid var(--border-light);
+  border-right: 1px solid var(--border-light);
+  padding: 0.55em 0.85em;
   text-align: left;
+  vertical-align: top;
 }
-.wiki-prose th { background: var(--muted); font-weight: 600; }
-.wiki-prose hr { border: 0; border-top: 1px solid var(--border); margin: 1.5em 0; }
-.wiki-prose img { max-width: 100%; height: auto; border-radius: var(--radius-md); }
+.wiki-prose tr:last-child td { border-bottom: 0; }
+.wiki-prose th:last-child, .wiki-prose td:last-child { border-right: 0; }
+.wiki-prose th { background: var(--surface); font-weight: 600; color: var(--surface-foreground); }
+.wiki-prose tbody tr:nth-child(even) { background: color-mix(in srgb, var(--surface) 45%, transparent); }
+.wiki-prose hr { border: 0; border-top: 1px solid var(--border); margin: 2em 0; }
+.wiki-prose img { max-width: 100%; height: auto; border-radius: var(--radius-md); border: 1px solid var(--border-light); }
+.wiki-prose mark { background: color-mix(in srgb, var(--warning) 30%, transparent); border-radius: 2px; padding: 0 0.15em; }
 .wiki-prose:empty::before {
   content: 'Start writing…';
   color: var(--faint);
 }
+/* Auto table-of-contents ([toc] macro and the right-rail share this hook). */
+.wiki-prose .wiki-toc ul { margin: 0.5em 0 0; padding-left: 0; list-style: none; }
+.wiki-prose .wiki-toc li { margin: 0.15em 0; }
+.wiki-prose .wiki-toc a { display: block; color: var(--muted-foreground); text-decoration: none; font-size: 0.85rem; padding: 0.1em 0; }
+.wiki-prose .wiki-toc a:hover { color: var(--primary); }

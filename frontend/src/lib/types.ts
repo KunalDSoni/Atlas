@@ -70,6 +70,29 @@ export interface Sprint {
   done_points: number;
 }
 
+/** Compact issue state for wiki chips — what a hover card shows. */
+export interface LinkedIssueSummary {
+  id: string;
+  issue_key: string;
+  title: string;
+  status: IssueStatus;
+  type: string;
+  priority: string;
+  assignee_name: string | null;
+  assignee_color: string | null;
+}
+
+/** A wiki page that mentions an issue, for the issue's back-link panel. */
+export interface MentioningPage {
+  id: string;
+  title: string;
+  slug: string;
+  space_id: string;
+  space_name: string;
+  space_key: string;
+  updated_at: string;
+}
+
 export interface Issue {
   id: string;
   project_id: string;
@@ -116,6 +139,7 @@ export interface Issue {
   fix_version_status: string | null;
   component_name: string | null;
   labels_parsed: string[];
+  custom_fields?: CustomField[];
 }
 
 /**
@@ -409,6 +433,56 @@ export interface WikiPage {
   space_name?: string;
   space_key?: string;
   space_icon?: string;
+  /** Issues this page mentions, resolved server-side at write time. */
+  linked_issues?: LinkedIssueSummary[];
+  breadcrumb?: { id: string; title: string }[];
+  children?: { id: string; title: string; slug: string; status: string }[];
+}
+
+export type CustomFieldType = 'text' | 'number' | 'select' | 'date' | 'checkbox';
+
+export interface CustomField {
+  id: string;
+  field_id?: string; // present on enriched issue values
+  project_id?: string;
+  name: string;
+  field_type: CustomFieldType;
+  options: string[];
+  position: number;
+  value?: string | null; // present on enriched issue values
+}
+
+export interface ApiToken {
+  id: string;
+  name: string;
+  prefix: string;
+  last_used_at: string | null;
+  created_at: string;
+  token?: string; // only present in the create response
+}
+
+export interface Webhook {
+  id: string;
+  project_id: string;
+  url: string;
+  events: string[];
+  enabled: number;
+  last_status: number | null;
+  last_delivered_at: string | null;
+  created_at: string;
+  secret?: string; // only present in the create response
+}
+
+export interface WikiAttachment {
+  id: string;
+  page_id: string;
+  original_name: string;
+  mime_type: string | null;
+  size: number | null;
+  raw_url: string;
+  is_image: boolean;
+  uploader_name: string | null;
+  created_at: string;
 }
 
 export interface WikiTreeNode {
@@ -479,4 +553,161 @@ export interface IssueLink {
   target_status: IssueStatus;
   target_type: IssueType;
   created_by_name?: string | null;
+}
+
+// ===== Product module (Productboard parity) =====
+
+export type CompanyTier = 'strategic' | 'growth' | 'standard';
+export type InsightSource = 'portal' | 'email' | 'support' | 'sales' | 'interview' | 'other';
+export type FeatureStatus = 'idea' | 'discovery' | 'planned' | 'in_progress' | 'launched' | 'archived';
+export type Timeframe = 'now' | 'next' | 'later';
+export type PortalStatus = 'under_consideration' | 'planned' | 'launched';
+export type ObjectiveStatus = 'on_track' | 'at_risk' | 'off_track' | 'done';
+
+export interface PbCompany {
+  id: string;
+  name: string;
+  tier: CompanyTier;
+  arr: number | null;
+  notes: string | null;
+  created_at: string;
+  customer_count?: number;
+  insight_count?: number;
+}
+
+export interface PbCustomer {
+  id: string;
+  name: string;
+  email: string | null;
+  company_id: string | null;
+  created_at: string;
+  company_name?: string | null;
+  company_tier?: CompanyTier | null;
+  insight_count?: number;
+}
+
+export interface PbInsight {
+  id: string;
+  title: string;
+  content: string | null;
+  source: InsightSource;
+  customer_id: string | null;
+  created_by: string | null;
+  processed: number;
+  created_at: string;
+  customer_name?: string | null;
+  customer_email?: string | null;
+  company_name?: string | null;
+  company_tier?: CompanyTier | null;
+  created_by_name?: string | null;
+  feature_count?: number;
+  features?: PbInsightFeatureLink[];
+}
+
+export interface PbInsightFeatureLink {
+  link_id: string;
+  importance: number;
+  quote: string | null;
+  id: string;
+  name: string;
+  status: FeatureStatus;
+  timeframe: Timeframe | null;
+}
+
+export interface PbFeature {
+  id: string;
+  project_id: string | null;
+  name: string;
+  description: string | null;
+  status: FeatureStatus;
+  timeframe: Timeframe | null;
+  portal_status: PortalStatus | null;
+  owner_id: string | null;
+  effort: number | null;
+  value: number | null;
+  reach: number | null;
+  impact: number | null;
+  confidence: number | null;
+  release_id: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  owner_name?: string | null;
+  project_name?: string | null;
+  project_key?: string | null;
+  release_name?: string | null;
+  user_impact: number;
+  insight_count: number;
+  vote_count: number;
+  delivery_total: number;
+  delivery_done: number;
+  rice: number | null;
+  insights?: PbFeatureInsight[];
+  issues?: PbFeatureIssue[];
+  objectives?: PbFeatureObjective[];
+}
+
+export interface PbFeatureInsight {
+  link_id: string;
+  importance: number;
+  quote: string | null;
+  id: string;
+  title: string;
+  content: string | null;
+  source: InsightSource;
+  customer_name?: string | null;
+  company_name?: string | null;
+  company_tier?: CompanyTier | null;
+}
+
+export interface PbFeatureIssue {
+  link_id: string;
+  id: string;
+  issue_key: string;
+  title: string;
+  status: string;
+  type: IssueType;
+  project_id: string;
+  is_done: number;
+}
+
+export interface PbFeatureObjective {
+  link_id: string;
+  id: string;
+  name: string;
+  status: ObjectiveStatus;
+  target_date: string | null;
+}
+
+export interface PbObjective {
+  id: string;
+  name: string;
+  description: string | null;
+  status: ObjectiveStatus;
+  target_date: string | null;
+  owner_id: string | null;
+  created_at: string;
+  owner_name?: string | null;
+  feature_count: number;
+  launched_count: number;
+  features?: PbObjectiveFeature[];
+}
+
+export interface PbObjectiveFeature {
+  link_id: string;
+  id: string;
+  name: string;
+  status: FeatureStatus;
+  timeframe: Timeframe | null;
+  delivery_total: number;
+  delivery_done: number;
+}
+
+export interface PortalFeature {
+  id: string;
+  name: string;
+  description: string | null;
+  portal_status: PortalStatus;
+  vote_count: number;
+  has_voted: boolean;
 }

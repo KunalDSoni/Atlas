@@ -1,12 +1,15 @@
+import { useEffect, useState } from 'react';
+import { Info } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useTheme } from '@/context/theme-provider';
 import { useSettings } from '@/hooks/use-settings';
+import { api } from '@/lib/api';
 import type { Settings } from '@/lib/types';
 import { ErrorState, PageHeader, RowsSkeleton } from '@/components/app/primitives';
+import { DeveloperSettings } from '@/components/app/developer-settings';
 
 const NOTIFICATION_TOGGLES: { key: keyof Settings; label: string; hint: string }[] = [
   { key: 'email_notifications', label: 'Email notifications', hint: 'Receive updates by email.' },
@@ -18,10 +21,11 @@ const NOTIFICATION_TOGGLES: { key: keyof Settings; label: string; hint: string }
 ];
 
 export default function SettingsScreen() {
-  const { theme, setTheme } = useTheme();
   // Shared with the rest of the app, so these controls actually take effect.
   const { settings, loading, patch } = useSettings();
   const error = !loading && !settings ? 'Failed to load settings' : null;
+  const [emailConfigured, setEmailConfigured] = useState<boolean | null>(null);
+  useEffect(() => { api.settings.emailStatus().then((s) => setEmailConfigured(s.email_configured)).catch(() => setEmailConfigured(null)); }, []);
 
   if (loading) {
     return (
@@ -50,29 +54,6 @@ export default function SettingsScreen() {
             <CardTitle className="text-sm font-semibold">Appearance</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <Label>Theme</Label>
-                <p className="mt-0.5 text-xs text-muted-foreground">Saved to your account and applied wherever you sign in.</p>
-              </div>
-              <Select
-                value={theme}
-                onValueChange={(v) => {
-                  setTheme(v as 'light' | 'dark' | 'system');
-                  void patch({ theme: v });
-                }}
-              >
-                <SelectTrigger className="w-36" aria-label="Theme"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="light">Light</SelectItem>
-                  <SelectItem value="dark">Dark</SelectItem>
-                  <SelectItem value="system">System</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Separator />
-
             <div className="flex items-center justify-between gap-4">
               <div>
                 <Label htmlFor="compact">Compact view</Label>
@@ -112,6 +93,12 @@ export default function SettingsScreen() {
             <CardTitle className="text-sm font-semibold">Notifications</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {emailConfigured === false && (
+              <div className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
+                <Info className="mt-0.5 size-3.5 shrink-0" />
+                <span>Email delivery isn't configured on this server, so email toggles have no effect yet. In-app notifications still work. Set <code>SMTP_HOST</code> (or <code>SMTP_URL</code>) to enable email.</span>
+              </div>
+            )}
             {NOTIFICATION_TOGGLES.map((t, i) => (
               <div key={t.key}>
                 {i > 0 && <Separator className="mb-4" />}
@@ -130,6 +117,8 @@ export default function SettingsScreen() {
             ))}
           </CardContent>
         </Card>
+
+        <DeveloperSettings />
       </div>
     </>
   );

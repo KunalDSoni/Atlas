@@ -9,17 +9,36 @@ const { v4: uuidv4 } = require('uuid');
 const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
+const { parseJql, isJqlLike } = require('../utils/jql');
 
 const router = express.Router();
 
 // GET /api/search?q=&project_id=
+// Two modes: a plain-text LIKE search, or a JQL-lite structured query when the
+// text contains an operator (e.g. `status = done AND assignee = me`). JQL-lite
+// searches issues only; wiki pages are returned only for text queries.
 router.get('/search', requireAuth, async (req, res) => {
   try {
     const q = (req.query.q || '').trim();
     if (q.length < 2) return res.json({ issues: [], pages: [] });
     const db = await getDb();
-    const like = `%${q}%`;
 
+    if (isJqlLike(q)) {
+      const parsed = parseJql(q, req.userId);
+      if (parsed.error) return res.status(400).json({ error: parsed.error, jql: true });
+      const clauses = [parsed.where];
+      const params = [...parsed.params];
+      if (req.query.project_id) { clauses.push('i.project_id = ?'); params.push(req.query.project_id); }
+      const issues = await queryAll(db, `
+        SELECT i.id, i.issue_key, i.title, i.type, i.status, i.priority, i.project_id,
+               p.key AS project_key, p.name AS project_name
+        FROM issues i JOIN projects p ON p.id = i.project_id
+        WHERE ${clauses.join(' AND ')}
+        ORDER BY i.updated_at DESC LIMIT 50`, params);
+      return res.json({ issues, pages: [], jql: true });
+    }
+
+    const like = `%${q}%`;
     let issueQuery = `
       SELECT i.id, i.issue_key, i.title, i.type, i.status, i.priority, i.project_id,
              p.key AS project_key, p.name AS project_name

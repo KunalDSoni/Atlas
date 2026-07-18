@@ -42,6 +42,37 @@ const config = {
     password: process.env.ADMIN_PASSWORD || 'changeme123',
   },
 
+  // AI (Rovo-style wiki assistant). Powered by the Anthropic API — the key
+  // stays server-side; the frontend only ever talks to our /api/ai/* proxy.
+  //
+  // Per-feature models: cheap/fast where volume is high and the task is simple
+  // (summaries), mid-tier for quality writing, top-tier for multi-doc reasoning
+  // (ask). ANTHROPIC_MODEL, if set, overrides all three; each is also
+  // individually overridable via its own env var.
+  ai: {
+    apiKey: process.env.ANTHROPIC_API_KEY || null,
+    enabled: () => Boolean(process.env.ANTHROPIC_API_KEY),
+    models: {
+      summary: process.env.ANTHROPIC_MODEL || process.env.AI_SUMMARY_MODEL || 'claude-haiku-4-5',
+      write: process.env.ANTHROPIC_MODEL || process.env.AI_WRITE_MODEL || 'claude-sonnet-5',
+      ask: process.env.ANTHROPIC_MODEL || process.env.AI_ASK_MODEL || 'claude-opus-4-8',
+    },
+  },
+
+  // Email (outbound notification delivery). Gated on SMTP config the same way
+  // AI is gated on a key: unconfigured → a no-op, so the app is unchanged.
+  email: {
+    url: process.env.SMTP_URL || null,
+    host: process.env.SMTP_HOST || null,
+    port: parseInt(process.env.SMTP_PORT, 10) || 587,
+    secure: (process.env.SMTP_SECURE || 'false').toLowerCase() === 'true',
+    user: process.env.SMTP_USER || null,
+    pass: process.env.SMTP_PASS || null,
+    from: process.env.SMTP_FROM || 'Atlas <no-reply@atlas.local>',
+    appUrl: process.env.APP_URL || 'http://localhost:3001',
+    enabled: () => Boolean(process.env.SMTP_URL || process.env.SMTP_HOST),
+  },
+
   // Helpers
   isDev: () => config.env === 'development',
   isProd: () => config.env === 'production',

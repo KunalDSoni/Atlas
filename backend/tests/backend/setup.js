@@ -76,6 +76,17 @@ async function createTestApp() {
   testApp.use('/api', require('../../routes/releases'));
   testApp.use('/api', require('../../routes/workflows'));
   testApp.use('/api', require('../../routes/automations'));
+  testApp.use('/api', require('../../routes/product-companies'));
+  testApp.use('/api', require('../../routes/product-insights'));
+  testApp.use('/api', require('../../routes/product-features'));
+  testApp.use('/api', require('../../routes/product-objectives'));
+  testApp.use('/api', require('../../routes/portal'));
+  testApp.use('/api', require('../../routes/ai'));
+  testApp.use('/api', require('../../routes/wiki-attachments'));
+  testApp.use('/api', require('../../routes/tokens'));
+  testApp.use('/api', require('../../routes/webhooks'));
+  testApp.use('/api', require('../../routes/stream'));
+  testApp.use('/api', require('../../routes/custom-fields'));
 
   app = testApp;
   return testApp;

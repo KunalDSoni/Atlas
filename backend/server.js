@@ -6,9 +6,10 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const { initDb } = require('./database');
+const { initDb, getDb, queryOne } = require('./database');
 const { authMiddleware } = require('./middleware/auth');
 const { requestLogger } = require('./middleware/logger');
+const { apiRateLimit } = require('./middleware/ratelimit');
 
 // Route modules
 const authRoutes = require('./routes/auth');
@@ -33,6 +34,17 @@ const worklogsRoutes = require('./routes/worklogs');
 const releasesRoutes = require('./routes/releases');
 const workflowsRoutes = require('./routes/workflows');
 const automationsRoutes = require('./routes/automations');
+const productCompaniesRoutes = require('./routes/product-companies');
+const productInsightsRoutes = require('./routes/product-insights');
+const productFeaturesRoutes = require('./routes/product-features');
+const productObjectivesRoutes = require('./routes/product-objectives');
+const portalRoutes = require('./routes/portal');
+const aiRoutes = require('./routes/ai');
+const wikiAttachmentsRoutes = require('./routes/wiki-attachments');
+const tokensRoutes = require('./routes/tokens');
+const webhooksRoutes = require('./routes/webhooks');
+const streamRoutes = require('./routes/stream');
+const customFieldsRoutes = require('./routes/custom-fields');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -67,12 +79,30 @@ app.use(express.json({ limit: '1mb' }));
 app.use(authMiddleware);
 app.use(requestLogger);
 
+// Health checks (no auth) — liveness and a DB-backed readiness probe.
+const startedAt = Date.now();
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', uptime_s: Math.round((Date.now() - startedAt) / 1000) });
+});
+app.get('/api/health/ready', async (req, res) => {
+  try {
+    const db = await getDb();
+    await queryOne(db, 'SELECT 1 AS ok');
+    res.json({ status: 'ready', db: 'ok' });
+  } catch (e) {
+    res.status(503).json({ status: 'not_ready', error: e.message });
+  }
+});
+
 // Serve frontend
 app.use(express.static(path.join(__dirname, '..', 'frontend', 'build')));
 
 // ===== API ROUTES (by module) =====
 
 // Auth Module — login, logout, me
+// Coarse per-IP throttle across the API (stream + health exempt).
+app.use('/api', apiRateLimit);
+
 app.use('/api/auth', authRoutes);
 
 // Users Module — CRUD for user management (admin)
@@ -143,6 +173,30 @@ app.use('/api', workflowsRoutes);
 
 // Automation Rules Module
 app.use('/api', automationsRoutes);
+
+// Product Module (Productboard parity) — companies/customers, insights,
+// features + prioritization, objectives, and the customer-facing idea portal
+app.use('/api', productCompaniesRoutes);
+app.use('/api', productInsightsRoutes);
+app.use('/api', productFeaturesRoutes);
+app.use('/api', productObjectivesRoutes);
+app.use('/api', portalRoutes);
+
+// AI assistant (Rovo-style): summarize, write, ask-your-wiki
+app.use('/api', aiRoutes);
+
+// Wiki page attachments + inline images
+app.use('/api', wikiAttachmentsRoutes);
+
+// Personal API tokens + outbound webhooks
+app.use('/api', tokensRoutes);
+app.use('/api', webhooksRoutes);
+
+// Real-time event stream (SSE)
+app.use('/api', streamRoutes);
+
+// Per-project custom fields
+app.use('/api', customFieldsRoutes);
 
 // SPA fallback (Express 5 compatible)
 app.get('/{*splat}', (req, res) => {

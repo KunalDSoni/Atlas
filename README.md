@@ -44,6 +44,7 @@ atlas/
 ├── backend/
 │   ├── server.js           # Express server (modular route imports)
 │   ├── database.js         # SQLite schema + seed data
+│   ├── migrations.js       # Ordered schema migrations (sqlite + mysql)
 │   ├── package.json
 │   ├── middleware/
 │   │   └── auth.js         # Auth middleware (session token only)
@@ -157,6 +158,16 @@ atlas/
 - **Backend**: Node.js + Express 5
 - **Database**: sql.js (SQLite) for local dev, MySQL for production — set `DB_DRIVER`
 - **Auth**: Session tokens (`x-auth-token`), scrypt-hashed passwords
+
+## Schema changes
+
+The baseline tables live in `SCHEMA_SQL` / `MYSQL_SCHEMA_SQL` in `backend/database.js`.
+Everything after that goes in `backend/migrations.js` as a new entry appended to the
+`MIGRATIONS` array — never edit or reorder an id that has already shipped.
+
+Each migration declares both a `sqlite` and a `mysql` form and runs once, tracked in
+the `schema_migrations` table. The runner applies pending migrations automatically on
+startup, so you no longer need to delete `data.db` when the schema changes.
 
 ## Security
 

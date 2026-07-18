@@ -1,37 +1,45 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  ArrowLeft, Clock, Download, Eye, Heart, History, Loader2, Lock, Pencil, Plus, Quote, Send, Trash2, X,
+  Clock, Download, Eye, FileText, Heart, History, Loader2, Lock, MoreHorizontal,
+  Paperclip, Pencil, Plus, Quote, Send, Sparkles, Trash2, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import {
-  Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger,
+  Sheet, SheetContent, SheetHeader, SheetTitle,
 } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
-  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
 import { isAdmin } from '@/lib/domain';
-import type { User, WikiComment, WikiPage, WikiRestriction, WikiTreeNode, WikiVersion } from '@/lib/types';
+import type { User, WikiAttachment, WikiComment, WikiPage, WikiRestriction, WikiTreeNode, WikiVersion } from '@/lib/types';
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ErrorState, LabelChip, RowsSkeleton, UserAvatar } from '@/components/app/primitives';
-import { RichTextEditor, RichTextView } from '@/components/app/rich-text';
+import { RichTextEditor, RichTextView, extractHeadings } from '@/components/app/rich-text';
 import { WikiTree } from '@/components/app/wiki-tree';
+import { WikiBreadcrumb, OnThisPage, type Crumb } from '@/components/app/wiki-doc';
+import { useAIEnabled } from '@/hooks/use-ai';
 import { CreatePageDialog } from './wiki-space';
 import { timeAgo } from '@/lib/format';
+
+/** Rough reading time from the page body text. */
+function readingTime(html: string): number {
+  const words = html.replace(/<[^>]+>/g, ' ').trim().split(/\s+/).filter(Boolean).length;
+  return Math.max(1, Math.round(words / 200));
+}
 
 function VersionHistory({ pageId }: { pageId: string }) {
   const [versions, setVersions] = useState<WikiVersion[] | null>(null);
@@ -71,6 +79,7 @@ export default function WikiPageScreen() {
   const [page, setPage] = useState<WikiPage | null>(null);
   const [tree, setTree] = useState<WikiTreeNode[]>([]);
   const [comments, setComments] = useState<WikiComment[]>([]);
+  const [attachments, setAttachments] = useState<WikiAttachment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -87,6 +96,11 @@ export default function WikiPageScreen() {
   const [restrictOpen, setRestrictOpen] = useState(false);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [restrictions, setRestrictions] = useState<Map<string, boolean>>(new Map());
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const aiEnabled = useAIEnabled();
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [summarizing, setSummarizing] = useState(false);
 
   const load = useCallback(async () => {
     if (!pageId) return;
@@ -97,14 +111,16 @@ export default function WikiPageScreen() {
       setPage(p);
       setDraftTitle(p.title);
       setDraftBody(p.body);
-      const [t, c, w] = await Promise.all([
+      const [t, c, w, a] = await Promise.all([
         api.wiki.tree(p.space_id).catch(() => []),
         api.wiki.comments(p.id).catch(() => []),
         api.wiki.watchState(p.id).catch(() => ({ count: 0, watching: false })),
+        api.wiki.attachments(p.id).catch(() => []),
       ]);
       setTree(t);
       setComments(c);
       setWatching(w.watching);
+      setAttachments(a);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load page');
     } finally {
@@ -115,7 +131,21 @@ export default function WikiPageScreen() {
   useEffect(() => {
     void load();
     setEditing(false);
+    setAiSummary(null);
   }, [load]);
+
+  async function summarize() {
+    if (!page) return;
+    setSummarizing(true);
+    try {
+      const { summary } = await api.ai.summarize({ page_id: page.id });
+      setAiSummary(summary);
+    } catch (e) {
+      toast.error('Could not summarize', { description: e instanceof Error ? e.message : undefined });
+    } finally {
+      setSummarizing(false);
+    }
+  }
 
   async function save() {
     if (!page) return;
@@ -235,218 +265,261 @@ export default function WikiPageScreen() {
   if (loading) return <RowsSkeleton count={8} />;
   if (error || !page) return <ErrorState message={error ?? 'Page not found'} onRetry={load} />;
 
+  const canManage = page.author_id === user?.id || isAdmin(user?.role);
+  const headings = editing ? [] : extractHeadings(page.body);
+  const crumbs: Crumb[] = [
+    { label: page.space_name ?? 'Space', to: `/wiki/space/${page.space_id}`, icon: page.space_icon },
+    ...(page.breadcrumb ?? []).map((b) => ({ label: b.title, to: `/wiki/page/${b.id}` })),
+    { label: page.title },
+  ];
+
   return (
-    <div className="grid gap-6 lg:grid-cols-[220px_1fr]">
+    <div className="mx-auto grid max-w-[1440px] gap-x-8 gap-y-6 lg:grid-cols-[236px_minmax(0,1fr)] xl:grid-cols-[236px_minmax(0,1fr)_200px]">
       <aside className="hidden lg:block">
-        <Button asChild variant="ghost" size="sm" className="mb-2 -ml-2 w-full justify-start text-muted-foreground">
-          <Link to={`/wiki/space/${page.space_id}`}>
-            <ArrowLeft className="size-4" /> {page.space_name ?? 'Space'}
+        <div className="sticky top-6">
+          <Link
+            to={`/wiki/space/${page.space_id}`}
+            className="mb-3 flex items-center gap-2 rounded-md px-1.5 py-1 text-sm font-medium hover:bg-muted"
+          >
+            <span className="grid size-6 shrink-0 place-items-center rounded text-sm">{page.space_icon || '📘'}</span>
+            <span className="truncate">{page.space_name ?? 'Space'}</span>
           </Link>
-        </Button>
-        <WikiTree nodes={tree} activeId={page.id} />
+          <div className="max-h-[calc(100vh-8rem)] overflow-y-auto pr-1">
+            <WikiTree nodes={tree} activeId={page.id} />
+          </div>
+        </div>
       </aside>
 
-      <div className="min-w-0">
-        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            {editing ? (
-              <Input
-                value={draftTitle}
-                onChange={(e) => setDraftTitle(e.target.value)}
-                className="h-auto border-0 px-0 !text-2xl font-semibold shadow-none focus-visible:ring-0"
-                aria-label="Page title"
-              />
-            ) : (
-              <h1 className="text-2xl font-semibold tracking-tight">{page.title}</h1>
-            )}
-            <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+      <article className="min-w-0">
+        <div className="mx-auto max-w-3xl">
+          <WikiBreadcrumb items={crumbs} />
+
+          <header className="mb-5">
+            <div className="flex items-start justify-between gap-4">
+              {editing ? (
+                <Input
+                  value={draftTitle}
+                  onChange={(e) => setDraftTitle(e.target.value)}
+                  className="h-auto border-0 px-0 !text-3xl font-bold tracking-tight shadow-none focus-visible:ring-0"
+                  placeholder="Page title"
+                  aria-label="Page title"
+                />
+              ) : (
+                <h1 className="text-3xl font-bold tracking-tight">{page.title}</h1>
+              )}
+
+              <div className="flex shrink-0 items-center gap-1.5 pt-1">
+                {editing ? (
+                  <>
+                    <Button variant="ghost" size="sm" onClick={() => { setEditing(false); setDraftTitle(page.title); setDraftBody(page.body); }}>
+                      <X className="size-4" /> Cancel
+                    </Button>
+                    <Button size="sm" onClick={save} disabled={saving}>
+                      {saving && <Loader2 className="size-4 animate-spin" />} Save
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button variant="ghost" size="sm" onClick={like} className="gap-1.5 text-muted-foreground" aria-label="Like page">
+                      <Heart className="size-4" /> {page.like_count}
+                    </Button>
+                    {page.can_edit_page !== 0 && (
+                      <Button size="sm" onClick={() => setEditing(true)}>
+                        <Pencil className="size-4" /> Edit
+                      </Button>
+                    )}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" aria-label="More actions">
+                          <MoreHorizontal className="size-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-52">
+                        <DropdownMenuItem onSelect={() => void toggleWatch()}>
+                          <Eye className="size-4" /> {watching ? 'Stop watching' : 'Watch page'}
+                        </DropdownMenuItem>
+                        {aiEnabled && (
+                          <DropdownMenuItem onSelect={() => void summarize()} disabled={summarizing}>
+                            <Sparkles className="size-4" /> Summarize with AI
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem onSelect={() => setCreateChildOpen(true)}>
+                          <Plus className="size-4" /> Add child page
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setHistoryOpen(true)}>
+                          <History className="size-4" /> Version history
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuLabel className="text-xs text-muted-foreground">Export</DropdownMenuLabel>
+                        <DropdownMenuItem onSelect={() => void exportPage('markdown')}>
+                          <Download className="size-4" /> Markdown
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => void exportPage('html')}>
+                          <Download className="size-4" /> HTML
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => window.print()}>
+                          <Download className="size-4" /> Print / PDF
+                        </DropdownMenuItem>
+                        {canManage && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onSelect={() => void openRestrictions()}>
+                              <Lock className="size-4" /> {page.restricted ? 'Edit restrictions' : 'Restrict page'}
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                        {isAdmin(user?.role) && (
+                          <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => setDeleteOpen(true)}>
+                            <Trash2 className="size-4" /> Delete page
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5">
-                <UserAvatar name={page.author_name} color={page.author_color} className="size-4" />
-                {page.author_name}
+                <UserAvatar name={page.author_name} color={page.author_color} className="size-5" />
+                <span className="font-medium text-foreground">{page.author_name}</span>
               </span>
-              <span className="flex items-center gap-1">
-                <Clock className="size-3" /> {timeAgo(page.updated_at)}
-              </span>
+              <span className="text-faint">·</span>
+              <span className="flex items-center gap-1"><Clock className="size-3.5" /> Updated {timeAgo(page.updated_at)}</span>
+              <span className="text-faint">·</span>
+              <span>{readingTime(page.body)} min read</span>
+              <span className="text-faint">·</span>
+              <span className="flex items-center gap-1"><Eye className="size-3.5" /> {page.view_count}</span>
+              <span className="text-faint">·</span>
               <span>v{page.version}</span>
-              <span className="flex items-center gap-1">
-                <Eye className="size-3" /> {page.view_count}
-              </span>
-            </p>
+              {page.restricted ? (
+                <>
+                  <span className="text-faint">·</span>
+                  <span className="flex items-center gap-1 text-warning"><Lock className="size-3.5" /> Restricted</span>
+                </>
+              ) : null}
+            </div>
+
             {page.labels?.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1">
+              <div className="mt-2.5 flex flex-wrap gap-1">
                 {page.labels.map((l) => (
                   <LabelChip key={l}>{l}</LabelChip>
                 ))}
               </div>
             )}
-          </div>
+          </header>
 
-          <div className="flex shrink-0 items-center gap-1">
-            {editing ? (
-              <>
-                <Button variant="ghost" size="sm" onClick={() => { setEditing(false); setDraftTitle(page.title); setDraftBody(page.body); }}>
-                  <X className="size-4" /> Cancel
-                </Button>
-                <Button size="sm" onClick={save} disabled={saving}>
-                  {saving && <Loader2 className="size-4 animate-spin" />} Save
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button variant="ghost" size="sm" onClick={like} className="gap-1.5">
-                  <Heart className="size-4" /> {page.like_count}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={toggleWatch}
-                  className="gap-1.5"
-                  aria-pressed={watching}
-                >
-                  <Eye className="size-4" /> {watching ? 'Watching' : 'Watch'}
-                </Button>
-                {(page.author_id === user?.id || isAdmin(user?.role)) && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={openRestrictions}
-                    className={page.restricted ? 'gap-1.5 text-warning' : 'gap-1.5'}
-                  >
-                    <Lock className="size-4" /> {page.restricted ? 'Restricted' : 'Restrict'}
+          {(summarizing || aiSummary) && !editing && (
+            <div className="mb-5 rounded-lg border border-primary/30 bg-primary/5 p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-sm font-semibold text-primary">
+                  <Sparkles className="size-4" /> AI summary
+                </span>
+                {aiSummary && (
+                  <Button variant="ghost" size="icon" className="size-6 text-muted-foreground" onClick={() => setAiSummary(null)} aria-label="Dismiss summary">
+                    <X className="size-3.5" />
                   </Button>
                 )}
-
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" aria-label="Export page" title="Export page">
-                      <Download className="size-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onSelect={() => void exportPage('markdown')}>
-                      Export as Markdown
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => void exportPage('html')}>
-                      Export as HTML
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => window.print()}>
-                      Print / PDF
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-
-                <Sheet>
-                  <SheetTrigger asChild>
-                    <Button variant="ghost" size="icon" aria-label="Version history">
-                      <History className="size-4" />
-                    </Button>
-                  </SheetTrigger>
-                  <SheetContent side="right" className="w-full sm:max-w-sm">
-                    <SheetHeader>
-                      <SheetTitle>Version history</SheetTitle>
-                    </SheetHeader>
-                    <div className="px-4 pb-4">
-                      <VersionHistory pageId={page.id} />
-                    </div>
-                  </SheetContent>
-                </Sheet>
-
-                <Button variant="ghost" size="icon" onClick={() => setCreateChildOpen(true)} aria-label="Add child page">
-                  <Plus className="size-4" />
-                </Button>
-
-                {isAdmin(user?.role) && (
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button variant="ghost" size="icon" className="text-destructive" aria-label="Delete page">
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Delete “{page.title}”?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          This permanently deletes the page and its comments. This cannot be undone.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                          onClick={removePage}
-                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                        >
-                          Delete page
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                )}
-
-                {page.can_edit_page !== 0 && (
-                  <Button size="sm" onClick={() => setEditing(true)}>
-                    <Pencil className="size-4" /> Edit
-                  </Button>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-
-        {editing ? (
-          <RichTextEditor value={draftBody} onChange={setDraftBody} />
-        ) : (
-          <Card>
-            <CardContent className="px-6 py-5">
-              {page.body ? (
-                <RichTextView html={page.body} macros />
+              </div>
+              {summarizing ? (
+                <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Summarizing…</p>
               ) : (
-                <p className="py-8 text-center text-sm text-muted-foreground">
-                  This page is empty. Click Edit to add content.
-                </p>
+                <ul className="space-y-1 text-sm">
+                  {aiSummary!.split('\n').map((l) => l.replace(/^[-*]\s*/, '').trim()).filter(Boolean).map((line, i) => (
+                    <li key={i} className="flex gap-2"><span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary/60" /><span>{line}</span></li>
+                  ))}
+                </ul>
               )}
-            </CardContent>
-          </Card>
-        )}
-
-        <Separator className="my-6" />
-
-        <section>
-          <h2 className="mb-3 text-sm font-semibold">Comments ({comments.length})</h2>
-          {quote && (
-            <div className="mb-2 flex items-start gap-2 rounded-md border-l-2 border-primary bg-primary/5 px-3 py-2">
-              <Quote className="mt-0.5 size-3.5 shrink-0 text-primary" />
-              <p className="min-w-0 flex-1 text-sm italic text-muted-foreground">{quote}</p>
-              <Button variant="ghost" size="icon" className="size-6" onClick={() => setQuote('')} aria-label="Remove quote">
-                <X className="size-3.5" />
-              </Button>
             </div>
           )}
-          <div className="mb-4 flex gap-2">
-            <Textarea
-              value={commentBody}
-              onChange={(e) => setCommentBody(e.target.value)}
-              placeholder={quote ? 'Comment on the selected text…' : 'Add a comment…'}
-              rows={2}
-              className="resize-none"
-            />
-            <div className="flex flex-col gap-1">
-              <Button size="icon" onClick={addComment} disabled={posting || !commentBody.trim()} aria-label="Post comment">
-                {posting ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-              </Button>
+
+          {editing ? (
+            <RichTextEditor value={draftBody} onChange={setDraftBody} pageId={page.id} />
+          ) : page.body ? (
+            <RichTextView html={page.body} macros issues={page.linked_issues} />
+          ) : (
+            <div className="rounded-lg border border-dashed border-border bg-card/50 px-6 py-12 text-center">
+              <FileText className="mx-auto mb-2 size-7 text-faint" />
+              <p className="text-sm font-medium">This page is empty</p>
+              {page.can_edit_page !== 0 && (
+                <Button size="sm" variant="outline" className="mt-3" onClick={() => setEditing(true)}>
+                  <Pencil className="size-4" /> Start writing
+                </Button>
+              )}
+            </div>
+          )}
+
+          {!editing && attachments.length > 0 && (
+            <section className="mt-8">
+              <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold"><Paperclip className="size-4" /> Attachments ({attachments.length})</h2>
+              <ul className="divide-y divide-border-light rounded-lg border border-border">
+                {attachments.map((a) => (
+                  <li key={a.id} className="group flex items-center gap-3 px-3 py-2 text-sm">
+                    {a.is_image
+                      ? <img src={a.raw_url} alt="" className="size-9 shrink-0 rounded object-cover" />
+                      : <FileText className="size-5 shrink-0 text-faint" />}
+                    <a href={a.raw_url} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate hover:underline">{a.original_name}</a>
+                    <span className="shrink-0 text-xs text-muted-foreground">{a.size ? `${Math.max(1, Math.round(a.size / 1024))} KB` : ''}</span>
+                    <button
+                      className="shrink-0 text-muted-foreground opacity-0 transition group-hover:opacity-100"
+                      aria-label="Delete attachment"
+                      onClick={async () => {
+                        try { await api.wiki.removeAttachment(a.id); setAttachments((prev) => prev.filter((x) => x.id !== a.id)); }
+                        catch (e) { toast.error('Delete failed', { description: e instanceof Error ? e.message : undefined }); }
+                      }}
+                    ><Trash2 className="size-3.5" /></button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          <Separator className="my-8" />
+
+          <section>
+          <h2 className="mb-3 text-sm font-semibold">Comments ({comments.length})</h2>
+
+          <div className="mb-6 rounded-lg border border-border bg-card p-3">
+            {quote && (
+              <div className="mb-2 flex items-start gap-2 rounded-md border-l-2 border-primary bg-primary/5 px-3 py-2">
+                <Quote className="mt-0.5 size-3.5 shrink-0 text-primary" />
+                <p className="min-w-0 flex-1 text-sm italic text-muted-foreground">{quote}</p>
+                <Button variant="ghost" size="icon" className="size-6" onClick={() => setQuote('')} aria-label="Remove quote">
+                  <X className="size-3.5" />
+                </Button>
+              </div>
+            )}
+            <div className="flex gap-2.5">
+              <UserAvatar name={user?.name ?? null} color={user?.avatar_color} className="mt-0.5 shrink-0" />
+              <Textarea
+                value={commentBody}
+                onChange={(e) => setCommentBody(e.target.value)}
+                placeholder={quote ? 'Comment on the selected text…' : 'Add a comment…'}
+                rows={2}
+                className="min-h-9 resize-none border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
+              />
+            </div>
+            <div className="mt-2 flex items-center justify-end gap-1.5 border-t border-border-light pt-2">
               <Button
-                size="icon"
-                variant="outline"
+                size="sm"
+                variant="ghost"
                 onClick={quoteSelection}
-                aria-label="Comment on selected text"
-                title="Comment on selected text"
+                className="text-muted-foreground"
+                title="Select page text, then click to quote it"
               >
-                <Quote className="size-4" />
+                <Quote className="size-3.5" /> Quote selection
+              </Button>
+              <Button size="sm" onClick={addComment} disabled={posting || !commentBody.trim()}>
+                {posting ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />} Comment
               </Button>
             </div>
           </div>
 
           {comments.length === 0 ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">No comments yet.</p>
+            <p className="rounded-lg border border-dashed border-border py-6 text-center text-sm text-muted-foreground">
+              No comments yet. Start the discussion.
+            </p>
           ) : (
             <ul className="space-y-4">
               {comments.map((c) => (
@@ -489,8 +562,44 @@ export default function WikiPageScreen() {
               ))}
             </ul>
           )}
-        </section>
+          </section>
+        </div>
+      </article>
+
+      <div className="hidden xl:block">
+        <OnThisPage headings={headings} />
       </div>
+
+      <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-sm">
+          <SheetHeader>
+            <SheetTitle>Version history</SheetTitle>
+          </SheetHeader>
+          <div className="px-4 pb-4">
+            <VersionHistory pageId={page.id} />
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete “{page.title}”?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes the page and its comments. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={removePage}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete page
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={restrictOpen} onOpenChange={setRestrictOpen}>
         <DialogContent className="sm:max-w-md">

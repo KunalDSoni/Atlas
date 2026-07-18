@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const config = require('./config');
 const { hashPasswordSync } = require('./utils/password');
+const { runMigrations, sqliteAdapter, mysqlAdapter } = require('./migrations');
 
 const DB_PATH = config.db.sqlitePath;
 let db;
@@ -328,6 +329,137 @@ const SCHEMA_SQL = [
     name TEXT NOT NULL,
     description TEXT,
     created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  // ===== Product module (Productboard parity) — pb_* tables only, no ALTERs =====
+  `CREATE TABLE IF NOT EXISTS pb_companies (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    tier TEXT DEFAULT 'standard' CHECK(tier IN ('strategic','growth','standard')),
+    arr REAL,
+    notes TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS pb_customers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT,
+    company_id TEXT REFERENCES pb_companies(id),
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS pb_insights (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    content TEXT,
+    source TEXT DEFAULT 'other' CHECK(source IN ('portal','email','support','sales','interview','other')),
+    customer_id TEXT REFERENCES pb_customers(id),
+    created_by TEXT REFERENCES users(id),
+    processed INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS pb_features (
+    id TEXT PRIMARY KEY,
+    project_id TEXT REFERENCES projects(id),
+    name TEXT NOT NULL,
+    description TEXT,
+    status TEXT DEFAULT 'idea' CHECK(status IN ('idea','discovery','planned','in_progress','launched','archived')),
+    timeframe TEXT CHECK(timeframe IN ('now','next','later')),
+    portal_status TEXT CHECK(portal_status IN ('under_consideration','planned','launched')),
+    owner_id TEXT REFERENCES users(id),
+    effort INTEGER,
+    value INTEGER,
+    reach INTEGER,
+    impact INTEGER,
+    confidence INTEGER,
+    release_id TEXT REFERENCES versions(id),
+    created_by TEXT REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS pb_insight_links (
+    id TEXT PRIMARY KEY,
+    insight_id TEXT NOT NULL REFERENCES pb_insights(id),
+    feature_id TEXT NOT NULL REFERENCES pb_features(id),
+    importance INTEGER DEFAULT 1 CHECK(importance IN (1,2,3)),
+    quote TEXT,
+    created_by TEXT REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(insight_id, feature_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS pb_feature_issues (
+    id TEXT PRIMARY KEY,
+    feature_id TEXT NOT NULL REFERENCES pb_features(id),
+    issue_id TEXT NOT NULL REFERENCES issues(id),
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(feature_id, issue_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS pb_objectives (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    status TEXT DEFAULT 'on_track' CHECK(status IN ('on_track','at_risk','off_track','done')),
+    target_date TEXT,
+    owner_id TEXT REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS pb_feature_objectives (
+    id TEXT PRIMARY KEY,
+    feature_id TEXT NOT NULL REFERENCES pb_features(id),
+    objective_id TEXT NOT NULL REFERENCES pb_objectives(id),
+    UNIQUE(feature_id, objective_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS pb_votes (
+    id TEXT PRIMARY KEY,
+    feature_id TEXT NOT NULL REFERENCES pb_features(id),
+    user_id TEXT NOT NULL REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(feature_id, user_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS wiki_attachments (
+    id TEXT PRIMARY KEY,
+    page_id TEXT NOT NULL REFERENCES wiki_pages(id),
+    filename TEXT NOT NULL,
+    original_name TEXT NOT NULL,
+    mime_type TEXT,
+    size INTEGER,
+    uploaded_by TEXT REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS api_tokens (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    name TEXT NOT NULL,
+    prefix TEXT NOT NULL,
+    token_hash TEXT NOT NULL,
+    last_used_at TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS webhooks (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    url TEXT NOT NULL,
+    secret TEXT NOT NULL,
+    events TEXT NOT NULL DEFAULT '[]',
+    enabled INTEGER DEFAULT 1,
+    created_by TEXT REFERENCES users(id),
+    last_status INTEGER,
+    last_delivered_at TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS custom_fields (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    name TEXT NOT NULL,
+    field_type TEXT NOT NULL DEFAULT 'text' CHECK(field_type IN ('text','number','select','date','checkbox')),
+    options TEXT NOT NULL DEFAULT '[]',
+    position INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS issue_field_values (
+    id TEXT PRIMARY KEY,
+    issue_id TEXT NOT NULL REFERENCES issues(id),
+    field_id TEXT NOT NULL REFERENCES custom_fields(id),
+    value TEXT,
+    UNIQUE(issue_id, field_id)
   )`
 ];
 
@@ -654,6 +786,136 @@ const MYSQL_SCHEMA_SQL = [
     name VARCHAR(255) NOT NULL,
     description TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS pb_companies (
+    id VARCHAR(36) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    tier VARCHAR(20) DEFAULT 'standard' CHECK(tier IN ('strategic','growth','standard')),
+    arr DOUBLE,
+    notes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS pb_customers (
+    id VARCHAR(36) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255),
+    company_id VARCHAR(36),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS pb_insights (
+    id VARCHAR(36) PRIMARY KEY,
+    title VARCHAR(500) NOT NULL,
+    content TEXT,
+    source VARCHAR(20) DEFAULT 'other' CHECK(source IN ('portal','email','support','sales','interview','other')),
+    customer_id VARCHAR(36),
+    created_by VARCHAR(36),
+    processed TINYINT DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS pb_features (
+    id VARCHAR(36) PRIMARY KEY,
+    project_id VARCHAR(36),
+    name VARCHAR(500) NOT NULL,
+    description TEXT,
+    status VARCHAR(20) DEFAULT 'idea' CHECK(status IN ('idea','discovery','planned','in_progress','launched','archived')),
+    timeframe VARCHAR(10) CHECK(timeframe IN ('now','next','later')),
+    portal_status VARCHAR(30) CHECK(portal_status IN ('under_consideration','planned','launched')),
+    owner_id VARCHAR(36),
+    effort INT,
+    value INT,
+    reach INT,
+    impact INT,
+    confidence INT,
+    release_id VARCHAR(36),
+    created_by VARCHAR(36),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS pb_insight_links (
+    id VARCHAR(36) PRIMARY KEY,
+    insight_id VARCHAR(36) NOT NULL,
+    feature_id VARCHAR(36) NOT NULL,
+    importance INT DEFAULT 1 CHECK(importance IN (1,2,3)),
+    quote TEXT,
+    created_by VARCHAR(36),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_insight_feature (insight_id, feature_id)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS pb_feature_issues (
+    id VARCHAR(36) PRIMARY KEY,
+    feature_id VARCHAR(36) NOT NULL,
+    issue_id VARCHAR(36) NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_feature_issue (feature_id, issue_id)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS pb_objectives (
+    id VARCHAR(36) PRIMARY KEY,
+    name VARCHAR(500) NOT NULL,
+    description TEXT,
+    status VARCHAR(20) DEFAULT 'on_track' CHECK(status IN ('on_track','at_risk','off_track','done')),
+    target_date DATETIME NULL,
+    owner_id VARCHAR(36),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS pb_feature_objectives (
+    id VARCHAR(36) PRIMARY KEY,
+    feature_id VARCHAR(36) NOT NULL,
+    objective_id VARCHAR(36) NOT NULL,
+    UNIQUE KEY uq_feature_objective (feature_id, objective_id)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS pb_votes (
+    id VARCHAR(36) PRIMARY KEY,
+    feature_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(36) NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_feature_vote (feature_id, user_id)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS wiki_attachments (
+    id VARCHAR(36) PRIMARY KEY,
+    page_id VARCHAR(36) NOT NULL,
+    filename VARCHAR(255) NOT NULL,
+    original_name VARCHAR(500) NOT NULL,
+    mime_type VARCHAR(120),
+    size INT,
+    uploaded_by VARCHAR(36),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS api_tokens (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    prefix VARCHAR(40) NOT NULL,
+    token_hash VARCHAR(128) NOT NULL,
+    last_used_at DATETIME NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS webhooks (
+    id VARCHAR(36) PRIMARY KEY,
+    project_id VARCHAR(36) NOT NULL,
+    url VARCHAR(1000) NOT NULL,
+    secret VARCHAR(128) NOT NULL,
+    events TEXT NOT NULL,
+    enabled TINYINT DEFAULT 1,
+    created_by VARCHAR(36),
+    last_status INT,
+    last_delivered_at DATETIME NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS custom_fields (
+    id VARCHAR(36) PRIMARY KEY,
+    project_id VARCHAR(36) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    field_type VARCHAR(20) NOT NULL DEFAULT 'text' CHECK(field_type IN ('text','number','select','date','checkbox')),
+    options TEXT NOT NULL,
+    position INT DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS issue_field_values (
+    id VARCHAR(36) PRIMARY KEY,
+    issue_id VARCHAR(36) NOT NULL,
+    field_id VARCHAR(36) NOT NULL,
+    value TEXT,
+    UNIQUE KEY uq_issue_field (issue_id, field_id)
   ) DEFAULT CHARSET=utf8mb4`
 ];
 
@@ -672,15 +934,9 @@ async function initSqlite() {
   // Create tables
   SCHEMA_SQL.forEach(sql => db.run(sql));
 
-  // CREATE TABLE IF NOT EXISTS won't add columns to an existing data.db — patch in place.
-  // ALTER skips CHECK: existing DBs are covered by API validation in backend/routes/issues.js
-  try { db.run("ALTER TABLE issues ADD COLUMN epic_color TEXT DEFAULT 'purple'"); } catch (e) { /* column already exists */ }
-  try { db.run("ALTER TABLE issues ADD COLUMN fix_version_id TEXT"); } catch (e) { /* column already exists */ }
-  try { db.run("ALTER TABLE issues ADD COLUMN component_id TEXT"); } catch (e) { /* column already exists */ }
-  try { db.run("ALTER TABLE issues ADD COLUMN start_date TEXT"); } catch (e) { /* column already exists */ }
-  try { db.run("ALTER TABLE projects ADD COLUMN wip_limits TEXT DEFAULT '{}'"); } catch (e) { /* column already exists */ }
-  try { db.run("ALTER TABLE wiki_page_comments ADD COLUMN quote TEXT"); } catch (e) { /* column already exists */ }
-  try { db.run("ALTER TABLE wiki_pages ADD COLUMN page_type TEXT DEFAULT 'page'"); } catch (e) { /* column already exists */ }
+  // CREATE TABLE IF NOT EXISTS won't add columns to an existing data.db, so
+  // schema changes past the initial shape live in backend/migrations.js.
+  await runMigrations(sqliteAdapter(db));
 
   saveDb();
 
@@ -692,6 +948,22 @@ async function initSqlite() {
     } else {
       seedAdminOnly();
     }
+  }
+
+  // Product module demo data seeds independently so existing data.db files get
+  // it too (the pb_* tables are new; the main seed only runs on a fresh DB).
+  if (config.seedDemoData) {
+    const feats = db.exec("SELECT COUNT(*) as c FROM pb_features");
+    if (feats[0].values[0][0] === 0) seedProductDemoData();
+  }
+
+  // Seeded pages are inserted directly, bypassing the route that extracts issue
+  // links — so index them here. Existing deployments use scripts/backfill-page-issues.js.
+  // Required lazily: utils/issue-keys requires this module back, and this
+  // module's exports are not assigned until the end of the file.
+  if (config.seedDemoData) {
+    const { backfillPageIssueLinks } = require('./utils/issue-keys');
+    await backfillPageIssueLinks(db);
   }
 
   return db;
@@ -738,50 +1010,17 @@ async function initMysqlSchema(pool) {
     await pool.query(sql);
   }
 
-  const [epicCol] = await pool.query(
-    "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'issues' AND column_name = 'epic_color'"
-  );
-  if (epicCol.length === 0) {
-    // ALTER skips CHECK: existing DBs are covered by API validation in backend/routes/issues.js
-    await pool.query("ALTER TABLE issues ADD COLUMN epic_color VARCHAR(20) DEFAULT 'purple'");
-  }
-
-  for (const col of ['fix_version_id', 'component_id', 'start_date']) {
-    const [hit] = await pool.query(
-      "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'issues' AND column_name = ?", [col]
-    );
-    if (hit.length === 0) {
-      await pool.query(col === 'start_date'
-        ? 'ALTER TABLE issues ADD COLUMN start_date DATETIME NULL'
-        : `ALTER TABLE issues ADD COLUMN ${col} VARCHAR(36)`);
-    }
-  }
-
-  const [quoteCol] = await pool.query(
-    "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'wiki_page_comments' AND column_name = 'quote'"
-  );
-  if (quoteCol.length === 0) {
-    await pool.query('ALTER TABLE wiki_page_comments ADD COLUMN quote TEXT');
-  }
-
-  const [ptCol] = await pool.query(
-    "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'wiki_pages' AND column_name = 'page_type'"
-  );
-  if (ptCol.length === 0) {
-    await pool.query("ALTER TABLE wiki_pages ADD COLUMN page_type VARCHAR(20) DEFAULT 'page'");
-  }
-
-  const [wipCol] = await pool.query(
-    "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'projects' AND column_name = 'wip_limits'"
-  );
-  if (wipCol.length === 0) {
-    await pool.query('ALTER TABLE projects ADD COLUMN wip_limits VARCHAR(2000)');
-  }
+  // Post-baseline schema changes live in backend/migrations.js — same ordered
+  // list the SQLite path runs, in its MySQL form.
+  await runMigrations(mysqlAdapter(pool));
 
   const [rows] = await pool.query('SELECT COUNT(*) as c FROM users');
   if (parseInt(rows[0].c, 10) === 0) {
     if (config.seedDemoData) {
       await seedDemoDataMysql(pool);
+      // Required lazily: utils/issue-keys requires this module back.
+      const { backfillPageIssueLinks } = require('./utils/issue-keys');
+      await backfillPageIssueLinks(createMysqlWrapper(pool));
     } else {
       await seedAdminOnlyMysql(pool);
     }
@@ -1081,6 +1320,278 @@ function seedDemoData() {
     });
   });
 
+  // ===== Product wave (Productboard parity, epics 13-18) — shipped =====
+  // Keys continue the sequential scheme (issue keys run past the children above);
+  // board_order 12+ places these after the roadmap epics on the Epics screen.
+  const productEpics = [
+    { title: 'Product: Insights inbox', color: 'teal',
+      desc: 'Capture customer feedback as insights, triage an inbox, and link evidence to features with importance and quotes.',
+      children: [
+        { title: 'pb_insights + pb_insight_links schema and API', type: 'task' },
+        { title: 'Insights inbox screen: capture, triage, link-to-feature', type: 'story' },
+        { title: 'Linking an insight marks it processed', type: 'task' },
+      ] },
+    { title: 'Product: Features & prioritization', color: 'purple',
+      desc: 'A prioritized product backlog scored by tier-weighted user impact, RICE, and votes, with a value/effort matrix.',
+      children: [
+        { title: 'pb_features model with computed impact/RICE scores', type: 'task' },
+        { title: 'Features table with score columns and detail sheet', type: 'story' },
+        { title: 'Prioritize screen: value/effort matrix + RICE ranking', type: 'story' },
+      ] },
+    { title: 'Product: Customers & segments', color: 'blue',
+      desc: 'Companies with tiers (strategic/growth/standard) whose weights drive feature impact, plus customer contacts.',
+      children: [
+        { title: 'pb_companies + pb_customers with tier weighting', type: 'task' },
+        { title: 'Customers screen grouped by company with ARR', type: 'story' },
+      ] },
+    { title: 'Product: Objectives (OKRs)', color: 'orange',
+      desc: 'Outcome objectives with status and target dates, linked to the features that move them, with delivery rollups.',
+      children: [
+        { title: 'pb_objectives + feature links with launched rollup', type: 'task' },
+        { title: 'Objectives screen with progress and feature links', type: 'story' },
+      ] },
+    { title: 'Product: Product roadmap', color: 'pink',
+      desc: 'A Now/Next/Later roadmap of features with drag-to-reschedule and push-to-delivery into epics/issues.',
+      children: [
+        { title: 'Timeframe field + Now/Next/Later drag board', type: 'story' },
+        { title: 'Push-to-delivery creates and links delivery issues', type: 'task' },
+      ] },
+    { title: 'Product: Idea portal & polish', color: 'green',
+      desc: 'A customer-facing idea portal with voting and idea submission, plus JQL-lite search and done-category epic rollups.',
+      children: [
+        { title: 'Portal screen: public features, voting, idea submission', type: 'story' },
+        { title: 'JQL-lite structured queries in global search', type: 'task' },
+        { title: 'Epic and subtask rollups count the done category', type: 'task' },
+      ] },
+  ];
+  productEpics.forEach((epic, i) => {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(12 + i);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, ?)`,
+      [eid, projId3, `ATLAS-${num}`, num, epic.title, epic.desc, userIds[0], epic.color, startDate, dueDate, 12 + i]);
+    epic.children.forEach((c, ci) => {
+      const cnum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${cnum}`, cnum, c.title, c.type, userIds[0], userIds[0], eid, ci]);
+    });
+  });
+
+  // ===== Wiki UX overhaul (epic 19) — shipped =====
+  {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(18);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, 18)`,
+      [eid, projId3, `ATLAS-${num}`, num, 'Wiki UX overhaul',
+       'Make the wiki a world-class knowledge base: document reading layout, breadcrumbs, sticky on-this-page outline, decluttered action bar, refined prose typography, space hero with Pages/Blog tabs, home polish, and a comfortable editor.',
+       userIds[0], 'teal', startDate, dueDate]);
+    [
+      { title: 'Document reading layout — centered measure, no boxed card', type: 'story' },
+      { title: 'Breadcrumbs across space and page (space › ancestors › page)', type: 'story' },
+      { title: 'Sticky "On this page" outline from headings + sticky page tree', type: 'story' },
+      { title: 'Declutter page action bar into a primary + overflow menu', type: 'task' },
+      { title: 'Refine wiki prose: headings, code, tables, quotes, reading width', type: 'task' },
+      { title: 'Space hero with icon/meta and Pages/Blog tabs', type: 'story' },
+      { title: 'Wiki home polish: space cards with color accents', type: 'task' },
+      { title: 'Comfortable editor: sticky toolbar and taller writing area', type: 'task' },
+    ].forEach((c, ci) => {
+      const cnum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${cnum}`, cnum, c.title, c.type, userIds[0], userIds[0], eid, ci]);
+    });
+  }
+
+  // ===== Wiki AI assistant (epic 20) — shipped =====
+  {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(19);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, 19)`,
+      [eid, projId3, `ATLAS-${num}`, num, 'Wiki AI assistant',
+       'Rovo-style AI in the wiki via the Anthropic API (server-side proxy): page summaries, an in-editor writing assistant (draft/improve/shorten/expand/fix), and ask-your-wiki Q&A with citations. Degrades gracefully when no API key is configured.',
+       userIds[0], 'purple', startDate, dueDate]);
+    [
+      { title: 'Server-side Anthropic proxy with graceful no-key degradation', type: 'task' },
+      { title: 'Page summaries (AI summary panel)', type: 'story' },
+      { title: 'In-editor writing assistant: draft/improve/shorten/expand/fix', type: 'story' },
+      { title: 'Ask-your-wiki Q&A over page content with citations', type: 'story' },
+    ].forEach((c, ci) => {
+      const cnum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${cnum}`, cnum, c.title, c.type, userIds[0], userIds[0], eid, ci]);
+    });
+  }
+
+  // ===== Platform & depth wave (epics 21-25) — shipped =====
+  const platformEpics = [
+    { title: 'Email notifications', color: 'blue',
+      desc: 'SMTP delivery for notifications, gated on config and degrading to a no-op with an in-memory outbox when unconfigured; respects each user\'s toggles.',
+      children: [
+        { title: 'utils/email.js (nodemailer) with outbox + graceful degradation', type: 'task' },
+        { title: 'Fan out notifications to email respecting per-type toggles', type: 'story' },
+      ] },
+    { title: 'Wiki page attachments & inline images', color: 'teal',
+      desc: 'Upload files to wiki pages and embed images inline; signed raw URLs, stored unsigned and re-signed per fetch so content never expires.',
+      children: [
+        { title: 'wiki_attachments table + upload/list/raw/delete routes', type: 'task' },
+        { title: 'Editor image/file upload + page attachments section', type: 'story' },
+      ] },
+    { title: 'API tokens & webhooks', color: 'purple',
+      desc: 'Personal API tokens (hashed, Bearer auth) and HMAC-signed outbound webhooks on issue events, managed from a Developer settings card.',
+      children: [
+        { title: 'api_tokens + Bearer auth in middleware', type: 'task' },
+        { title: 'Webhooks table + HMAC dispatch on issue events', type: 'task' },
+        { title: 'Developer settings: tokens + webhooks UI', type: 'story' },
+      ] },
+    { title: 'Real-time updates (SSE)', color: 'orange',
+      desc: 'In-process event bus + SSE stream endpoint; the board and notification bell update live as teammates make changes.',
+      children: [
+        { title: 'Event bus + /api/stream SSE endpoint', type: 'task' },
+        { title: 'useLiveEvents; live board refresh + instant bell', type: 'story' },
+      ] },
+    { title: 'Custom fields', color: 'pink',
+      desc: 'Per-project custom field definitions (text/number/select/date/checkbox) with type-validated values rendered and edited on every issue.',
+      children: [
+        { title: 'custom_fields + issue_field_values + validated routes', type: 'task' },
+        { title: 'Field manager + value editing on the issue sheet', type: 'story' },
+      ] },
+  ];
+  platformEpics.forEach((epic, i) => {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(20 + i);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, ?)`,
+      [eid, projId3, `ATLAS-${num}`, num, epic.title, epic.desc, userIds[0], epic.color, startDate, dueDate, 20 + i]);
+    epic.children.forEach((c, ci) => {
+      const cnum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${cnum}`, cnum, c.title, c.type, userIds[0], userIds[0], eid, ci]);
+    });
+  });
+
+  // ===== Production hardening wave (epics 26-28) — shipped =====
+  const hardeningEpics = [
+    { title: 'E2E verification harness', color: 'green',
+      desc: 'Playwright suite that boots the real backend + built SPA and drives it headless: login, every main route renders, and key flows. The verification layer the app was missing.',
+      children: [
+        { title: 'Playwright config booting the real app on a temp DB', type: 'task' },
+        { title: 'Smoke + flow specs (login, all routes, board/wiki/product/settings)', type: 'story' },
+        { title: 'Health + readiness endpoints', type: 'task' },
+      ] },
+    { title: 'Ops & rate limiting', color: 'orange',
+      desc: 'General per-IP API throttle as an abuse safety net (stream/health exempt), alongside the existing baseline security headers and login limiter.',
+      children: [
+        { title: 'General /api rate limit with X-RateLimit headers', type: 'task' },
+      ] },
+    { title: 'List pagination', color: 'blue',
+      desc: 'Opt-in pagination on the issues list (X-Total-Count) that stays backward-compatible with the board; confirmed other list endpoints are bounded.',
+      children: [
+        { title: 'Opt-in ?limit=&offset= on the issues list', type: 'task' },
+      ] },
+  ];
+  hardeningEpics.forEach((epic, i) => {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(25 + i);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, ?)`,
+      [eid, projId3, `ATLAS-${num}`, num, epic.title, epic.desc, userIds[0], epic.color, startDate, dueDate, 25 + i]);
+    epic.children.forEach((c, ci) => {
+      const cnum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${cnum}`, cnum, c.title, c.type, userIds[0], userIds[0], eid, ci]);
+    });
+  });
+
+  // ===== Data layer & performance wave (epics 29-30) — shipped =====
+  const perfEpics = [
+    { title: 'Schema migration runner', color: 'purple',
+      desc: 'An ordered, append-only migration list recorded in a schema_migrations ledger, replacing the try/catch ALTERs that swallowed errors and left no record of what ran. One migration list drives both sql.js and MySQL.',
+      children: [
+        { title: 'Migration runner + schema_migrations ledger', type: 'task' },
+        { title: 'Driver adapters for sql.js and mysql2', type: 'task' },
+        { title: 'Transcribe the existing ALTERs as migrations 001-006', type: 'task' },
+      ] },
+    { title: 'Batched issue enrichment', color: 'red',
+      desc: 'Issue enrichment fired ~11 queries per issue, so a 100-issue board cost 719 queries per request. Batched reads keyed by the ids in the list bring that to a flat 12, with the payload byte-identical.',
+      children: [
+        { title: 'enrichIssues: one batched read per relationship', type: 'story' },
+        { title: 'Batched custom field values', type: 'task' },
+        { title: 'Indexes on the grouped foreign keys', type: 'task' },
+        { title: 'Regression test pinning query count flat as the list grows', type: 'task' },
+      ] },
+  ];
+  perfEpics.forEach((epic, i) => {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(28 + i);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, ?)`,
+      [eid, projId3, `ATLAS-${num}`, num, epic.title, epic.desc, userIds[0], epic.color, startDate, dueDate, 28 + i]);
+    epic.children.forEach((c, ci) => {
+      const cnum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${cnum}`, cnum, c.title, c.type, userIds[0], userIds[0], eid, ci]);
+    });
+  });
+
+  // ===== Wiki ↔ issue integration wave (epics 31-32) — shipped =====
+  const wikiLinkEpics = [
+    { title: 'Live issue chips', color: 'blue',
+      desc: 'Issue keys in wiki pages resolve to real issues: hover shows title, status, assignee and priority, and clicking always opens the issue named. Keys that resolve to nothing stay prose, so COVID-19 and ISO-8601 no longer render as links.',
+      children: [
+        { title: 'Issue-key extraction from page HTML', type: 'task' },
+        { title: 'linked_issues on page reads + resolve endpoint', type: 'task' },
+        { title: 'Hover card and correct chip navigation', type: 'story' },
+      ] },
+    { title: 'Page back-links', color: 'teal',
+      desc: 'The reverse direction, which did not exist: an issue shows which wiki pages mention it, filtered through page restrictions so a restricted page never discloses its title.',
+      children: [
+        { title: 'wiki_page_issues join table + write-time indexing', type: 'task' },
+        { title: 'Batched page access checks, single source of rules', type: 'task' },
+        { title: 'Mentioned on pages panel', type: 'story' },
+      ] },
+  ];
+  wikiLinkEpics.forEach((epic, i) => {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(30 + i);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, ?)`,
+      [eid, projId3, `ATLAS-${num}`, num, epic.title, epic.desc, userIds[0], epic.color, startDate, dueDate, 30 + i]);
+    epic.children.forEach((c, ci) => {
+      const cnum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${cnum}`, cnum, c.title, c.type, userIds[0], userIds[0], eid, ci]);
+    });
+  });
+
   // ===== CONFLUENCE SEED DATA =====
   const spaceEng = uuid();
   const spaceProd = uuid();
@@ -1153,6 +1664,100 @@ function seedDemoData() {
 
   saveDb();
   console.log('\n  ✓ Demo data seeded (5 users, 3 projects, 25 issues incl. 12 roadmap epics, 2 wiki spaces, 7 pages)\n');
+}
+
+// Product module (Productboard-parity) demo data. Runs whenever pb_features is
+// empty — including against an existing data.db — so it pulls user/project ids
+// from whatever is already in the DB rather than assuming the fresh-seed ids.
+function seedProductDemoData() {
+  const { v4: uuid } = require('uuid');
+
+  const pick = (sql) => {
+    const r = db.exec(sql);
+    return r.length && r[0].values.length ? r[0].values[0][0] : null;
+  };
+  const adminId = pick("SELECT id FROM users WHERE role = 'admin' ORDER BY created_at LIMIT 1") ||
+                  pick("SELECT id FROM users ORDER BY created_at LIMIT 1");
+  const pmId = pick("SELECT id FROM users WHERE job_title LIKE '%Product%' LIMIT 1") || adminId;
+  const clientId = pick("SELECT id FROM users WHERE role = 'client' LIMIT 1") || adminId;
+  const projectId = pick("SELECT id FROM projects ORDER BY created_at LIMIT 1");
+  if (!adminId) return; // nothing to attach demo data to
+
+  // Companies + customers
+  const acme = uuid(), globex = uuid();
+  db.run("INSERT INTO pb_companies (id, name, tier, arr, notes) VALUES (?, ?, ?, ?, ?)",
+    [acme, 'Acme Corp', 'strategic', 250000, 'Largest account; renewal in Q4.']);
+  db.run("INSERT INTO pb_companies (id, name, tier, arr, notes) VALUES (?, ?, ?, ?, ?)",
+    [globex, 'Globex', 'growth', 60000, 'Expanding seats quarter over quarter.']);
+  const custMaya = uuid(), custTom = uuid(), custLena = uuid();
+  db.run("INSERT INTO pb_customers (id, name, email, company_id) VALUES (?, ?, ?, ?)",
+    [custMaya, 'Maya Okafor', 'maya@acme.example', acme]);
+  db.run("INSERT INTO pb_customers (id, name, email, company_id) VALUES (?, ?, ?, ?)",
+    [custTom, 'Tom Bradley', 'tom@acme.example', acme]);
+  db.run("INSERT INTO pb_customers (id, name, email, company_id) VALUES (?, ?, ?, ?)",
+    [custLena, 'Lena Fischer', 'lena@globex.example', globex]);
+
+  // Features across statuses/timeframes (portal_status on the public ones)
+  const mkFeature = (name, description, status, timeframe, portalStatus, effort, value, reach, impact, confidence) => {
+    const id = uuid();
+    db.run(`INSERT INTO pb_features (id, project_id, name, description, status, timeframe, portal_status, owner_id, effort, value, reach, impact, confidence, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, projectId, name, description, status, timeframe, portalStatus, pmId, effort, value, reach, impact, confidence, adminId]);
+    return id;
+  };
+  const fSso = mkFeature('SAML single sign-on', 'Enterprise SSO via SAML 2.0 for large accounts.', 'planned', 'now', 'planned', 5, 9, 400, 3, 80);
+  const fDark = mkFeature('Dark mode for portal', 'Bring the dark theme to the customer portal.', 'idea', 'later', 'under_consideration', 2, 4, 900, 1, 90);
+  const fApi = mkFeature('Public REST API', 'Documented API with tokens for integrations.', 'discovery', 'next', 'under_consideration', 8, 8, 300, 3, 60);
+  const fCsv = mkFeature('CSV import', 'Bulk-import issues and features from CSV.', 'in_progress', 'now', 'planned', 3, 6, 250, 2, 85);
+  const fMobile = mkFeature('Mobile push notifications', 'Native push for assignments and mentions.', 'idea', null, null, 5, 5, 700, 2, 50);
+  const fAudit = mkFeature('Audit log export', 'Scheduled export of audit events to S3.', 'launched', null, 'launched', 3, 7, 120, 2, 100);
+  const fSearch = mkFeature('Semantic search', 'Natural-language search across issues and wiki.', 'idea', 'later', null, 9, 7, 800, 3, 40);
+  const fSla = mkFeature('SLA timers', 'Response/resolution timers with breach alerts.', 'discovery', 'next', 'under_consideration', 6, 8, 200, 3, 70);
+
+  // Insights (feedback) + links to features with importance and quotes
+  const mkInsight = (title, content, source, customerId, processed) => {
+    const id = uuid();
+    db.run("INSERT INTO pb_insights (id, title, content, source, customer_id, created_by, processed) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [id, title, content, source, customerId, adminId, processed]);
+    return id;
+  };
+  const iSso1 = mkInsight('Security team blocks rollout without SSO', 'Our IT department requires SAML SSO before we can expand beyond the pilot team. This is the single biggest blocker to our renewal.', 'sales', custMaya, 1);
+  const iSso2 = mkInsight('SSO needed for compliance', 'SOC2 audit flagged shared passwords. We need SSO by end of quarter.', 'email', custTom, 1);
+  const iApi = mkInsight('Wants Zapier-style integration', 'Team asked to sync issues into their data warehouse. An API with tokens would unblock them.', 'interview', custLena, 1);
+  const iCsv = mkInsight('Migration from spreadsheet is painful', 'Onboarding took two days of copy-paste. CSV import would have made it an hour.', 'support', custLena, 1);
+  mkInsight('Portal is blinding at night', 'Any chance of a dark theme on the ideas portal?', 'portal', custTom, 0);
+  mkInsight('Search misses synonyms', 'Searching "login" does not find "sign-in" issues. Smarter search would help a lot.', 'portal', null, 0);
+
+  const link = (insightId, featureId, importance, quote) =>
+    db.run("INSERT INTO pb_insight_links (id, insight_id, feature_id, importance, quote, created_by) VALUES (?, ?, ?, ?, ?, ?)",
+      [uuid(), insightId, featureId, importance, quote, pmId]);
+  link(iSso1, fSso, 3, 'single biggest blocker to our renewal');
+  link(iSso2, fSso, 3, 'We need SSO by end of quarter.');
+  link(iApi, fApi, 2, 'An API with tokens would unblock them.');
+  link(iCsv, fCsv, 2, 'CSV import would have made it an hour.');
+
+  // Objectives linked to features
+  const oEnt = uuid(), oNps = uuid();
+  db.run("INSERT INTO pb_objectives (id, name, description, status, target_date, owner_id) VALUES (?, ?, ?, ?, ?, ?)",
+    [oEnt, 'Win the enterprise segment', 'Close 5 enterprise logos by year end.', 'on_track', '2026-12-31', pmId]);
+  db.run("INSERT INTO pb_objectives (id, name, description, status, target_date, owner_id) VALUES (?, ?, ?, ?, ?, ?)",
+    [oNps, 'Raise NPS to 45', 'Reduce the top 3 friction points reported by customers.', 'at_risk', '2026-09-30', pmId]);
+  const linkObj = (featureId, objectiveId) =>
+    db.run("INSERT INTO pb_feature_objectives (id, feature_id, objective_id) VALUES (?, ?, ?)", [uuid(), featureId, objectiveId]);
+  linkObj(fSso, oEnt); linkObj(fSla, oEnt); linkObj(fAudit, oEnt);
+  linkObj(fCsv, oNps); linkObj(fDark, oNps); linkObj(fSearch, oNps); linkObj(fMobile, oNps);
+
+  // Portal votes
+  const voters = db.exec("SELECT id FROM users LIMIT 5");
+  const voterIds = voters.length ? voters[0].values.map(v => v[0]) : [adminId];
+  [fSso, fDark, fApi].forEach((fid, fi) => {
+    voterIds.slice(0, 3 - (fi === 1 ? 1 : 0)).forEach(uid =>
+      db.run("INSERT OR IGNORE INTO pb_votes (id, feature_id, user_id) VALUES (?, ?, ?)", [uuid(), fid, uid]));
+  });
+  db.run("INSERT OR IGNORE INTO pb_votes (id, feature_id, user_id) VALUES (?, ?, ?)", [uuid(), fDark, clientId]);
+
+  saveDb();
+  console.log('  ✓ Product module demo data seeded');
 }
 
 async function seedDemoDataMysql(pool) {

@@ -7,14 +7,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DOMPurify, { type Config } from 'dompurify';
+import type { LinkedIssueSummary } from '@/lib/types';
+import { StatusPill } from './primitives';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
-import { Bold, Code, Heading2, Heading3, Italic, Link2, List, ListOrdered, Quote, Strikethrough } from 'lucide-react';
+import { Bold, Code, Heading2, Heading3, Image as ImageIcon, Italic, Link2, List, ListOrdered, Loader2, Quote, Sparkles, Strikethrough } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { useAIEnabled } from '@/hooks/use-ai';
 import { cn } from '@/lib/utils';
 
 const PURIFY_CONFIG: Config = {
@@ -34,20 +44,45 @@ export function sanitizeHtml(html: string): string {
 
 const ISSUE_KEY_RE = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/;
 
+/** Stable heading id, shared by applyMacros and the right-rail TOC so anchors match. */
+function headingId(text: string, index: number): string {
+  return `h-${index}-${text.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`;
+}
+
+export interface HeadingEntry {
+  id: string;
+  text: string;
+  level: 1 | 2 | 3;
+}
+
+/** Extract h1–h3 from a page body for the "On this page" outline. Uses the same
+ *  id scheme applyMacros stamps onto the rendered headings. */
+export function extractHeadings(html: string): HeadingEntry[] {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = sanitizeHtml(html);
+  return [...tpl.content.querySelectorAll('h1, h2, h3')].map((h, i) => ({
+    id: headingId(h.textContent || '', i),
+    text: (h.textContent || '').trim(),
+    level: Number(h.tagName[1]) as 1 | 2 | 3,
+  })).filter((h) => h.text.length > 0);
+}
+
 /**
  * Wiki macros, applied AFTER sanitising (everything injected here is built from
  * textContent, never raw user HTML):
  * - `[toc]` on its own line becomes a table of contents from the page headings
- * - issue keys like ATLAS-12 become clickable chips
+ * - issue keys like ATLAS-12 become clickable chips — but only when the key
+ *   resolves to a real issue in `issues`. That check is what keeps prose like
+ *   COVID-19, ISO-8601 and SEV-1 from rendering as links.
  */
-function applyMacros(html: string): string {
+function applyMacros(html: string, issues: Map<string, LinkedIssueSummary>): string {
   const tpl = document.createElement('template');
   tpl.innerHTML = html;
   const root = tpl.content;
 
   const headings = [...root.querySelectorAll('h1, h2, h3')];
   headings.forEach((h, i) => {
-    h.id = `h-${i}-${(h.textContent || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`;
+    h.id = headingId(h.textContent || '', i);
   });
 
   root.querySelectorAll('p, div').forEach((el) => {
@@ -83,10 +118,14 @@ function applyMacros(html: string): string {
   targets.forEach((text) => {
     const frag = document.createDocumentFragment();
     (text.textContent || '').split(/(\b[A-Z][A-Z0-9]{1,9}-\d+\b)/g).forEach((part) => {
-      if (/^[A-Z][A-Z0-9]{1,9}-\d+$/.test(part)) {
+      const issue = /^[A-Z][A-Z0-9]{1,9}-\d+$/.test(part) ? issues.get(part) : undefined;
+      // Only a key that resolves to a real issue becomes a chip. Everything
+      // else stays prose, so a chip existing is proof the issue exists.
+      if (issue) {
         const chip = document.createElement('a');
         chip.href = '#';
-        chip.setAttribute('data-issue-key', part);
+        chip.setAttribute('data-issue-id', issue.id);
+        chip.setAttribute('data-issue-key', issue.issue_key);
         chip.className =
           'wiki-issue-chip inline-flex items-center gap-0.5 rounded bg-primary/10 px-1 font-mono text-[11px] font-semibold text-primary no-underline hover:bg-primary/20';
         chip.textContent = part;
@@ -108,40 +147,76 @@ export function RichTextView({
   html,
   className,
   macros = false,
+  issues,
 }: {
   html: string;
   className?: string;
   /** Enable [toc] + issue-key chips (wiki pages). */
   macros?: boolean;
+  /** Issues mentioned by this content. A key only becomes a chip if it appears here. */
+  issues?: LinkedIssueSummary[];
 }) {
   const navigate = useNavigate();
+  const [hovered, setHovered] = useState<{ issue: LinkedIssueSummary; x: number; y: number } | null>(null);
+
+  const issueMap = useMemo(
+    () => new Map((issues ?? []).map((i) => [i.issue_key, i])),
+    [issues],
+  );
   const rendered = useMemo(() => {
     const clean = sanitizeHtml(html);
-    return macros ? applyMacros(clean) : clean;
-  }, [html, macros]);
+    return macros ? applyMacros(clean, issueMap) : clean;
+  }, [html, macros, issueMap]);
 
-  async function onClick(e: React.MouseEvent<HTMLDivElement>) {
-    const chip = (e.target as HTMLElement).closest?.('a[data-issue-key]');
+  function onClick(e: React.MouseEvent<HTMLDivElement>) {
+    const chip = (e.target as HTMLElement).closest?.('a[data-issue-id]');
     if (!chip) return;
     e.preventDefault();
+    // Navigate by the id the server resolved. The previous implementation
+    // searched by key and fell back to the first result, which could open an
+    // unrelated issue when the key no longer existed.
+    const id = chip.getAttribute('data-issue-id') ?? '';
     const key = chip.getAttribute('data-issue-key') ?? '';
-    try {
-      const results = await api.search.query(key);
-      const hit = results.issues.find((i) => i.issue_key === key) ?? results.issues[0];
-      if (hit) navigate(hit.type === 'epic' ? `/epics?issue=${hit.id}` : `/board?issue=${hit.id}`);
-      else toast.info(`No issue found for ${key}`);
-    } catch {
-      toast.error(`Could not look up ${key}`);
-    }
+    const issue = issueMap.get(key);
+    navigate(issue?.type === 'epic' ? `/epics?issue=${id}` : `/board?issue=${id}`);
+  }
+
+  function onPointerOver(e: React.PointerEvent<HTMLDivElement>) {
+    const chip = (e.target as HTMLElement).closest?.('a[data-issue-key]');
+    if (!chip) { setHovered(null); return; }
+    const issue = issueMap.get(chip.getAttribute('data-issue-key') ?? '');
+    if (!issue) { setHovered(null); return; }
+    const r = (chip as HTMLElement).getBoundingClientRect();
+    setHovered({ issue, x: r.left, y: r.bottom + 6 });
   }
 
   return (
-    <div
-      className={cn('wiki-prose', className)}
-      onClick={onClick}
-      // Sanitised inside `rendered`; the server also cleans on write.
-      dangerouslySetInnerHTML={{ __html: rendered }}
-    />
+    <>
+      <div
+        className={cn('wiki-prose', className)}
+        onClick={onClick}
+        onPointerOver={onPointerOver}
+        onPointerLeave={() => setHovered(null)}
+        // Sanitised inside `rendered`; the server also cleans on write.
+        dangerouslySetInnerHTML={{ __html: rendered }}
+      />
+      {hovered && (
+        <div
+          role="tooltip"
+          className="fixed z-50 w-72 rounded-md border border-border bg-popover p-3 text-popover-foreground shadow-md"
+          style={{ left: hovered.x, top: hovered.y }}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-mono text-[11px] font-semibold text-primary">{hovered.issue.issue_key}</span>
+            <StatusPill status={hovered.issue.status} />
+          </div>
+          <p className="mt-1 text-sm font-medium leading-snug">{hovered.issue.title}</p>
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            {hovered.issue.assignee_name ?? 'Unassigned'} · {hovered.issue.priority}
+          </p>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -160,12 +235,21 @@ export function RichTextEditor({
   value,
   onChange,
   className,
+  pageId,
 }: {
   value: string;
   onChange: (html: string) => void;
   className?: string;
+  /** When set, enables image upload — files attach to this wiki page. */
+  pageId?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const aiEnabled = useAIEnabled();
+  const [aiBusy, setAiBusy] = useState(false);
+  const [draftOpen, setDraftOpen] = useState(false);
+  const [draftPrompt, setDraftPrompt] = useState('');
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
   // execCommand acts on the live selection, which is lost when focus moves to the
@@ -190,6 +274,81 @@ export function RichTextEditor({
 
   function emit() {
     if (ref.current) onChange(sanitizeHtml(ref.current.innerHTML));
+  }
+
+  async function uploadImage(file: File) {
+    if (!pageId || !ref.current) return;
+    setUploading(true);
+    try {
+      const [att] = await api.wiki.uploadAttachments(pageId, [file]);
+      ref.current.focus();
+      const img = att.is_image
+        ? `<img src="${att.raw_url}" alt="${att.original_name.replace(/"/g, '')}" />`
+        : `<a href="${att.raw_url}">${att.original_name}</a>`;
+      document.execCommand('insertHTML', false, `${img}<p></p>`);
+      emit();
+    } catch (e) {
+      toast.error('Upload failed', { description: e instanceof Error ? e.message : undefined });
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  // Whether the current selection sits inside the editor and isn't collapsed.
+  function editorSelectionText(): string {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return '';
+    if (!ref.current?.contains(sel.anchorNode)) return '';
+    return sel.toString().trim();
+  }
+
+  // Transform the selection (if any) or the whole document via the AI writer.
+  async function runWrite(action: 'improve' | 'shorten' | 'expand' | 'fix') {
+    if (!ref.current) return;
+    const selText = editorSelectionText();
+    const target = selText || ref.current.innerText;
+    if (!target.trim()) { toast.info('Write something first, then use AI.'); return; }
+    setAiBusy(true);
+    try {
+      const { html } = await api.ai.write({ action, text: selText || ref.current.innerHTML });
+      const clean = sanitizeHtml(html);
+      if (selText) {
+        ref.current.focus();
+        document.execCommand('insertHTML', false, clean);
+      } else {
+        ref.current.innerHTML = clean;
+      }
+      emit();
+      toast.success('Updated with AI');
+    } catch (e) {
+      toast.error('AI request failed', { description: e instanceof Error ? e.message : undefined });
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
+  async function runDraft() {
+    if (!ref.current || !draftPrompt.trim()) return;
+    setAiBusy(true);
+    try {
+      const { html } = await api.ai.write({ action: 'draft', prompt: draftPrompt.trim() });
+      const clean = sanitizeHtml(html);
+      ref.current.focus();
+      // Insert at the caret; fall back to appending if there's no editor selection.
+      if (editorSelectionText() || window.getSelection()?.anchorNode && ref.current.contains(window.getSelection()!.anchorNode)) {
+        document.execCommand('insertHTML', false, clean);
+      } else {
+        ref.current.innerHTML = ref.current.innerHTML + clean;
+      }
+      emit();
+      setDraftOpen(false);
+      setDraftPrompt('');
+      toast.success('Draft inserted');
+    } catch (e) {
+      toast.error('AI request failed', { description: e instanceof Error ? e.message : undefined });
+    } finally {
+      setAiBusy(false);
+    }
   }
 
   function applyLink() {
@@ -225,8 +384,8 @@ export function RichTextEditor({
   ];
 
   return (
-    <div className={cn('rounded-lg border border-border bg-card', className)}>
-      <div className="flex flex-wrap items-center gap-0.5 border-b border-border p-1.5">
+    <div className={cn('overflow-hidden rounded-lg border border-border bg-card', className)}>
+      <div className="sticky top-14 z-20 flex flex-wrap items-center gap-0.5 border-b border-border bg-card/95 p-1.5 backdrop-blur">
         {groups.map((group, gi) => (
           <div key={gi} className="flex items-center gap-0.5">
             {gi > 0 && <Separator orientation="vertical" className="mx-1 h-5" />}
@@ -289,7 +448,68 @@ export function RichTextEditor({
             </form>
           </PopoverContent>
         </Popover>
+
+        {pageId && (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,.pdf,.csv,.txt,.docx,.xlsx,.pptx,.zip"
+              className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadImage(f); e.target.value = ''; }}
+            />
+            <Button type="button" variant="ghost" size="icon" className="size-7" aria-label="Insert image or file"
+              title="Insert image or file" disabled={uploading}
+              onMouseDown={(e) => e.preventDefault()} onClick={() => fileInputRef.current?.click()}>
+              {uploading ? <Loader2 className="size-4 animate-spin" /> : <ImageIcon className="size-4" />}
+            </Button>
+          </>
+        )}
+
+        {aiEnabled && (
+          <>
+            <Separator orientation="vertical" className="mx-1 h-5" />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2 text-primary" disabled={aiBusy}
+                  onMouseDown={(e) => e.preventDefault()} aria-label="AI writing assistant">
+                  {aiBusy ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                  <span className="text-xs font-medium">AI</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-52">
+                <DropdownMenuItem onSelect={() => setDraftOpen(true)}>
+                  <Sparkles className="size-4" /> Draft from a prompt…
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => void runWrite('improve')}>Improve writing</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void runWrite('fix')}>Fix spelling & grammar</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void runWrite('shorten')}>Make shorter</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void runWrite('expand')}>Make longer</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        )}
       </div>
+
+      <Dialog open={draftOpen} onOpenChange={setDraftOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><Sparkles className="size-4 text-primary" /> Draft with AI</DialogTitle></DialogHeader>
+          <Textarea
+            autoFocus
+            rows={3}
+            placeholder="What should this section cover? e.g. 'onboarding steps for a new engineer'"
+            value={draftPrompt}
+            onChange={(e) => setDraftPrompt(e.target.value)}
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDraftOpen(false)}>Cancel</Button>
+            <Button onClick={() => void runDraft()} disabled={aiBusy || !draftPrompt.trim()}>
+              {aiBusy && <Loader2 className="size-4 animate-spin" />} Generate
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div
         ref={ref}
@@ -300,7 +520,7 @@ export function RichTextEditor({
         aria-label="Page content"
         onInput={emit}
         onBlur={emit}
-        className="wiki-prose min-h-80 px-4 py-3 focus:outline-none"
+        className="wiki-prose min-h-[60vh] px-5 py-4 focus:outline-none"
       />
     </div>
   );

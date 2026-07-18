@@ -1,16 +1,38 @@
-const { getDb, queryOne } = require('../database');
+const crypto = require('crypto');
+const { getDb, queryOne, run } = require('../database');
 
-// Identity is derived ONLY from a valid session token. Never trust client-supplied
-// identity headers (x-user-id / x-user-role) — they are attacker-controlled.
+const PAT_PREFIX = 'atlas_pat_';
+const hashToken = (t) => crypto.createHash('sha256').update(t).digest('hex');
+
+// Identity is derived ONLY from a valid session token or a personal API token.
+// Never trust client-supplied identity headers (x-user-id / x-user-role) — they
+// are attacker-controlled.
 async function authMiddleware(req, res, next) {
-  const token = req.headers['x-auth-token'];
-  if (!token) return next();
+  const sessionToken = req.headers['x-auth-token'];
+  const authz = req.headers['authorization'] || '';
+  const bearer = authz.startsWith('Bearer ') ? authz.slice(7).trim() : null;
+  if (!sessionToken && !bearer) return next();
 
   try {
     const db = await getDb();
-    const session = await queryOne(db, "SELECT * FROM sessions WHERE token = ? AND expires_at > datetime('now')", [token]);
-    if (session) {
-      const user = await queryOne(db, 'SELECT id, name, role FROM users WHERE id = ? AND is_active = 1', [session.user_id]);
+    let userId = null;
+
+    if (sessionToken) {
+      const session = await queryOne(db, "SELECT * FROM sessions WHERE token = ? AND expires_at > datetime('now')", [sessionToken]);
+      if (session) userId = session.user_id;
+    }
+    // Personal API token: Authorization: Bearer atlas_pat_...
+    if (!userId && bearer && bearer.startsWith(PAT_PREFIX)) {
+      const tok = await queryOne(db, 'SELECT id, user_id FROM api_tokens WHERE token_hash = ?', [hashToken(bearer)]);
+      if (tok) {
+        userId = tok.user_id;
+        req.apiTokenId = tok.id;
+        try { await run(db, "UPDATE api_tokens SET last_used_at = datetime('now') WHERE id = ?", [tok.id]); } catch (e) { /* best effort */ }
+      }
+    }
+
+    if (userId) {
+      const user = await queryOne(db, 'SELECT id, name, role FROM users WHERE id = ? AND is_active = 1', [userId]);
       if (user) {
         req.userId = user.id;
         req.userName = user.name;

@@ -15,6 +15,10 @@ const { serverError } = require('../utils/errors');
 const { notify } = require('../utils/notify');
 const { projectStatuses } = require('./workflows');
 const { runAutomation, checkAllSubtasksDone } = require('../utils/automation');
+const { dispatch: dispatchWebhook } = require('../utils/webhooks');
+const { publish } = require('../utils/events');
+const { issueCustomFieldsBatch } = require('./custom-fields');
+const { placeholders, indexBy, countsBy } = require('../utils/sql');
 
 const requireBoardAdmin = requireRole('admin', 'board_admin');
 
@@ -59,53 +63,152 @@ async function validateHierarchy(db, { id, projectId, type, parentId, sprintId }
 
 const router = express.Router();
 
-async function enrichIssue(db, issue) {
-  const assignee = issue.assignee_id
-    ? await queryOne(db, 'SELECT name, avatar_color FROM users WHERE id = ?', [issue.assignee_id])
-    : null;
-  const reporter = issue.reporter_id
-    ? await queryOne(db, 'SELECT name, avatar_color FROM users WHERE id = ?', [issue.reporter_id])
-    : null;
-  const parent = issue.parent_id
-    ? await queryOne(db, 'SELECT issue_key, title, type, epic_color FROM issues WHERE id = ?', [issue.parent_id])
-    : null;
-  const fixVersion = issue.fix_version_id
-    ? await queryOne(db, 'SELECT name, status FROM versions WHERE id = ?', [issue.fix_version_id])
-    : null;
-  const component = issue.component_id
-    ? await queryOne(db, 'SELECT name FROM components WHERE id = ?', [issue.component_id])
-    : null;
-  const subtasks = await queryOne(db,
-    "SELECT COUNT(*) as total, SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as done FROM issues WHERE parent_id = ? AND type = 'subtask'", [issue.id]);
-  const commentCount = await queryOne(db, 'SELECT COUNT(*) as count FROM comments WHERE issue_id = ?', [issue.id]);
-  const attachmentCount = await queryOne(db, 'SELECT COUNT(*) as count FROM attachments WHERE issue_id = ?', [issue.id]);
-  const watcherCount = await queryOne(db, 'SELECT COUNT(*) as count FROM issue_watchers WHERE issue_id = ?', [issue.id]);
-  const linkCount = await queryOne(db, 'SELECT COUNT(*) as count FROM issue_links WHERE source_issue_id = ? OR target_issue_id = ?', [issue.id, issue.id]);
-
-  return {
-    ...issue,
-    assignee_name: assignee?.name || null,
-    assignee_color: assignee?.avatar_color || null,
-    reporter_name: reporter?.name || null,
-    reporter_color: reporter?.avatar_color || null,
-    parent_key: parent?.issue_key || null,
-    parent_title: parent?.title || null,
-    parent_type: parent?.type || null,
-    epic_key: parent?.type === 'epic' ? parent.issue_key : null,
-    epic_title: parent?.type === 'epic' ? parent.title : null,
-    epic_badge_color: parent?.type === 'epic' ? parent.epic_color : null,
-    fix_version_name: fixVersion?.name || null,
-    fix_version_status: fixVersion?.status || null,
-    component_name: component?.name || null,
-    subtask_count: Number(subtasks.total),
-    subtask_done_count: Number(subtasks.done || 0),
-    comment_count: commentCount.count,
-    attachment_count: attachmentCount.count,
-    watcher_count: watcherCount.count,
-    link_count: linkCount.count,
-    labels_parsed: (() => { try { return JSON.parse(issue.labels || '[]'); } catch(e) { return []; } })()
-  };
+function parseLabels(labels) {
+  try { return JSON.parse(labels || '[]'); } catch (e) { return []; }
 }
+
+/**
+ * Enriches a whole list of issues in a fixed number of queries.
+ *
+ * The per-issue version of this cost ~11 round trips each, so a 100-issue board
+ * ran ~1100 queries. Every lookup here is instead a single batched read keyed by
+ * the ids in the list, giving the same payload in ~10 queries regardless of size.
+ */
+async function enrichIssues(db, issues) {
+  if (issues.length === 0) return [];
+
+  const ids = issues.map((i) => i.id);
+  const idList = placeholders(ids);
+  const uniq = (vals) => [...new Set(vals.filter(Boolean))];
+
+  // Referenced rows: one query each, only when something actually references them.
+  const userIds = uniq([...issues.map((i) => i.assignee_id), ...issues.map((i) => i.reporter_id)]);
+  const parentIds = uniq(issues.map((i) => i.parent_id));
+  const versionIds = uniq(issues.map((i) => i.fix_version_id));
+  const componentIds = uniq(issues.map((i) => i.component_id));
+
+  const [users, parents, versions, components] = await Promise.all([
+    userIds.length
+      ? queryAll(db, `SELECT id, name, avatar_color FROM users WHERE id IN (${placeholders(userIds)})`, userIds)
+      : [],
+    parentIds.length
+      ? queryAll(db, `SELECT id, issue_key, title, type, epic_color FROM issues WHERE id IN (${placeholders(parentIds)})`, parentIds)
+      : [],
+    versionIds.length
+      ? queryAll(db, `SELECT id, name, status FROM versions WHERE id IN (${placeholders(versionIds)})`, versionIds)
+      : [],
+    componentIds.length
+      ? queryAll(db, `SELECT id, name FROM components WHERE id IN (${placeholders(componentIds)})`, componentIds)
+      : [],
+  ]);
+
+  // Rollups: one grouped query each. Issues with no children/comments/etc. simply
+  // produce no row, and the lookups below default them to 0.
+  const [subtaskRows, commentRows, attachmentRows, watcherRows, linkRows, customFields] = await Promise.all([
+    queryAll(db,
+      `SELECT parent_id, COUNT(*) as total,
+         SUM(CASE WHEN c.status = 'done' OR EXISTS (
+           SELECT 1 FROM project_statuses ps
+           WHERE ps.project_id = c.project_id AND ps.key = c.status AND ps.category = 'done')
+         THEN 1 ELSE 0 END) as done
+       FROM issues c WHERE c.parent_id IN (${idList}) AND c.type = 'subtask'
+       GROUP BY c.parent_id`, ids),
+    queryAll(db, `SELECT issue_id, COUNT(*) as count FROM comments WHERE issue_id IN (${idList}) GROUP BY issue_id`, ids),
+    queryAll(db, `SELECT issue_id, COUNT(*) as count FROM attachments WHERE issue_id IN (${idList}) GROUP BY issue_id`, ids),
+    queryAll(db, `SELECT issue_id, COUNT(*) as count FROM issue_watchers WHERE issue_id IN (${idList}) GROUP BY issue_id`, ids),
+    queryAll(db,
+      `SELECT source_issue_id, target_issue_id FROM issue_links
+       WHERE source_issue_id IN (${idList}) OR target_issue_id IN (${idList})`, [...ids, ...ids]),
+    issueCustomFieldsBatch(db, issues),
+  ]);
+
+  const userById = indexBy(users, 'id');
+  const parentById = indexBy(parents, 'id');
+  const versionById = indexBy(versions, 'id');
+  const componentById = indexBy(components, 'id');
+  const commentCounts = countsBy(commentRows, 'issue_id');
+  const attachmentCounts = countsBy(attachmentRows, 'issue_id');
+  const watcherCounts = countsBy(watcherRows, 'issue_id');
+  const subtaskRollup = indexBy(subtaskRows, 'parent_id');
+
+  // A link counts once for each endpoint it touches — but a row whose source and
+  // target are the same issue matched the old `source = ? OR target = ?` query
+  // once, so it must not be double counted here.
+  const inList = new Set(ids);
+  const linkCounts = new Map();
+  const bump = (id) => linkCounts.set(id, (linkCounts.get(id) || 0) + 1);
+  for (const link of linkRows) {
+    if (inList.has(link.source_issue_id)) bump(link.source_issue_id);
+    if (inList.has(link.target_issue_id) && link.target_issue_id !== link.source_issue_id) {
+      bump(link.target_issue_id);
+    }
+  }
+
+  return issues.map((issue) => {
+    const assignee = issue.assignee_id ? userById.get(issue.assignee_id) : null;
+    const reporter = issue.reporter_id ? userById.get(issue.reporter_id) : null;
+    const parent = issue.parent_id ? parentById.get(issue.parent_id) : null;
+    const fixVersion = issue.fix_version_id ? versionById.get(issue.fix_version_id) : null;
+    const component = issue.component_id ? componentById.get(issue.component_id) : null;
+    const subtasks = subtaskRollup.get(issue.id);
+
+    return {
+      ...issue,
+      assignee_name: assignee?.name || null,
+      assignee_color: assignee?.avatar_color || null,
+      reporter_name: reporter?.name || null,
+      reporter_color: reporter?.avatar_color || null,
+      parent_key: parent?.issue_key || null,
+      parent_title: parent?.title || null,
+      parent_type: parent?.type || null,
+      epic_key: parent?.type === 'epic' ? parent.issue_key : null,
+      epic_title: parent?.type === 'epic' ? parent.title : null,
+      epic_badge_color: parent?.type === 'epic' ? parent.epic_color : null,
+      fix_version_name: fixVersion?.name || null,
+      fix_version_status: fixVersion?.status || null,
+      component_name: component?.name || null,
+      subtask_count: Number(subtasks?.total || 0),
+      subtask_done_count: Number(subtasks?.done || 0),
+      comment_count: commentCounts.get(issue.id) || 0,
+      attachment_count: attachmentCounts.get(issue.id) || 0,
+      watcher_count: watcherCounts.get(issue.id) || 0,
+      link_count: linkCounts.get(issue.id) || 0,
+      labels_parsed: parseLabels(issue.labels),
+      custom_fields: customFields.get(issue.id) || [],
+    };
+  });
+}
+
+async function enrichIssue(db, issue) {
+  const [enriched] = await enrichIssues(db, [issue]);
+  return enriched;
+}
+
+// POST /api/issues/resolve — issue summaries for a batch of keys.
+// Serves wiki content that is not saved yet (editor preview, AI drafts), where
+// the stored page→issue links are not yet current.
+// Registered before any /issues/:id route so `resolve` is not read as an id.
+const RESOLVE_MAX_KEYS = 100;
+
+router.post('/issues/resolve', requireAuth, async (req, res) => {
+  try {
+    const keys = req.body?.keys;
+    if (!Array.isArray(keys)) return res.status(400).json({ error: 'keys must be an array' });
+    if (keys.length > RESOLVE_MAX_KEYS) {
+      return res.status(400).json({ error: `At most ${RESOLVE_MAX_KEYS} keys per request` });
+    }
+    if (keys.length === 0) return res.json({ issues: [] });
+
+    const db = await getDb();
+    const issues = await queryAll(db, `
+      SELECT i.id, i.issue_key, i.title, i.status, i.type, i.priority,
+             u.name AS assignee_name, u.avatar_color AS assignee_color
+      FROM issues i
+      LEFT JOIN users u ON u.id = i.assignee_id
+      WHERE i.issue_key IN (${placeholders(keys)})`, keys);
+    res.json({ issues });
+  } catch (e) { serverError(res, e); }
+});
 
 // GET /api/projects/:projectId/issues
 router.get('/projects/:projectId/issues', requireAuth, async (req, res) => {
@@ -120,8 +223,21 @@ router.get('/projects/:projectId/issues', requireAuth, async (req, res) => {
     }
 
     query += ' ORDER BY board_order, created_at';
+
+    // Opt-in pagination for API clients (the board/backlog omit these and get
+    // the full set as before). `limit` present ⇒ paginate + expose the total.
+    const hasLimit = req.query.limit !== undefined;
+    if (hasLimit) {
+      const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 0, 1), 200);
+      const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+      const totalRow = await queryOne(db, query.replace('SELECT *', 'SELECT COUNT(*) as c').replace(/ ORDER BY.*$/, ''), params);
+      res.setHeader('X-Total-Count', String(totalRow?.c ?? 0));
+      query += ' LIMIT ? OFFSET ?';
+      params.push(limit, offset);
+    }
+
     const issues = await queryAll(db, query, params);
-    res.json(await Promise.all(issues.map(i => enrichIssue(db, i))));
+    res.json(await enrichIssues(db, issues));
   } catch (e) { serverError(res, e); }
 });
 
@@ -129,12 +245,17 @@ router.get('/projects/:projectId/issues', requireAuth, async (req, res) => {
 router.get('/projects/:projectId/epics', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
+    // A child counts as done when its literal status is 'done' (baked-in
+    // workflow) or the project's workflow maps its status to the done category.
+    const DONE = `(c.status = 'done' OR EXISTS (
+      SELECT 1 FROM project_statuses ps
+      WHERE ps.project_id = c.project_id AND ps.key = c.status AND ps.category = 'done'))`;
     const epics = await queryAll(db, `
       SELECT e.*, u.name AS assignee_name, u.avatar_color AS assignee_color,
         (SELECT COUNT(*) FROM issues c WHERE c.parent_id = e.id) AS child_count,
-        (SELECT COUNT(*) FROM issues c WHERE c.parent_id = e.id AND c.status = 'done') AS done_count,
+        (SELECT COUNT(*) FROM issues c WHERE c.parent_id = e.id AND ${DONE}) AS done_count,
         (SELECT COALESCE(SUM(c.story_points), 0) FROM issues c WHERE c.parent_id = e.id) AS total_points,
-        (SELECT COALESCE(SUM(c.story_points), 0) FROM issues c WHERE c.parent_id = e.id AND c.status = 'done') AS done_points
+        (SELECT COALESCE(SUM(c.story_points), 0) FROM issues c WHERE c.parent_id = e.id AND ${DONE}) AS done_points
       FROM issues e
       LEFT JOIN users u ON u.id = e.assignee_id
       WHERE e.project_id = ? AND e.type = 'epic'
@@ -155,7 +276,7 @@ router.get('/issues/:id/children', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
     const children = await queryAll(db, 'SELECT * FROM issues WHERE parent_id = ? ORDER BY created_at', [req.params.id]);
-    res.json(await Promise.all(children.map(c => enrichIssue(db, c))));
+    res.json(await enrichIssues(db, children));
   } catch (e) { serverError(res, e); }
 });
 
@@ -201,6 +322,8 @@ router.post('/projects/:projectId/issues', requireAuth, requireBoardAdmin, async
     await runAutomation(db, { type: 'issue_created', issue, actorId: req.userId });
     issue = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [id]);
     auditLog({ userId: req.userId, action: 'Created issue', category: 'issues', entityType: 'issue', entityId: id, entityName: issue.issue_key, details: { title, type: type || 'task', priority: priority || 'medium' } });
+    dispatchWebhook(db, req.params.projectId, 'issue.created', { id: issue.id, issue_key: issue.issue_key, title: issue.title, type: issue.type, status: issue.status });
+    publish({ type: 'issue', action: 'created', projectId: req.params.projectId, issueId: issue.id, actorId: req.userId });
     res.status(201).json(await enrichIssue(db, issue));
   } catch (e) { serverError(res, e); }
 });
@@ -294,6 +417,8 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
       await checkAllSubtasksDone(db, updated, req.userId);
       updated = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
     }
+    dispatchWebhook(db, updated.project_id, 'issue.updated', { id: updated.id, issue_key: updated.issue_key, title: updated.title, type: updated.type, status: updated.status });
+    publish({ type: 'issue', action: 'updated', projectId: updated.project_id, issueId: updated.id, actorId: req.userId });
     res.json(await enrichIssue(db, updated));
   } catch (e) { serverError(res, e); }
 });
@@ -310,8 +435,11 @@ router.delete('/issues/:id', requireAuth, requireBoardAdmin, async (req, res) =>
     await run(db, 'DELETE FROM activity_log WHERE issue_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM issue_watchers WHERE issue_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM issue_links WHERE source_issue_id = ? OR target_issue_id = ?', [req.params.id, req.params.id]);
+    await run(db, 'DELETE FROM wiki_page_issues WHERE issue_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM issues WHERE id = ?', [req.params.id]);
     auditLog({ userId: req.userId, action: 'Deleted issue', category: 'issues', entityType: 'issue', entityId: req.params.id, entityName: issue ? issue.issue_key : req.params.id });
+    if (issue) dispatchWebhook(db, issue.project_id, 'issue.deleted', { id: issue.id, issue_key: issue.issue_key });
+    if (issue) publish({ type: 'issue', action: 'deleted', projectId: issue.project_id, issueId: issue.id, actorId: req.userId });
     res.json({ ok: true });
   } catch (e) { serverError(res, e); }
 });
@@ -353,6 +481,7 @@ router.put('/issues/:id/move', requireAuth, async (req, res) => {
       await checkAllSubtasksDone(db, updated, req.userId);
       updated = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
     }
+    publish({ type: 'issue', action: 'moved', projectId: updated.project_id, issueId: updated.id, actorId: req.userId });
     res.json(await enrichIssue(db, updated));
   } catch (e) { serverError(res, e); }
 });

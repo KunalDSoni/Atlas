@@ -1,53 +1,26 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, type ReactNode } from 'react';
 
-type Theme = 'light' | 'dark' | 'system';
+// Atlas is light-theme only. The provider is kept as a thin shim so existing
+// consumers of useTheme() keep working, but the theme is always 'light' and
+// setTheme is a no-op — there is no dark mode to switch to.
+type Theme = 'light';
 
 interface ThemeContextValue {
   theme: Theme;
-  resolved: 'light' | 'dark';
+  resolved: 'light';
   setTheme: (t: Theme) => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
-const STORAGE_KEY = 'atlas_theme';
-
-function systemTheme(): 'light' | 'dark' {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(
-    () => (localStorage.getItem(STORAGE_KEY) as Theme) || 'system',
-  );
-  const [resolved, setResolved] = useState<'light' | 'dark'>(() =>
-    theme === 'system' ? systemTheme() : theme,
-  );
-
+  // Guard against any stale `.dark` class from a previous build or localStorage.
   useEffect(() => {
-    const next = theme === 'system' ? systemTheme() : theme;
-    setResolved(next);
-    document.documentElement.classList.toggle('dark', next === 'dark');
-  }, [theme]);
+    document.documentElement.classList.remove('dark');
+  }, []);
 
-  // Track OS changes only while following the system.
-  useEffect(() => {
-    if (theme !== 'system') return;
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const onChange = () => {
-      const next = systemTheme();
-      setResolved(next);
-      document.documentElement.classList.toggle('dark', next === 'dark');
-    };
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, [theme]);
-
-  const setTheme = (t: Theme) => {
-    localStorage.setItem(STORAGE_KEY, t);
-    setThemeState(t);
-  };
-
-  return <ThemeContext.Provider value={{ theme, resolved, setTheme }}>{children}</ThemeContext.Provider>;
+  const value: ThemeContextValue = { theme: 'light', resolved: 'light', setTheme: () => {} };
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme() {

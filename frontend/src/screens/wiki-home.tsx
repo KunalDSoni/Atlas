@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { BookOpen, Clock, Plus, Search, Star } from 'lucide-react';
+import { BookOpen, Clock, Plus, Search, Sparkles, Star } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,6 +13,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { api } from '@/lib/api';
 import type { WikiPage, WikiSpace } from '@/lib/types';
 import { CardsSkeleton, EmptyState, ErrorState, PageHeader, UserAvatar } from '@/components/app/primitives';
+import { AskWikiDialog } from '@/components/app/ask-wiki-dialog';
+import { useAIEnabled } from '@/hooks/use-ai';
 import { timeAgo } from '@/lib/format';
 
 function CreateSpaceDialog({
@@ -144,6 +146,8 @@ export default function WikiHomeScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [askOpen, setAskOpen] = useState(false);
+  const aiEnabled = useAIEnabled();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -208,9 +212,16 @@ export default function WikiHomeScreen() {
         title="Wiki"
         description="Spaces, pages, and documentation."
         actions={
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            <Plus className="size-4" /> New space
-          </Button>
+          <>
+            {aiEnabled && (
+              <Button size="sm" variant="outline" onClick={() => setAskOpen(true)}>
+                <Sparkles className="size-4" /> Ask AI
+              </Button>
+            )}
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
+              <Plus className="size-4" /> New space
+            </Button>
+          </>
         }
       />
 
@@ -252,24 +263,25 @@ export default function WikiHomeScreen() {
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {spaces.map((s) => (
                 <Link key={s.id} to={`/wiki/space/${s.id}`} className="group">
-                  <Card className="h-full transition-all hover:border-primary/40 hover:shadow-raised">
-                    <CardContent className="flex items-start gap-3 px-4 py-4">
+                  <Card className="h-full overflow-hidden pt-0 transition-all hover:border-primary/40 hover:shadow-raised">
+                    <span className="block h-1.5" style={{ background: s.color || 'var(--primary)' }} />
+                    <CardContent className="flex items-start gap-3 px-4 pb-4 pt-3.5">
                       <span
-                        className="grid size-9 shrink-0 place-items-center rounded-md text-base"
+                        className="grid size-10 shrink-0 place-items-center rounded-lg text-lg"
                         style={{ background: s.color ? `${s.color}1a` : 'var(--primary-muted)' }}
                       >
                         {s.icon || '📘'}
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-1.5">
-                          <span className="truncate font-medium">{s.name}</span>
+                          <span className="truncate font-semibold">{s.name}</span>
                           {s.starred ? <Star className="size-3.5 shrink-0 fill-warning text-warning" /> : null}
                         </span>
                         <span className="mt-0.5 block truncate font-mono text-[11px] text-muted-foreground">
                           {s.space_key}
                         </span>
                         {s.description && (
-                          <span className="mt-1 line-clamp-2 block text-xs text-muted-foreground">{s.description}</span>
+                          <span className="mt-1.5 line-clamp-2 block text-xs text-muted-foreground">{s.description}</span>
                         )}
                         <span className="mt-2 block text-[11px] text-faint">
                           {s.page_count} page{s.page_count === 1 ? '' : 's'}
@@ -327,6 +339,7 @@ export default function WikiHomeScreen() {
       )}
 
       <CreateSpaceDialog open={createOpen} onOpenChange={setCreateOpen} onCreated={load} />
+      <AskWikiDialog open={askOpen} onOpenChange={setAskOpen} />
     </>
   );
 }
