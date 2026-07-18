@@ -5,6 +5,7 @@ const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
 const { sanitizeRichText } = require('../utils/sanitize');
+const { signWikiImages, unsignWikiImages } = require('./wiki-attachments');
 const router = express.Router();
 
 // ===== PAGE RESTRICTIONS =====
@@ -158,7 +159,8 @@ router.post('/wiki/spaces/:spaceId/pages', requireAuth, async (req, res) => {
     const { title, parent_id, body_format, labels } = req.body;
     const pageType = req.body.page_type === 'blog' ? 'blog' : 'page';
     // User-authored HTML is rendered into other users' browsers — clean it on write.
-    const body = sanitizeRichText(req.body.body);
+    // Strip signatures from inline wiki images so persisted content never expires.
+    const body = unsignWikiImages(sanitizeRichText(req.body.body));
     if (!title) return res.status(400).json({ error: 'Title required' });
     const id = uuidv4();
     const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
@@ -214,6 +216,8 @@ router.get('/wiki/pages/:id', requireAuth, async (req, res) => {
     page.breadcrumb = breadcrumb;
     // Children
     page.children = await queryAll(db, "SELECT id, title, slug, status FROM wiki_pages WHERE parent_id = ? AND status = 'current' ORDER BY position, title", [req.params.id]);
+    // Re-sign inline wiki images so the browser can load them for this session.
+    page.body = signWikiImages(page.body);
     res.json(page);
   } catch (e) { serverError(res, e); }
 });
@@ -226,7 +230,7 @@ router.put('/wiki/pages/:id', requireAuth, async (req, res) => {
     const access = await pageAccess(db, req.params.id, req.userId, req.userRole);
     if (!access.edit) return res.status(403).json({ error: 'You cannot edit this restricted page' });
     const { title, parent_id, status, position, change_message } = req.body;
-    const body = req.body.body === undefined ? undefined : sanitizeRichText(req.body.body);
+    const body = req.body.body === undefined ? undefined : unsignWikiImages(sanitizeRichText(req.body.body));
     const updates = []; const params = [];
     if (title !== undefined) { updates.push('title = ?'); params.push(title); }
     if (body !== undefined) { updates.push('body = ?'); params.push(body); }

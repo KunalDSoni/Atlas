@@ -82,6 +82,7 @@ async function createTestApp() {
   testApp.use('/api', require('../../routes/product-objectives'));
   testApp.use('/api', require('../../routes/portal'));
   testApp.use('/api', require('../../routes/ai'));
+  testApp.use('/api', require('../../routes/wiki-attachments'));
 
   app = testApp;
   return testApp;

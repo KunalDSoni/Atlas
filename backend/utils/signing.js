@@ -21,6 +21,13 @@ function signedFileUrl(id, kind = 'preview', ttlSeconds = DEFAULT_TTL_SECONDS) {
   return `/api/attachments/${id}/${kind}?exp=${exp}&sig=${computeSig(id, exp)}`;
 }
 
+/** The `?exp=&sig=` query string for a given id — for building signed URLs at
+ *  other paths (e.g. wiki attachments). Verified by the same verifyFileSig. */
+function fileSigQuery(id, ttlSeconds = DEFAULT_TTL_SECONDS) {
+  const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
+  return `?exp=${exp}&sig=${computeSig(id, exp)}`;
+}
+
 /** True when `sig` matches `id`+`exp` and the deadline has not passed. */
 function verifyFileSig(id, exp, sig) {
   if (!exp || !sig) return false;
@@ -33,4 +40,4 @@ function verifyFileSig(id, exp, sig) {
   return crypto.timingSafeEqual(expected, actual);
 }
 
-module.exports = { signedFileUrl, verifyFileSig };
+module.exports = { signedFileUrl, fileSigQuery, verifyFileSig };

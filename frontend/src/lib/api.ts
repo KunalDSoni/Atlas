@@ -9,6 +9,7 @@ import type {
   ProfileResponse, Project, ProjectComponent, ProjectMember, ProjectStats, SavedFilter, SearchResults, Settings, Sprint, User, Version,
   IssueLink, LinkType,
   WikiComment, WikiPage, WikiRestriction, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
+  WikiAttachment,
   WorkLog, WorkflowStatus,
   PbCompany, PbCustomer, PbInsight, PbFeature, PbObjective, PortalFeature,
 } from './types';
@@ -301,6 +302,14 @@ export const api = {
 
     search: (q: string) => get<WikiPage[]>(`/wiki/search?q=${encodeURIComponent(q)}`),
     templates: () => get<WikiTemplate[]>('/wiki/templates'),
+
+    attachments: (pageId: string) => get<WikiAttachment[]>(`/wiki/pages/${pageId}/attachments`),
+    uploadAttachments: (pageId: string, files: File[]) => {
+      const fd = new FormData();
+      files.forEach((f) => fd.append('files', f));
+      return request<WikiAttachment[]>(`/wiki/pages/${pageId}/attachments`, { method: 'POST', body: fd });
+    },
+    removeAttachment: (id: string) => del<{ ok: boolean }>(`/wiki/attachments/${id}`),
 
     watchState: (pageId: string) => get<{ count: number; watching: boolean }>(`/wiki/pages/${pageId}/watchers`),
     restrictions: (pageId: string) => get<WikiRestriction[]>(`/wiki/pages/${pageId}/restrictions`),

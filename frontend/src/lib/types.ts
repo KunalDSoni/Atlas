@@ -413,6 +413,18 @@ export interface WikiPage {
   children?: { id: string; title: string; slug: string; status: string }[];
 }
 
+export interface WikiAttachment {
+  id: string;
+  page_id: string;
+  original_name: string;
+  mime_type: string | null;
+  size: number | null;
+  raw_url: string;
+  is_image: boolean;
+  uploader_name: string | null;
+  created_at: string;
+}
+
 export interface WikiTreeNode {
   id: string;
   title: string;
