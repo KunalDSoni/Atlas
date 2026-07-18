@@ -36,6 +36,14 @@ describe('extractIssueKeys', () => {
     expect(extractIssueKeys(42)).toEqual([]);
   });
 
+  test('ignores keys inside [jql:] macro blocks', () => {
+    expect(extractIssueKeys('<p>[jql: project = ATLAS AND key = ATLAS-1]</p>')).toEqual([]);
+  });
+
+  test('still finds keys outside a [jql:] block in the same document', () => {
+    expect(extractIssueKeys('<p>[jql: type = bug] but ATLAS-2 matters</p>')).toEqual(['ATLAS-2']);
+  });
+
   test('returns pattern-matching non-issues; resolution is what filters them', () => {
     // COVID-19 matches the key pattern. The extractor is deliberately naive —
     // Task 3 resolves keys against the issues table, so junk creates no rows.

@@ -212,6 +212,15 @@ describe('forward reads', () => {
     const res = await request(getApp()).post('/api/issues/resolve').set(headers).send({ keys: 'ATLAS-1' });
     expect(res.status).toBe(400);
   });
+
+  test('JQL search rows include assignee_name', async () => {
+    const res = await request(getApp())
+      .get(`/api/search?q=${encodeURIComponent('type = task')}`).set(headers);
+    expect(res.status).toBe(200);
+    expect(res.body.jql).toBe(true);
+    expect(res.body.issues.length).toBeGreaterThan(0);
+    expect(res.body.issues[0]).toHaveProperty('assignee_name');
+  });
 });
 
 describe('lifecycle', () => {

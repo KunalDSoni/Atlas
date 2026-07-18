@@ -31,8 +31,10 @@ router.get('/search', requireAuth, async (req, res) => {
       if (req.query.project_id) { clauses.push('i.project_id = ?'); params.push(req.query.project_id); }
       const issues = await queryAll(db, `
         SELECT i.id, i.issue_key, i.title, i.type, i.status, i.priority, i.project_id,
-               p.key AS project_key, p.name AS project_name
+               p.key AS project_key, p.name AS project_name,
+               u.name AS assignee_name
         FROM issues i JOIN projects p ON p.id = i.project_id
+        LEFT JOIN users u ON u.id = i.assignee_id
         WHERE ${clauses.join(' AND ')}
         ORDER BY i.updated_at DESC LIMIT 50`, params);
       return res.json({ issues, pages: [], jql: true });
