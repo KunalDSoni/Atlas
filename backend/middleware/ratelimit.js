@@ -45,6 +45,35 @@ function clearRateLimit(req) {
   buckets.delete(keyFor(req));
 }
 
-function _reset() { buckets.clear(); }
+// General per-IP API throttle — a coarse safety net against abuse/runaway
+// clients. Generous so normal interactive use never trips it. Read-heavy GETs
+// and the SSE stream are exempt (long-lived / high-frequency by design).
+const API_WINDOW_MS = 60 * 1000;
+const API_MAX = Number(process.env.API_RATE_MAX) || 300; // requests / IP / minute
+const apiBuckets = new Map();
+const apiSweeper = setInterval(() => {
+  const now = Date.now();
+  for (const [key, b] of apiBuckets) if (b.resetAt <= now) apiBuckets.delete(key);
+}, API_WINDOW_MS);
+if (apiSweeper.unref) apiSweeper.unref();
 
-module.exports = { loginRateLimit, clearRateLimit, _reset };
+function apiRateLimit(req, res, next) {
+  // Don't throttle the event stream (one long-lived connection) or health probes.
+  if (req.path === '/stream' || req.path.startsWith('/health')) return next();
+  const now = Date.now();
+  const key = req.ip || 'unknown';
+  let b = apiBuckets.get(key);
+  if (!b || b.resetAt <= now) { b = { count: 0, resetAt: now + API_WINDOW_MS }; apiBuckets.set(key, b); }
+  b.count += 1;
+  res.setHeader('X-RateLimit-Limit', String(API_MAX));
+  res.setHeader('X-RateLimit-Remaining', String(Math.max(0, API_MAX - b.count)));
+  if (b.count > API_MAX) {
+    res.setHeader('Retry-After', String(Math.ceil((b.resetAt - now) / 1000)));
+    return res.status(429).json({ error: 'Too many requests. Slow down and try again shortly.' });
+  }
+  next();
+}
+
+function _reset() { buckets.clear(); apiBuckets.clear(); }
+
+module.exports = { loginRateLimit, clearRateLimit, apiRateLimit, _reset };

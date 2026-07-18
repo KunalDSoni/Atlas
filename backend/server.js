@@ -9,6 +9,7 @@ const path = require('path');
 const { initDb, getDb, queryOne } = require('./database');
 const { authMiddleware } = require('./middleware/auth');
 const { requestLogger } = require('./middleware/logger');
+const { apiRateLimit } = require('./middleware/ratelimit');
 
 // Route modules
 const authRoutes = require('./routes/auth');
@@ -99,6 +100,9 @@ app.use(express.static(path.join(__dirname, '..', 'frontend', 'build')));
 // ===== API ROUTES (by module) =====
 
 // Auth Module — login, logout, me
+// Coarse per-IP throttle across the API (stream + health exempt).
+app.use('/api', apiRateLimit);
+
 app.use('/api/auth', authRoutes);
 
 // Users Module — CRUD for user management (admin)
