@@ -121,6 +121,7 @@ export const api = {
   settings: {
     get: () => get<Settings>('/settings'),
     update: (body: Partial<Settings>) => put<Settings>('/settings', body),
+    emailStatus: () => get<{ email_configured: boolean }>('/settings/email-status'),
   },
 
   projects: {

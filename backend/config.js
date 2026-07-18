@@ -59,6 +59,20 @@ const config = {
     },
   },
 
+  // Email (outbound notification delivery). Gated on SMTP config the same way
+  // AI is gated on a key: unconfigured → a no-op, so the app is unchanged.
+  email: {
+    url: process.env.SMTP_URL || null,
+    host: process.env.SMTP_HOST || null,
+    port: parseInt(process.env.SMTP_PORT, 10) || 587,
+    secure: (process.env.SMTP_SECURE || 'false').toLowerCase() === 'true',
+    user: process.env.SMTP_USER || null,
+    pass: process.env.SMTP_PASS || null,
+    from: process.env.SMTP_FROM || 'Atlas <no-reply@atlas.local>',
+    appUrl: process.env.APP_URL || 'http://localhost:3001',
+    enabled: () => Boolean(process.env.SMTP_URL || process.env.SMTP_HOST),
+  },
+
   // Helpers
   isDev: () => config.env === 'development',
   isProd: () => config.env === 'production',
