@@ -129,6 +129,19 @@ router.get('/projects/:projectId/issues', requireAuth, async (req, res) => {
     }
 
     query += ' ORDER BY board_order, created_at';
+
+    // Opt-in pagination for API clients (the board/backlog omit these and get
+    // the full set as before). `limit` present ⇒ paginate + expose the total.
+    const hasLimit = req.query.limit !== undefined;
+    if (hasLimit) {
+      const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 0, 1), 200);
+      const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+      const totalRow = await queryOne(db, query.replace('SELECT *', 'SELECT COUNT(*) as c').replace(/ ORDER BY.*$/, ''), params);
+      res.setHeader('X-Total-Count', String(totalRow?.c ?? 0));
+      query += ' LIMIT ? OFFSET ?';
+      params.push(limit, offset);
+    }
+
     const issues = await queryAll(db, query, params);
     res.json(await Promise.all(issues.map(i => enrichIssue(db, i))));
   } catch (e) { serverError(res, e); }
