@@ -84,3 +84,76 @@ describe('page save populates issue links', () => {
     expect(await linkRows(page.body.id)).toHaveLength(1);
   });
 });
+
+describe('GET /api/issues/:id/pages', () => {
+  test('lists pages mentioning the issue', async () => {
+    const page = await request(getApp())
+      .post(`/api/wiki/spaces/${spaceId}/pages`).set(headers)
+      .send({ title: 'Mentions A', body: `<p>${issueA.issue_key} discussion</p>` });
+
+    const res = await request(getApp()).get(`/api/issues/${issueA.id}/pages`).set(headers);
+    expect(res.status).toBe(200);
+    const hit = res.body.find(p => p.id === page.body.id);
+    expect(hit).toBeDefined();
+    expect(hit.title).toBe('Mentions A');
+    expect(hit.space_name).toBeTruthy();
+    expect(hit.space_key).toBeTruthy();
+  });
+
+  test('returns [] for an issue no page mentions', async () => {
+    const projects = await request(getApp()).get('/api/projects').set(headers);
+    const lonely = (await request(getApp())
+      .post(`/api/projects/${projects.body[0].id}/issues`).set(headers)
+      .send({ title: 'Unmentioned', type: 'task' })).body;
+    const res = await request(getApp()).get(`/api/issues/${lonely.id}/pages`).set(headers);
+    expect(res.body).toEqual([]);
+  });
+
+  test('a restricted page is hidden from a user who cannot view it', async () => {
+    const { run } = require('../../database');
+    const page = await request(getApp())
+      .post(`/api/wiki/spaces/${spaceId}/pages`).set(headers)
+      .send({ title: 'Secret retro', body: `<p>${issueB.issue_key} postmortem</p>` });
+
+    // Restrict to the admin author only.
+    await run(db, 'INSERT INTO wiki_page_restrictions (page_id, user_id, can_edit) VALUES (?, ?, 1)',
+      [page.body.id, headers['x-user-id']]);
+
+    const { loginAs } = require('./setup');
+    const otherH = await loginAs('priya@example.com', 'password123');
+    const other = await request(getApp()).get(`/api/issues/${issueB.id}/pages`).set(otherH);
+    expect(other.body.some(p => p.id === page.body.id)).toBe(false);
+
+    // The author still sees it.
+    const mine = await request(getApp()).get(`/api/issues/${issueB.id}/pages`).set(headers);
+    expect(mine.body.some(p => p.id === page.body.id)).toBe(true);
+  });
+
+  test('query count stays flat as the number of mentioning pages grows', async () => {
+    const projects = await request(getApp()).get('/api/projects').set(headers);
+    const target = (await request(getApp())
+      .post(`/api/projects/${projects.body[0].id}/issues`).set(headers)
+      .send({ title: 'Widely mentioned', type: 'task' })).body;
+
+    const measure = async () => {
+      const original = db.prepare.bind(db);
+      let n = 0;
+      db.prepare = (...a) => { n += 1; return original(...a); };
+      await request(getApp()).get(`/api/issues/${target.id}/pages`).set(headers);
+      db.prepare = original;
+      return n;
+    };
+
+    await request(getApp()).post(`/api/wiki/spaces/${spaceId}/pages`).set(headers)
+      .send({ title: 'Mention 0', body: `<p>${target.issue_key}</p>` });
+    const small = await measure();
+
+    for (let i = 1; i <= 8; i++) {
+      await request(getApp()).post(`/api/wiki/spaces/${spaceId}/pages`).set(headers)
+        .send({ title: `Mention ${i}`, body: `<p>${target.issue_key}</p>` });
+    }
+    const large = await measure();
+
+    expect(large - small).toBeLessThanOrEqual(1);
+  });
+});

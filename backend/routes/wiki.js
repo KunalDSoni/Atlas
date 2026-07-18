@@ -333,6 +333,28 @@ router.delete('/wiki/pages/:id', requireAuth, async (req, res) => {
   } catch (e) { serverError(res, e); }
 });
 
+// ===== ISSUE → PAGES =====
+// Pages mentioning an issue. Restricted pages the caller cannot view are
+// removed: a page title alone can disclose sensitive context (e.g. a page
+// named "ATLAS-29 breach retro" reveals both its existence and its subject).
+router.get('/issues/:id/pages', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const pages = await queryAll(db, `
+      SELECT p.id, p.title, p.slug, p.space_id, p.updated_at,
+             s.name AS space_name, s.space_key
+      FROM wiki_page_issues l
+      JOIN wiki_pages p ON p.id = l.page_id
+      JOIN wiki_spaces s ON s.id = p.space_id
+      WHERE l.issue_id = ? AND p.status = 'current'
+      ORDER BY p.updated_at DESC`, [req.params.id]);
+    if (pages.length === 0) return res.json([]);
+
+    const access = await pageAccessBatch(db, pages.map((p) => p.id), req.userId, req.userRole);
+    res.json(pages.filter((p) => access.get(p.id)?.view));
+  } catch (e) { serverError(res, e); }
+});
+
 // ===== EXPORT =====
 // Crude but dependency-free HTML → Markdown for the sanitised tag subset we store.
 function htmlToMarkdown(html) {
