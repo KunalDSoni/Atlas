@@ -42,6 +42,7 @@ const aiRoutes = require('./routes/ai');
 const wikiAttachmentsRoutes = require('./routes/wiki-attachments');
 const tokensRoutes = require('./routes/tokens');
 const webhooksRoutes = require('./routes/webhooks');
+const streamRoutes = require('./routes/stream');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -170,6 +171,9 @@ app.use('/api', wikiAttachmentsRoutes);
 // Personal API tokens + outbound webhooks
 app.use('/api', tokensRoutes);
 app.use('/api', webhooksRoutes);
+
+// Real-time event stream (SSE)
+app.use('/api', streamRoutes);
 
 // SPA fallback (Express 5 compatible)
 app.get('/{*splat}', (req, res) => {

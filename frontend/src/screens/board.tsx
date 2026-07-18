@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useLiveEvents } from '@/hooks/use-live-events';
 import { ArrowDown, ArrowUp, Check, Columns3, Plus, Rows3, Search, SlidersHorizontal, Trash2, Workflow, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -182,6 +183,14 @@ export default function BoardScreen() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Live updates: when anyone changes an issue in this project, refresh the board
+  // in the background (no spinner) so teammates see each other's moves.
+  useLiveEvents((e) => {
+    if (e.type === 'issue' && e.projectId === currentProjectId) {
+      api.issues.list(currentProjectId).then(setIssues).catch(() => undefined);
+    }
+  });
 
   // Per-status WIP limits from the project record (admin-editable), 0/absent = no limit.
   const wipLimits = useMemo<Record<string, number>>(() => {

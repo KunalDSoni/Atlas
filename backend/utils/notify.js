@@ -4,6 +4,7 @@
 const { v4: uuidv4 } = require('uuid');
 const { run, queryAll, queryOne } = require('../database');
 const { sendNotificationEmail } = require('./email');
+const { publish } = require('./events');
 
 /** Insert one notification; silently skips self-notification. Also delivers an
  *  email best-effort (a no-op when SMTP is unconfigured or the user opted out). */
@@ -13,6 +14,9 @@ async function notify(db, { userId, actorId, type, message, link, issueId, wikiP
     await run(db, `INSERT INTO notifications (id, user_id, actor_id, type, message, link, issue_id, wiki_page_id)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [uuidv4(), userId, actorId || null, type, message, link || null, issueId || null, wikiPageId || null]);
+
+    // Live push to the recipient's open SSE connections (bell updates instantly).
+    publish({ type: 'notification', userId, notificationType: type, message });
 
     // Email fan-out — never blocks or fails the request.
     try {
