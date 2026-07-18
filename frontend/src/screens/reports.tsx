@@ -7,13 +7,19 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { api, getToken } from '@/lib/api';
 import { useProjects } from '@/hooks/use-projects';
 import { PRIORITIES, PRIORITY_LABEL, STATUS_LABEL, STATUSES, TYPE_LABEL } from '@/lib/domain';
-import type { IssueStatus, IssueType, Priority } from '@/lib/types';
+import type { CumulativeFlowResponse, CycleTimeResponse, IssueStatus, IssueType, Priority, TimeInStatusResponse } from '@/lib/types';
 import { EmptyState, ErrorState, PageHeader, UserAvatar } from '@/components/app/primitives';
 import { DataTable, GroupedColumns, HBarChart, Legend, LineChart, StackedBar, seriesColor } from '@/components/app/charts';
 import { toast } from 'sonner';
 
 /** Story → Task → Bug reads as a workflow; alphabetical does not. */
 const TYPE_ORDER = ['story', 'task', 'bug'] as const;
+
+/** Hours render as days past 48h; null (no data) renders as an em dash. */
+function fmtHours(h: number | null): string {
+  if (h === null) return '—';
+  return h >= 48 ? `${(h / 24).toFixed(1)}d` : `${h.toFixed(1)}h`;
+}
 
 interface VelocityResponse {
   sprints: {
@@ -129,6 +135,9 @@ export default function ReportsScreen() {
   const [sprintReport, setSprintReport] = useState<SprintReportRow[] | null>(null);
   const [burndown, setBurndown] = useState<BurndownResponse | null>(null);
   const [resolution, setResolution] = useState<ResolutionResponse | null>(null);
+  const [cycle, setCycle] = useState<CycleTimeResponse | null>(null);
+  const [tis, setTis] = useState<TimeInStatusResponse | null>(null);
+  const [cfd, setCfd] = useState<CumulativeFlowResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -137,7 +146,7 @@ export default function ReportsScreen() {
     setLoading(true);
     setError(null);
     try {
-      const [v, w, t, p, sr, bd, rs] = await Promise.all([
+      const [v, w, t, p, sr, bd, rs, ct, ts, cf] = await Promise.all([
         api.reports.velocity(currentProjectId),
         api.reports.workload(currentProjectId),
         api.reports.typeDistribution(currentProjectId),
@@ -145,6 +154,9 @@ export default function ReportsScreen() {
         api.reports.sprint(currentProjectId).catch(() => null),
         api.reports.burndown(currentProjectId).catch(() => null),
         api.reports.resolution(currentProjectId).catch(() => null),
+        api.reports.cycleTime(currentProjectId).catch(() => null),
+        api.reports.timeInStatus(currentProjectId).catch(() => null),
+        api.reports.cumulativeFlow(currentProjectId).catch(() => null),
       ]);
       setVelocity(v as VelocityResponse);
       setWorkload(w as WorkloadResponse);
@@ -153,6 +165,9 @@ export default function ReportsScreen() {
       setSprintReport(sr as SprintReportRow[] | null);
       setBurndown(bd as BurndownResponse | null);
       setResolution(rs as ResolutionResponse | null);
+      setCycle(ct);
+      setTis(ts);
+      setCfd(cf);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load reports');
     } finally {
@@ -433,6 +448,85 @@ export default function ReportsScreen() {
             data={priorityTotals.map(([k, v]) => ({ label: PRIORITY_LABEL[k as Priority] ?? k, value: v }))}
           />
         </ChartCard>
+
+        {/* ===== Flow metrics (since tracking began) ===== */}
+        {cycle && cycle.count > 0 && (
+          <ChartCard
+            title="Cycle time"
+            description="Completed issues, since tracking began"
+            table={
+              <DataTable
+                caption="Recently completed issues with cycle and lead times"
+                columns={['Key', 'Title', 'Cycle', 'Lead']}
+                rows={cycle.issues.slice(0, 10).map((i) => [
+                  i.issue_key, i.title, fmtHours(i.cycle_time_h), fmtHours(i.lead_time_h),
+                ])}
+              />
+            }
+          >
+            <div className="grid grid-cols-4 gap-3 text-center">
+              {([
+                ['Avg cycle', cycle.avg_cycle_h], ['P50', cycle.p50_cycle_h],
+                ['P85', cycle.p85_cycle_h], ['Avg lead', cycle.avg_lead_h],
+              ] as const).map(([label, val]) => (
+                <div key={label} className="rounded-md border border-border p-2.5">
+                  <p className="text-lg font-semibold tabular-nums">{fmtHours(val)}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{label}</p>
+                </div>
+              ))}
+            </div>
+          </ChartCard>
+        )}
+
+        {tis && tis.statuses.length > 0 && (
+          <ChartCard
+            title="Time in status"
+            description="Average hours per status, since tracking began"
+            table={
+              <DataTable
+                caption="Average and total hours spent per status"
+                columns={['Status', 'Avg', 'Total', 'Issues']}
+                rows={tis.statuses.map((s) => [
+                  STATUS_LABEL[s.status as IssueStatus] ?? s.status, fmtHours(s.avg_h), fmtHours(s.total_h), s.issues,
+                ])}
+              />
+            }
+          >
+            <HBarChart
+              colorIndex={1}
+              data={tis.statuses.map((s) => ({
+                label: STATUS_LABEL[s.status as IssueStatus] ?? s.status,
+                value: s.avg_h,
+              }))}
+              formatValue={(n) => fmtHours(n)}
+            />
+          </ChartCard>
+        )}
+
+        {cfd && cfd.days.length > 1 && (
+          <ChartCard
+            title="Cumulative flow"
+            description="Issues per category per day, last 30 days"
+            table={
+              <DataTable
+                caption="Daily issue counts per workflow category"
+                columns={['Date', 'To Do', 'In Progress', 'Done']}
+                rows={cfd.days.slice(-10).map((d) => [d.date, d.todo, d.in_progress, d.done])}
+              />
+            }
+          >
+            <LineChart
+              series={['To Do', 'In Progress', 'Done']}
+              points={cfd.days.map((d) => ({
+                label: d.date.slice(5),
+                values: [d.todo, d.in_progress, d.done],
+              }))}
+            />
+            <div className="mt-2">
+              <Legend items={['To Do', 'In Progress', 'Done'].map((label, i) => ({ label, color: seriesColor(i) }))} />
+            </div>
+          </ChartCard>
+        )}
       </div>
     </>
   );

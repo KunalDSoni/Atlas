@@ -7,7 +7,8 @@ import type {
   ActivityEntry, AdminStats, AppNotification, Attachment, AuditLogPage, AuthUser,
   AutomationAction, AutomationCondition, AutomationRule, AutomationTrigger, Comment, Issue, EpicSummary,
   ProfileResponse, Project, ProjectComponent, ProjectMember, ProjectStats, SavedFilter, SearchResults, Settings, Sprint, User, Version,
-  IssueLink, LinkType, LinkedIssueSummary, MentioningPage,
+  IssueLink, LinkType, LinkedIssueSummary, MentioningPage, JqlSearchIssue,
+  CycleTimeResponse, TimeInStatusResponse, CumulativeFlowResponse,
   WikiComment, WikiPage, WikiRestriction, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
   WikiAttachment, ApiToken, Webhook, CustomField,
   WorkLog, WorkflowStatus,
@@ -224,6 +225,8 @@ export const api = {
   search: {
     query: (q: string, projectId?: string) =>
       get<SearchResults>(`/search?q=${encodeURIComponent(q)}${projectId ? `&project_id=${encodeURIComponent(projectId)}` : ''}`),
+    /** JQL-lite evaluation for the wiki [jql:] macro. 400s carry the parse error. */
+    jql: (q: string) => get<{ issues: JqlSearchIssue[]; jql?: boolean }>(`/search?q=${encodeURIComponent(q)}`),
   },
 
   filters: {
@@ -436,6 +439,9 @@ export const api = {
     typeDistribution: (projectId: string) => get<unknown>(`/projects/${projectId}/reports/type-distribution`),
     priorityDistribution: (projectId: string) => get<unknown>(`/projects/${projectId}/reports/priority-distribution`),
     createdVsResolved: (projectId: string) => get<unknown>(`/projects/${projectId}/reports/created-vs-resolved`),
+    cycleTime: (projectId: string) => get<CycleTimeResponse>(`/projects/${projectId}/reports/cycle-time`),
+    timeInStatus: (projectId: string) => get<TimeInStatusResponse>(`/projects/${projectId}/reports/time-in-status`),
+    cumulativeFlow: (projectId: string, days = 30) => get<CumulativeFlowResponse>(`/projects/${projectId}/reports/cumulative-flow?days=${days}`),
     csvUrl: (projectId: string) => `/api/projects/${projectId}/reports/export/csv`,
   },
 };
