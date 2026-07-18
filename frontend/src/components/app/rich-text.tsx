@@ -7,6 +7,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DOMPurify, { type Config } from 'dompurify';
+import type { LinkedIssueSummary } from '@/lib/types';
+import { StatusPill } from './primitives';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { Bold, Code, Heading2, Heading3, Image as ImageIcon, Italic, Link2, List, ListOrdered, Loader2, Quote, Sparkles, Strikethrough } from 'lucide-react';
@@ -69,9 +71,11 @@ export function extractHeadings(html: string): HeadingEntry[] {
  * Wiki macros, applied AFTER sanitising (everything injected here is built from
  * textContent, never raw user HTML):
  * - `[toc]` on its own line becomes a table of contents from the page headings
- * - issue keys like ATLAS-12 become clickable chips
+ * - issue keys like ATLAS-12 become clickable chips — but only when the key
+ *   resolves to a real issue in `issues`. That check is what keeps prose like
+ *   COVID-19, ISO-8601 and SEV-1 from rendering as links.
  */
-function applyMacros(html: string): string {
+function applyMacros(html: string, issues: Map<string, LinkedIssueSummary>): string {
   const tpl = document.createElement('template');
   tpl.innerHTML = html;
   const root = tpl.content;
@@ -114,10 +118,14 @@ function applyMacros(html: string): string {
   targets.forEach((text) => {
     const frag = document.createDocumentFragment();
     (text.textContent || '').split(/(\b[A-Z][A-Z0-9]{1,9}-\d+\b)/g).forEach((part) => {
-      if (/^[A-Z][A-Z0-9]{1,9}-\d+$/.test(part)) {
+      const issue = /^[A-Z][A-Z0-9]{1,9}-\d+$/.test(part) ? issues.get(part) : undefined;
+      // Only a key that resolves to a real issue becomes a chip. Everything
+      // else stays prose, so a chip existing is proof the issue exists.
+      if (issue) {
         const chip = document.createElement('a');
         chip.href = '#';
-        chip.setAttribute('data-issue-key', part);
+        chip.setAttribute('data-issue-id', issue.id);
+        chip.setAttribute('data-issue-key', issue.issue_key);
         chip.className =
           'wiki-issue-chip inline-flex items-center gap-0.5 rounded bg-primary/10 px-1 font-mono text-[11px] font-semibold text-primary no-underline hover:bg-primary/20';
         chip.textContent = part;
@@ -139,40 +147,76 @@ export function RichTextView({
   html,
   className,
   macros = false,
+  issues,
 }: {
   html: string;
   className?: string;
   /** Enable [toc] + issue-key chips (wiki pages). */
   macros?: boolean;
+  /** Issues mentioned by this content. A key only becomes a chip if it appears here. */
+  issues?: LinkedIssueSummary[];
 }) {
   const navigate = useNavigate();
+  const [hovered, setHovered] = useState<{ issue: LinkedIssueSummary; x: number; y: number } | null>(null);
+
+  const issueMap = useMemo(
+    () => new Map((issues ?? []).map((i) => [i.issue_key, i])),
+    [issues],
+  );
   const rendered = useMemo(() => {
     const clean = sanitizeHtml(html);
-    return macros ? applyMacros(clean) : clean;
-  }, [html, macros]);
+    return macros ? applyMacros(clean, issueMap) : clean;
+  }, [html, macros, issueMap]);
 
-  async function onClick(e: React.MouseEvent<HTMLDivElement>) {
-    const chip = (e.target as HTMLElement).closest?.('a[data-issue-key]');
+  function onClick(e: React.MouseEvent<HTMLDivElement>) {
+    const chip = (e.target as HTMLElement).closest?.('a[data-issue-id]');
     if (!chip) return;
     e.preventDefault();
+    // Navigate by the id the server resolved. The previous implementation
+    // searched by key and fell back to the first result, which could open an
+    // unrelated issue when the key no longer existed.
+    const id = chip.getAttribute('data-issue-id') ?? '';
     const key = chip.getAttribute('data-issue-key') ?? '';
-    try {
-      const results = await api.search.query(key);
-      const hit = results.issues.find((i) => i.issue_key === key) ?? results.issues[0];
-      if (hit) navigate(hit.type === 'epic' ? `/epics?issue=${hit.id}` : `/board?issue=${hit.id}`);
-      else toast.info(`No issue found for ${key}`);
-    } catch {
-      toast.error(`Could not look up ${key}`);
-    }
+    const issue = issueMap.get(key);
+    navigate(issue?.type === 'epic' ? `/epics?issue=${id}` : `/board?issue=${id}`);
+  }
+
+  function onPointerOver(e: React.PointerEvent<HTMLDivElement>) {
+    const chip = (e.target as HTMLElement).closest?.('a[data-issue-key]');
+    if (!chip) { setHovered(null); return; }
+    const issue = issueMap.get(chip.getAttribute('data-issue-key') ?? '');
+    if (!issue) { setHovered(null); return; }
+    const r = (chip as HTMLElement).getBoundingClientRect();
+    setHovered({ issue, x: r.left, y: r.bottom + 6 });
   }
 
   return (
-    <div
-      className={cn('wiki-prose', className)}
-      onClick={onClick}
-      // Sanitised inside `rendered`; the server also cleans on write.
-      dangerouslySetInnerHTML={{ __html: rendered }}
-    />
+    <>
+      <div
+        className={cn('wiki-prose', className)}
+        onClick={onClick}
+        onPointerOver={onPointerOver}
+        onPointerLeave={() => setHovered(null)}
+        // Sanitised inside `rendered`; the server also cleans on write.
+        dangerouslySetInnerHTML={{ __html: rendered }}
+      />
+      {hovered && (
+        <div
+          role="tooltip"
+          className="fixed z-50 w-72 rounded-md border border-border bg-popover p-3 text-popover-foreground shadow-md"
+          style={{ left: hovered.x, top: hovered.y }}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-mono text-[11px] font-semibold text-primary">{hovered.issue.issue_key}</span>
+            <StatusPill status={hovered.issue.status} />
+          </div>
+          <p className="mt-1 text-sm font-medium leading-snug">{hovered.issue.title}</p>
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            {hovered.issue.assignee_name ?? 'Unassigned'} · {hovered.issue.priority}
+          </p>
+        </div>
+      )}
+    </>
   );
 }
 

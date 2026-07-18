@@ -7,7 +7,7 @@ import type {
   ActivityEntry, AdminStats, AppNotification, Attachment, AuditLogPage, AuthUser,
   AutomationAction, AutomationCondition, AutomationRule, AutomationTrigger, Comment, Issue, EpicSummary,
   ProfileResponse, Project, ProjectComponent, ProjectMember, ProjectStats, SavedFilter, SearchResults, Settings, Sprint, User, Version,
-  IssueLink, LinkType,
+  IssueLink, LinkType, LinkedIssueSummary, MentioningPage,
   WikiComment, WikiPage, WikiRestriction, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
   WikiAttachment, ApiToken, Webhook, CustomField,
   WorkLog, WorkflowStatus,
@@ -155,6 +155,10 @@ export const api = {
     remove: (id: string) => del<{ ok: boolean }>(`/issues/${id}`),
     move: (id: string, body: { status: string; board_order?: number; sprint_id?: string | null }) =>
       put<Issue>(`/issues/${id}/move`, body),
+    /** Issue summaries for a batch of keys — for wiki content not yet saved. */
+    resolve: (keys: string[]) => post<{ issues: LinkedIssueSummary[] }>('/issues/resolve', { keys }),
+    /** Wiki pages mentioning this issue (restricted pages already filtered out). */
+    pages: (id: string) => get<MentioningPage[]>(`/issues/${id}/pages`),
   },
 
   epics: {

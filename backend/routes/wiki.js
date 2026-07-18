@@ -5,23 +5,67 @@ const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
 const { sanitizeRichText } = require('../utils/sanitize');
+const { syncPageIssueLinks } = require('../utils/issue-keys');
+const { placeholders } = require('../utils/sql');
 const { signWikiImages, unsignWikiImages } = require('./wiki-attachments');
 const router = express.Router();
+
+/**
+ * Access for many pages in two queries. The rules live here and nowhere else —
+ * pageAccess() below delegates, so the singular and batch paths cannot drift.
+ */
+async function pageAccessBatch(db, pageIds, userId, userRole) {
+  const result = new Map();
+  if (pageIds.length === 0) return result;
+
+  const ph = placeholders(pageIds);
+  const [rows, pages] = await Promise.all([
+    queryAll(db, `SELECT page_id, user_id, can_edit FROM wiki_page_restrictions WHERE page_id IN (${ph})`, pageIds),
+    queryAll(db, `SELECT id, author_id FROM wiki_pages WHERE id IN (${ph})`, pageIds),
+  ]);
+
+  const authorOf = new Map(pages.map((p) => [p.id, p.author_id]));
+  const byPage = new Map();
+  for (const r of rows) {
+    if (!byPage.has(r.page_id)) byPage.set(r.page_id, []);
+    byPage.get(r.page_id).push(r);
+  }
+
+  const isAdmin = userRole === 'admin';
+  for (const pageId of pageIds) {
+    const pageRows = byPage.get(pageId) || [];
+    // A page with no restriction rows — including one that does not exist — is
+    // open. This matches the pre-refactor behaviour exactly.
+    if (pageRows.length === 0) {
+      result.set(pageId, { view: true, edit: true, restricted: false });
+      continue;
+    }
+    const isOwner = authorOf.has(pageId) && authorOf.get(pageId) === userId;
+    if (isOwner || isAdmin) {
+      result.set(pageId, { view: true, edit: true, restricted: true });
+      continue;
+    }
+    const mine = pageRows.find((r) => r.user_id === userId);
+    if (!mine) {
+      result.set(pageId, { view: false, edit: false, restricted: true });
+      continue;
+    }
+    const anyEditRows = pageRows.some((r) => Number(r.can_edit) === 1);
+    result.set(pageId, {
+      view: true,
+      edit: anyEditRows ? Number(mine.can_edit) === 1 : true,
+      restricted: true,
+    });
+  }
+  return result;
+}
 
 // ===== PAGE RESTRICTIONS =====
 // Rows grant access: a page with any restriction rows is visible only to the
 // listed users, its author, and admins. can_edit=1 rows additionally gate editing.
 async function pageAccess(db, pageId, userId, userRole) {
-  const rows = await queryAll(db, 'SELECT user_id, can_edit FROM wiki_page_restrictions WHERE page_id = ?', [pageId]);
-  const page = await queryOne(db, 'SELECT author_id FROM wiki_pages WHERE id = ?', [pageId]);
-  const isOwner = page && page.author_id === userId;
-  const isAdmin = userRole === 'admin';
-  if (rows.length === 0) return { view: true, edit: true, restricted: false };
-  if (isOwner || isAdmin) return { view: true, edit: true, restricted: true };
-  const mine = rows.find((r) => r.user_id === userId);
-  if (!mine) return { view: false, edit: false, restricted: true };
-  const anyEditRows = rows.some((r) => Number(r.can_edit) === 1);
-  return { view: true, edit: anyEditRows ? Number(mine.can_edit) === 1 : true, restricted: true };
+  const map = await pageAccessBatch(db, [pageId], userId, userRole);
+  return map.get(pageId);
 }
 
 
@@ -174,6 +218,7 @@ router.post('/wiki/spaces/:spaceId/pages', requireAuth, async (req, res) => {
         try { await run(db, "INSERT INTO wiki_labels (id, page_id, label) VALUES (?,?,?)", [uuidv4(), id, l.toLowerCase().trim()]); } catch(e){}
       }
     }
+    await syncPageIssueLinks(db, id, body || '');
     const page = await queryOne(db, 'SELECT * FROM wiki_pages WHERE id = ?', [id]);
     res.status(201).json(page);
   } catch (e) { serverError(res, e); }
@@ -216,6 +261,15 @@ router.get('/wiki/pages/:id', requireAuth, async (req, res) => {
     page.breadcrumb = breadcrumb;
     // Children
     page.children = await queryAll(db, "SELECT id, title, slug, status FROM wiki_pages WHERE parent_id = ? AND status = 'current' ORDER BY position, title", [req.params.id]);
+    // Issues this page mentions, resolved at write time (see utils/issue-keys.js).
+    // Returned inline so chips render on first paint with no extra round trip.
+    page.linked_issues = await queryAll(db, `
+      SELECT i.id, i.issue_key, i.title, i.status, i.type, i.priority,
+             u.name AS assignee_name, u.avatar_color AS assignee_color
+      FROM wiki_page_issues l
+      JOIN issues i ON i.id = l.issue_id
+      LEFT JOIN users u ON u.id = i.assignee_id
+      WHERE l.page_id = ?`, [req.params.id]);
     // Re-sign inline wiki images so the browser can load them for this session.
     page.body = signWikiImages(page.body);
     res.json(page);
@@ -262,6 +316,9 @@ router.put('/wiki/pages/:id', requireAuth, async (req, res) => {
       }
     }
 
+    // Only a body edit can change which issues the page mentions.
+    if (body !== undefined) await syncPageIssueLinks(db, req.params.id, body);
+
     const updated = await queryOne(db, 'SELECT * FROM wiki_pages WHERE id = ?', [req.params.id]);
     res.json(updated);
   } catch (e) { serverError(res, e); }
@@ -280,8 +337,31 @@ router.delete('/wiki/pages/:id', requireAuth, async (req, res) => {
     await run(db, 'DELETE FROM wiki_labels WHERE page_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM wiki_stars WHERE page_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM wiki_page_likes WHERE page_id = ?', [req.params.id]);
+    await run(db, 'DELETE FROM wiki_page_issues WHERE page_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM wiki_pages WHERE id = ?', [req.params.id]);
     res.json({ ok: true });
+  } catch (e) { serverError(res, e); }
+});
+
+// ===== ISSUE → PAGES =====
+// Pages mentioning an issue. Restricted pages the caller cannot view are
+// removed: a page title alone can disclose sensitive context (e.g. a page
+// named "ATLAS-29 breach retro" reveals both its existence and its subject).
+router.get('/issues/:id/pages', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const pages = await queryAll(db, `
+      SELECT p.id, p.title, p.slug, p.space_id, p.updated_at,
+             s.name AS space_name, s.space_key
+      FROM wiki_page_issues l
+      JOIN wiki_pages p ON p.id = l.page_id
+      JOIN wiki_spaces s ON s.id = p.space_id
+      WHERE l.issue_id = ? AND p.status = 'current'
+      ORDER BY p.updated_at DESC`, [req.params.id]);
+    if (pages.length === 0) return res.json([]);
+
+    const access = await pageAccessBatch(db, pages.map((p) => p.id), req.userId, req.userRole);
+    res.json(pages.filter((p) => access.get(p.id)?.view));
   } catch (e) { serverError(res, e); }
 });
 
@@ -527,3 +607,5 @@ router.get('/wiki/spaces/:spaceId/tree', requireAuth, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.pageAccess = pageAccess;
+module.exports.pageAccessBatch = pageAccessBatch;

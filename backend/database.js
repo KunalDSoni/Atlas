@@ -957,6 +957,15 @@ async function initSqlite() {
     if (feats[0].values[0][0] === 0) seedProductDemoData();
   }
 
+  // Seeded pages are inserted directly, bypassing the route that extracts issue
+  // links — so index them here. Existing deployments use scripts/backfill-page-issues.js.
+  // Required lazily: utils/issue-keys requires this module back, and this
+  // module's exports are not assigned until the end of the file.
+  if (config.seedDemoData) {
+    const { backfillPageIssueLinks } = require('./utils/issue-keys');
+    await backfillPageIssueLinks(db);
+  }
+
   return db;
 }
 
@@ -1009,6 +1018,9 @@ async function initMysqlSchema(pool) {
   if (parseInt(rows[0].c, 10) === 0) {
     if (config.seedDemoData) {
       await seedDemoDataMysql(pool);
+      // Required lazily: utils/issue-keys requires this module back.
+      const { backfillPageIssueLinks } = require('./utils/issue-keys');
+      await backfillPageIssueLinks(createMysqlWrapper(pool));
     } else {
       await seedAdminOnlyMysql(pool);
     }
@@ -1537,6 +1549,40 @@ function seedDemoData() {
     db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
       VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, ?)`,
       [eid, projId3, `ATLAS-${num}`, num, epic.title, epic.desc, userIds[0], epic.color, startDate, dueDate, 28 + i]);
+    epic.children.forEach((c, ci) => {
+      const cnum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${cnum}`, cnum, c.title, c.type, userIds[0], userIds[0], eid, ci]);
+    });
+  });
+
+  // ===== Wiki ↔ issue integration wave (epics 31-32) — shipped =====
+  const wikiLinkEpics = [
+    { title: 'Live issue chips', color: 'blue',
+      desc: 'Issue keys in wiki pages resolve to real issues: hover shows title, status, assignee and priority, and clicking always opens the issue named. Keys that resolve to nothing stay prose, so COVID-19 and ISO-8601 no longer render as links.',
+      children: [
+        { title: 'Issue-key extraction from page HTML', type: 'task' },
+        { title: 'linked_issues on page reads + resolve endpoint', type: 'task' },
+        { title: 'Hover card and correct chip navigation', type: 'story' },
+      ] },
+    { title: 'Page back-links', color: 'teal',
+      desc: 'The reverse direction, which did not exist: an issue shows which wiki pages mention it, filtered through page restrictions so a restricted page never discloses its title.',
+      children: [
+        { title: 'wiki_page_issues join table + write-time indexing', type: 'task' },
+        { title: 'Batched page access checks, single source of rules', type: 'task' },
+        { title: 'Mentioned on pages panel', type: 'story' },
+      ] },
+  ];
+  wikiLinkEpics.forEach((epic, i) => {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(30 + i);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, ?)`,
+      [eid, projId3, `ATLAS-${num}`, num, epic.title, epic.desc, userIds[0], epic.color, startDate, dueDate, 30 + i]);
     epic.children.forEach((c, ci) => {
       const cnum = atlasIssueNumber;
       atlasIssueNumber += 1;

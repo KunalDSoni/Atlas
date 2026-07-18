@@ -68,6 +68,19 @@ describe('Migration runner against a live SQLite database', () => {
     expect(await cols('wiki_pages')).toContain('page_type');
   });
 
+  test('creates the wiki_page_issues join table with both lookup paths indexed', async () => {
+    const cols = (await queryAll(db, 'PRAGMA table_info(wiki_page_issues)')).map(c => c.name);
+    expect(cols).toEqual(expect.arrayContaining(['page_id', 'issue_id']));
+
+    // Composite PK covers page → issues; the explicit index covers issue → pages.
+    const pk = (await queryAll(db, 'PRAGMA table_info(wiki_page_issues)'))
+      .filter(c => Number(c.pk) > 0).map(c => c.name);
+    expect(pk.sort()).toEqual(['issue_id', 'page_id']);
+
+    const idx = await queryAll(db, 'PRAGMA index_list(wiki_page_issues)');
+    expect(idx.some(i => i.name === 'idx_page_issues_issue')).toBe(true);
+  });
+
   test('re-running is a no-op: no duplicate ledger rows, no errors', async () => {
     const before = await queryAll(db, 'SELECT id FROM schema_migrations');
     const applied = await runMigrations(sqliteAdapter(db));

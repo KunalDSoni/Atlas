@@ -136,6 +136,32 @@ const MIGRATIONS = [
       },
     ],
   },
+  {
+    id: '008_wiki_page_issues',
+    description: 'Join table linking wiki pages to the issues they mention',
+    steps: [
+      {
+        sql: {
+          sqlite: `CREATE TABLE IF NOT EXISTS wiki_page_issues (
+            page_id TEXT NOT NULL REFERENCES wiki_pages(id),
+            issue_id TEXT NOT NULL REFERENCES issues(id),
+            PRIMARY KEY (page_id, issue_id)
+          )`,
+          mysql: `CREATE TABLE IF NOT EXISTS wiki_page_issues (
+            page_id VARCHAR(36) NOT NULL,
+            issue_id VARCHAR(36) NOT NULL,
+            PRIMARY KEY (page_id, issue_id)
+          ) DEFAULT CHARSET=utf8mb4`,
+        },
+      },
+      {
+        sql: {
+          sqlite: 'CREATE INDEX IF NOT EXISTS idx_page_issues_issue ON wiki_page_issues(issue_id)',
+          mysql: 'CREATE INDEX idx_page_issues_issue ON wiki_page_issues(issue_id)',
+        },
+      },
+    ],
+  },
 ];
 
 const LEDGER_SQL = {

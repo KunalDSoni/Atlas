@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Clock, Eye, EyeOff, Loader2, Paperclip, Plus, Send, Trash2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Clock, Eye, EyeOff, FileText, Loader2, Paperclip, Plus, Send, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
@@ -22,7 +23,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
 import { useWorkflow } from '@/hooks/use-workflow';
 import { EPIC_COLORS, PRIORITIES, PRIORITY_LABEL, TYPE_LABEL, canCreateIssues, epicColor, isAdmin } from '@/lib/domain';
-import type { ActivityEntry, Attachment, Comment, EpicSummary, Issue, IssueStatus, Priority, ProjectComponent, Sprint, User, Version, WorkLog } from '@/lib/types';
+import type { ActivityEntry, Attachment, Comment, EpicSummary, Issue, IssueStatus, MentioningPage, Priority, ProjectComponent, Sprint, User, Version, WorkLog } from '@/lib/types';
 import { formatBytes, formatDuration, timeAgo } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { PriorityIcon, StatusPill, TypeIcon, UserAvatar } from './primitives';
@@ -59,6 +60,7 @@ export function IssueDetailSheet({
   const [epics, setEpics] = useState<EpicSummary[]>([]);
   const [children, setChildren] = useState<Issue[]>([]);
   const [candidates, setCandidates] = useState<Issue[]>([]);
+  const [mentioningPages, setMentioningPages] = useState<MentioningPage[]>([]);
   const [loading, setLoading] = useState(false);
   const [commentBody, setCommentBody] = useState('');
   const [posting, setPosting] = useState(false);
@@ -75,6 +77,7 @@ export function IssueDetailSheet({
 
   const canEdit = canCreateIssues(user?.role);
   const workflow = useWorkflow(issue?.project_id);
+  const navigate = useNavigate();
 
   const load = useCallback(async () => {
     if (!issueId) return;
@@ -83,7 +86,7 @@ export function IssueDetailSheet({
       const detail = await api.issues.get(issueId);
       setIssue(detail);
       setEstimateHours(detail.original_estimate ? String(Math.round((detail.original_estimate / 60) * 10) / 10) : '');
-      const [c, a, act, w, u, sp, ep, ch, all, wl, vs, comps] = await Promise.all([
+      const [c, a, act, w, u, sp, ep, ch, all, wl, vs, comps, pgs] = await Promise.all([
         api.comments.list(issueId).catch(() => []),
         api.attachments.list(issueId).catch(() => []),
         api.activity.list(issueId).catch(() => []),
@@ -96,6 +99,7 @@ export function IssueDetailSheet({
         api.worklogs.list(issueId).catch(() => []),
         api.versions.list(detail.project_id).catch(() => []),
         api.components.list(detail.project_id).catch(() => []),
+        api.issues.pages(issueId).catch(() => []),
       ]);
       setComments(c);
       setAttachments(a);
@@ -109,6 +113,7 @@ export function IssueDetailSheet({
       setWorklogs(wl);
       setVersions(vs);
       setComponents(comps);
+      setMentioningPages(pgs);
     } catch (e) {
       toast.error('Could not load issue', { description: e instanceof Error ? e.message : undefined });
     } finally {
@@ -479,6 +484,28 @@ export function IssueDetailSheet({
                     onOpenIssue={onOpenIssue}
                   />
                 </section>
+
+                {mentioningPages.length > 0 && (
+                  <section>
+                    <h3 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      <FileText className="size-3.5" /> Mentioned on pages
+                    </h3>
+                    <ul className="space-y-1">
+                      {mentioningPages.map((p) => (
+                        <li key={p.id}>
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/wiki/page/${p.id}`)}
+                            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+                          >
+                            <span className="truncate">{p.title}</span>
+                            <span className="ml-auto shrink-0 text-xs text-muted-foreground">{p.space_key}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
 
                 <Tabs defaultValue="comments">
                   <TabsList>
