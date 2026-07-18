@@ -21,7 +21,12 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    command: `SQLITE_PATH="${DB}" PORT=${PORT} SEED_DEMO_DATA=true SESSION_SECRET=e2e-secret node ../backend/server.js`,
+    // API_RATE_MAX: the whole suite drives one server from one IP in seconds,
+    // which trips the 300 req/min production throttle partway through a run —
+    // and the first casualty is login, so failures surface as unrelated
+    // assertion timeouts. The limiter's own behaviour is covered by
+    // backend/tests/backend/api-ratelimit.test.js, not by these specs.
+    command: `SQLITE_PATH="${DB}" PORT=${PORT} SEED_DEMO_DATA=true SESSION_SECRET=e2e-secret API_RATE_MAX=20000 node ../backend/server.js`,
     url: `http://localhost:${PORT}/api/health`,
     reuseExistingServer: false,
     timeout: 30_000,
