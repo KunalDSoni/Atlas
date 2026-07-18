@@ -70,6 +70,36 @@ export interface Sprint {
   done_points: number;
 }
 
+export interface CycleTimeResponse {
+  issues: { id: string; issue_key: string; title: string; type: string; completed_at: string; lead_time_h: number; cycle_time_h: number | null }[];
+  avg_cycle_h: number | null;
+  p50_cycle_h: number | null;
+  p85_cycle_h: number | null;
+  avg_lead_h: number | null;
+  count: number;
+}
+
+export interface TimeInStatusResponse {
+  statuses: { status: string; avg_h: number; total_h: number; issues: number }[];
+}
+
+export interface CumulativeFlowResponse {
+  days: { date: string; todo: number; in_progress: number; done: number }[];
+}
+
+/** A row from the JQL branch of /api/search, as rendered by the wiki macro. */
+export interface JqlSearchIssue {
+  id: string;
+  issue_key: string;
+  title: string;
+  type: string;
+  status: IssueStatus;
+  priority: string;
+  project_id: string;
+  project_key: string;
+  assignee_name: string | null;
+}
+
 /** Compact issue state for wiki chips — what a hover card shows. */
 export interface LinkedIssueSummary {
   id: string;

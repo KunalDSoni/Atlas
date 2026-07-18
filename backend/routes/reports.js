@@ -13,6 +13,8 @@ const express = require('express');
 const { getDb, queryAll, queryOne } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
+const { projectStatuses } = require('./workflows');
+const { categoryOf, statusTimeline, hoursBetween, percentile } = require('../utils/flow');
 
 const router = express.Router();
 
@@ -252,6 +254,131 @@ router.get('/projects/:projectId/reports/priority-distribution', requireAuth, as
 });
 
 // ===== CSV EXPORT =====
+// ===== FLOW METRICS (ATLAS-33) =====
+// All three endpoints share the same two reads: the project's issues and their
+// status transitions. History predating move-logging is sparse; metrics use
+// created_at as entry into the first observed status and never fabricate rows.
+
+async function loadFlowData(db, projectId) {
+  const issues = await queryAll(db,
+    'SELECT id, issue_key, title, type, status, created_at FROM issues WHERE project_id = ?', [projectId]);
+  const transitions = issues.length === 0 ? [] : await queryAll(db, `
+    SELECT a.issue_id, a.old_value, a.new_value, a.created_at
+    FROM activity_log a JOIN issues i ON i.id = a.issue_id
+    WHERE i.project_id = ? AND a.field = 'status'
+    ORDER BY a.created_at`, [projectId]);
+  const byIssue = new Map(issues.map((i) => [i.id, []]));
+  for (const t of transitions) byIssue.get(t.issue_id)?.push(t);
+  return { issues, byIssue };
+}
+
+router.get('/projects/:projectId/reports/cycle-time', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const statuses = await projectStatuses(db, req.params.projectId);
+    const { issues, byIssue } = await loadFlowData(db, req.params.projectId);
+
+    const rows = [];
+    for (const issue of issues) {
+      if (categoryOf(issue.status, statuses) !== 'done') continue;
+      const trans = byIssue.get(issue.id) || [];
+      const doneEntry = trans.find((t) => categoryOf(t.new_value, statuses) === 'done');
+      if (!doneEntry) continue; // legacy issue with no recorded completion
+      const progressEntry = trans.find((t) => categoryOf(t.new_value, statuses) === 'in_progress');
+      rows.push({
+        id: issue.id,
+        issue_key: issue.issue_key,
+        title: issue.title,
+        type: issue.type,
+        completed_at: doneEntry.created_at,
+        lead_time_h: hoursBetween(issue.created_at, doneEntry.created_at),
+        cycle_time_h: progressEntry && hoursBetween(progressEntry.created_at, doneEntry.created_at) >= 0
+          ? hoursBetween(progressEntry.created_at, doneEntry.created_at)
+          : null,
+      });
+    }
+
+    const cycles = rows.map((r) => r.cycle_time_h).filter((c) => c !== null).sort((a, b) => a - b);
+    const leads = rows.map((r) => r.lead_time_h).sort((a, b) => a - b);
+    const avg = (xs) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null);
+    res.json({
+      issues: rows.sort((a, b) => (a.completed_at < b.completed_at ? 1 : -1)).slice(0, 50),
+      avg_cycle_h: avg(cycles),
+      p50_cycle_h: percentile(cycles, 0.5),
+      p85_cycle_h: percentile(cycles, 0.85),
+      avg_lead_h: avg(leads),
+      count: rows.length,
+    });
+  } catch (e) { serverError(res, e); }
+});
+
+router.get('/projects/:projectId/reports/time-in-status', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const statuses = await projectStatuses(db, req.params.projectId);
+    const { issues, byIssue } = await loadFlowData(db, req.params.projectId);
+    const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+
+    const acc = new Map(); // status -> { total_h, issues:Set }
+    for (const issue of issues) {
+      const timeline = statusTimeline(issue, byIssue.get(issue.id) || []);
+      for (const seg of timeline) {
+        // Open segments in a done-category status are excluded: time after
+        // completion is not time "in" the workflow.
+        const isOpenDone = seg.to === null && categoryOf(seg.status, statuses) === 'done';
+        if (isOpenDone) continue;
+        const h = hoursBetween(seg.from, seg.to ?? now);
+        if (h <= 0) continue;
+        if (!acc.has(seg.status)) acc.set(seg.status, { total_h: 0, issues: new Set() });
+        const slot = acc.get(seg.status);
+        slot.total_h += h;
+        slot.issues.add(issue.id);
+      }
+    }
+
+    const order = new Map(statuses.map((s, i) => [s.key, i]));
+    res.json({
+      statuses: [...acc.entries()]
+        .map(([status, v]) => ({
+          status,
+          total_h: Math.round(v.total_h * 10) / 10,
+          avg_h: Math.round((v.total_h / v.issues.size) * 10) / 10,
+          issues: v.issues.size,
+        }))
+        .sort((a, b) => (order.get(a.status) ?? 99) - (order.get(b.status) ?? 99)),
+    });
+  } catch (e) { serverError(res, e); }
+});
+
+router.get('/projects/:projectId/reports/cumulative-flow', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const statuses = await projectStatuses(db, req.params.projectId);
+    const { issues, byIssue } = await loadFlowData(db, req.params.projectId);
+    const days = Math.min(Math.max(parseInt(req.query.days, 10) || 30, 1), 90);
+
+    const timelines = issues.map((i) => ({
+      created: i.created_at,
+      segments: statusTimeline(i, byIssue.get(i.id) || []),
+    }));
+
+    const out = [];
+    for (let d = days - 1; d >= 0; d--) {
+      const day = new Date(Date.now() - d * 86_400_000);
+      // Count state at end-of-day so today's moves are visible today.
+      const stamp = day.toISOString().slice(0, 10) + ' 23:59:59';
+      const counts = { todo: 0, in_progress: 0, done: 0 };
+      for (const t of timelines) {
+        if (t.created > stamp) continue; // not created yet on this day
+        const seg = t.segments.find((s) => s.from <= stamp && (s.to === null || s.to > stamp));
+        if (seg) counts[categoryOf(seg.status, statuses)] += 1;
+      }
+      out.push({ date: day.toISOString().slice(0, 10), ...counts });
+    }
+    res.json({ days: out });
+  } catch (e) { serverError(res, e); }
+});
+
 router.get('/projects/:projectId/reports/export/csv', requireAuth, async (req, res) => {
   try {
     const db = await getDb();

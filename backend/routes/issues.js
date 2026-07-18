@@ -475,6 +475,17 @@ router.put('/issues/:id/move', requireAuth, async (req, res) => {
     params.push(req.params.id);
     await run(db, `UPDATE issues SET ${updates.join(', ')} WHERE id = ?`, params);
 
+    // Board moves are status history too — the flow reports replay these rows.
+    // Same shape the general PUT writes, so consumers can't tell them apart.
+    if (status !== undefined && status !== issue.status) {
+      await run(db, `INSERT INTO activity_log (id, issue_id, user_id, action, field, old_value, new_value) VALUES (?, ?, ?, 'update', 'status', ?, ?)`,
+        [uuidv4(), req.params.id, req.userId, issue.status, status]);
+    }
+    if (sprint_id !== undefined && String(sprint_id) !== String(issue.sprint_id)) {
+      await run(db, `INSERT INTO activity_log (id, issue_id, user_id, action, field, old_value, new_value) VALUES (?, ?, ?, 'update', 'sprint', ?, ?)`,
+        [uuidv4(), req.params.id, req.userId, issue.sprint_id, sprint_id]);
+    }
+
     let updated = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
     if (status !== undefined && status !== issue.status) {
       await runAutomation(db, { type: 'status_changed', issue: updated, actorId: req.userId });

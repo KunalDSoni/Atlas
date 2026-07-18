@@ -7,6 +7,10 @@
 
 const ISSUE_KEY_RE = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/g;
 
+// [jql: …] macro blocks are queries, not references — their literal text must
+// not create page↔issue links (the rendered table is live, not stored).
+const JQL_BLOCK_RE = /\[jql:[^\]]*\]/gi;
+
 // Keys inside code samples and existing links are not references. Mirrors the
 // exclusion applyMacros already applies client-side (rich-text.tsx).
 const EXCLUDED_BLOCKS_RE = /<(code|pre|a)\b[^>]*>[\s\S]*?<\/\1>/gi;
@@ -18,7 +22,7 @@ function extractIssueKeys(html) {
   if (typeof html !== 'string' || !html) return [];
   // Drop excluded blocks, then all remaining markup, so attribute values and
   // tag names can never be mistaken for prose.
-  const text = html.replace(EXCLUDED_BLOCKS_RE, ' ').replace(TAG_RE, ' ');
+  const text = html.replace(JQL_BLOCK_RE, ' ').replace(EXCLUDED_BLOCKS_RE, ' ').replace(TAG_RE, ' ');
   return [...new Set(text.match(ISSUE_KEY_RE) || [])];
 }
 

@@ -1592,6 +1592,40 @@ function seedDemoData() {
     });
   });
 
+  // ===== Flow metrics & JQL macro wave (epics 33-34) — shipped =====
+  const flowEpics = [
+    { title: 'Flow metrics', color: 'orange',
+      desc: 'Cycle time, time-in-status, and cumulative flow mined from the status history in activity_log — including the fix that made board moves write that history at all.',
+      children: [
+        { title: 'Board moves record status/sprint history', type: 'bug' },
+        { title: 'Flow helpers: categories, timeline replay, percentiles', type: 'task' },
+        { title: 'Cycle-time, time-in-status, CFD endpoints', type: 'story' },
+        { title: 'Reports screen flow panels', type: 'task' },
+      ] },
+    { title: 'JQL table macro', color: 'green',
+      desc: 'A [jql: …] block in a wiki page renders a live, always-current issue table via the existing search endpoint. Parse errors render inline; query text never creates back-link rows.',
+      children: [
+        { title: 'Assignee in JQL search rows', type: 'task' },
+        { title: 'Macro detection, fetch, table, and error states', type: 'story' },
+      ] },
+  ];
+  flowEpics.forEach((epic, i) => {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(32 + i);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, ?)`,
+      [eid, projId3, `ATLAS-${num}`, num, epic.title, epic.desc, userIds[0], epic.color, startDate, dueDate, 32 + i]);
+    epic.children.forEach((c, ci) => {
+      const cnum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${cnum}`, cnum, c.title, c.type, userIds[0], userIds[0], eid, ci]);
+    });
+  });
+
   // ===== CONFLUENCE SEED DATA =====
   const spaceEng = uuid();
   const spaceProd = uuid();
