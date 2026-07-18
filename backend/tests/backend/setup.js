@@ -81,6 +81,7 @@ async function createTestApp() {
   testApp.use('/api', require('../../routes/product-features'));
   testApp.use('/api', require('../../routes/product-objectives'));
   testApp.use('/api', require('../../routes/portal'));
+  testApp.use('/api', require('../../routes/ai'));
 
   app = testApp;
   return testApp;

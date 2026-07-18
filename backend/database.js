@@ -1345,6 +1345,31 @@ function seedDemoData() {
     });
   }
 
+  // ===== Wiki AI assistant (epic 20) — shipped =====
+  {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(19);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, 19)`,
+      [eid, projId3, `ATLAS-${num}`, num, 'Wiki AI assistant',
+       'Rovo-style AI in the wiki via the Anthropic API (server-side proxy): page summaries, an in-editor writing assistant (draft/improve/shorten/expand/fix), and ask-your-wiki Q&A with citations. Degrades gracefully when no API key is configured.',
+       userIds[0], 'purple', startDate, dueDate]);
+    [
+      { title: 'Server-side Anthropic proxy with graceful no-key degradation', type: 'task' },
+      { title: 'Page summaries (AI summary panel)', type: 'story' },
+      { title: 'In-editor writing assistant: draft/improve/shorten/expand/fix', type: 'story' },
+      { title: 'Ask-your-wiki Q&A over page content with citations', type: 'story' },
+    ].forEach((c, ci) => {
+      const cnum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${cnum}`, cnum, c.title, c.type, userIds[0], userIds[0], eid, ci]);
+    });
+  }
+
   // ===== CONFLUENCE SEED DATA =====
   const spaceEng = uuid();
   const spaceProd = uuid();
