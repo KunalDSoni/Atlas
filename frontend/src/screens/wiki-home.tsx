@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { BookOpen, Clock, Plus, Search, Star } from 'lucide-react';
+import { BookOpen, Clock, Plus, Search, Sparkles, Star } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,6 +13,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { api } from '@/lib/api';
 import type { WikiPage, WikiSpace } from '@/lib/types';
 import { CardsSkeleton, EmptyState, ErrorState, PageHeader, UserAvatar } from '@/components/app/primitives';
+import { AskWikiDialog } from '@/components/app/ask-wiki-dialog';
+import { useAIEnabled } from '@/hooks/use-ai';
 import { timeAgo } from '@/lib/format';
 
 function CreateSpaceDialog({
@@ -144,6 +146,8 @@ export default function WikiHomeScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [askOpen, setAskOpen] = useState(false);
+  const aiEnabled = useAIEnabled();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -208,9 +212,16 @@ export default function WikiHomeScreen() {
         title="Wiki"
         description="Spaces, pages, and documentation."
         actions={
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            <Plus className="size-4" /> New space
-          </Button>
+          <>
+            {aiEnabled && (
+              <Button size="sm" variant="outline" onClick={() => setAskOpen(true)}>
+                <Sparkles className="size-4" /> Ask AI
+              </Button>
+            )}
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
+              <Plus className="size-4" /> New space
+            </Button>
+          </>
         }
       />
 
@@ -328,6 +339,7 @@ export default function WikiHomeScreen() {
       )}
 
       <CreateSpaceDialog open={createOpen} onOpenChange={setCreateOpen} onCreated={load} />
+      <AskWikiDialog open={askOpen} onOpenChange={setAskOpen} />
     </>
   );
 }
