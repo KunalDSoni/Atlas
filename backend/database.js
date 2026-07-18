@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const config = require('./config');
 const { hashPasswordSync } = require('./utils/password');
+const { runMigrations, sqliteAdapter, mysqlAdapter } = require('./migrations');
 
 const DB_PATH = config.db.sqlitePath;
 let db;
@@ -933,15 +934,9 @@ async function initSqlite() {
   // Create tables
   SCHEMA_SQL.forEach(sql => db.run(sql));
 
-  // CREATE TABLE IF NOT EXISTS won't add columns to an existing data.db — patch in place.
-  // ALTER skips CHECK: existing DBs are covered by API validation in backend/routes/issues.js
-  try { db.run("ALTER TABLE issues ADD COLUMN epic_color TEXT DEFAULT 'purple'"); } catch (e) { /* column already exists */ }
-  try { db.run("ALTER TABLE issues ADD COLUMN fix_version_id TEXT"); } catch (e) { /* column already exists */ }
-  try { db.run("ALTER TABLE issues ADD COLUMN component_id TEXT"); } catch (e) { /* column already exists */ }
-  try { db.run("ALTER TABLE issues ADD COLUMN start_date TEXT"); } catch (e) { /* column already exists */ }
-  try { db.run("ALTER TABLE projects ADD COLUMN wip_limits TEXT DEFAULT '{}'"); } catch (e) { /* column already exists */ }
-  try { db.run("ALTER TABLE wiki_page_comments ADD COLUMN quote TEXT"); } catch (e) { /* column already exists */ }
-  try { db.run("ALTER TABLE wiki_pages ADD COLUMN page_type TEXT DEFAULT 'page'"); } catch (e) { /* column already exists */ }
+  // CREATE TABLE IF NOT EXISTS won't add columns to an existing data.db, so
+  // schema changes past the initial shape live in backend/migrations.js.
+  await runMigrations(sqliteAdapter(db));
 
   saveDb();
 
@@ -1006,45 +1001,9 @@ async function initMysqlSchema(pool) {
     await pool.query(sql);
   }
 
-  const [epicCol] = await pool.query(
-    "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'issues' AND column_name = 'epic_color'"
-  );
-  if (epicCol.length === 0) {
-    // ALTER skips CHECK: existing DBs are covered by API validation in backend/routes/issues.js
-    await pool.query("ALTER TABLE issues ADD COLUMN epic_color VARCHAR(20) DEFAULT 'purple'");
-  }
-
-  for (const col of ['fix_version_id', 'component_id', 'start_date']) {
-    const [hit] = await pool.query(
-      "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'issues' AND column_name = ?", [col]
-    );
-    if (hit.length === 0) {
-      await pool.query(col === 'start_date'
-        ? 'ALTER TABLE issues ADD COLUMN start_date DATETIME NULL'
-        : `ALTER TABLE issues ADD COLUMN ${col} VARCHAR(36)`);
-    }
-  }
-
-  const [quoteCol] = await pool.query(
-    "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'wiki_page_comments' AND column_name = 'quote'"
-  );
-  if (quoteCol.length === 0) {
-    await pool.query('ALTER TABLE wiki_page_comments ADD COLUMN quote TEXT');
-  }
-
-  const [ptCol] = await pool.query(
-    "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'wiki_pages' AND column_name = 'page_type'"
-  );
-  if (ptCol.length === 0) {
-    await pool.query("ALTER TABLE wiki_pages ADD COLUMN page_type VARCHAR(20) DEFAULT 'page'");
-  }
-
-  const [wipCol] = await pool.query(
-    "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'projects' AND column_name = 'wip_limits'"
-  );
-  if (wipCol.length === 0) {
-    await pool.query('ALTER TABLE projects ADD COLUMN wip_limits VARCHAR(2000)');
-  }
+  // Post-baseline schema changes live in backend/migrations.js — same ordered
+  // list the SQLite path runs, in its MySQL form.
+  await runMigrations(mysqlAdapter(pool));
 
   const [rows] = await pool.query('SELECT COUNT(*) as c FROM users');
   if (parseInt(rows[0].c, 10) === 0) {
@@ -1543,6 +1502,41 @@ function seedDemoData() {
     db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
       VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, ?)`,
       [eid, projId3, `ATLAS-${num}`, num, epic.title, epic.desc, userIds[0], epic.color, startDate, dueDate, 25 + i]);
+    epic.children.forEach((c, ci) => {
+      const cnum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${cnum}`, cnum, c.title, c.type, userIds[0], userIds[0], eid, ci]);
+    });
+  });
+
+  // ===== Data layer & performance wave (epics 29-30) — shipped =====
+  const perfEpics = [
+    { title: 'Schema migration runner', color: 'purple',
+      desc: 'An ordered, append-only migration list recorded in a schema_migrations ledger, replacing the try/catch ALTERs that swallowed errors and left no record of what ran. One migration list drives both sql.js and MySQL.',
+      children: [
+        { title: 'Migration runner + schema_migrations ledger', type: 'task' },
+        { title: 'Driver adapters for sql.js and mysql2', type: 'task' },
+        { title: 'Transcribe the existing ALTERs as migrations 001-006', type: 'task' },
+      ] },
+    { title: 'Batched issue enrichment', color: 'red',
+      desc: 'Issue enrichment fired ~11 queries per issue, so a 100-issue board cost 719 queries per request. Batched reads keyed by the ids in the list bring that to a flat 12, with the payload byte-identical.',
+      children: [
+        { title: 'enrichIssues: one batched read per relationship', type: 'story' },
+        { title: 'Batched custom field values', type: 'task' },
+        { title: 'Indexes on the grouped foreign keys', type: 'task' },
+        { title: 'Regression test pinning query count flat as the list grows', type: 'task' },
+      ] },
+  ];
+  perfEpics.forEach((epic, i) => {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(28 + i);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, ?)`,
+      [eid, projId3, `ATLAS-${num}`, num, epic.title, epic.desc, userIds[0], epic.color, startDate, dueDate, 28 + i]);
     epic.children.forEach((c, ci) => {
       const cnum = atlasIssueNumber;
       atlasIssueNumber += 1;
