@@ -261,6 +261,15 @@ router.get('/wiki/pages/:id', requireAuth, async (req, res) => {
     page.breadcrumb = breadcrumb;
     // Children
     page.children = await queryAll(db, "SELECT id, title, slug, status FROM wiki_pages WHERE parent_id = ? AND status = 'current' ORDER BY position, title", [req.params.id]);
+    // Issues this page mentions, resolved at write time (see utils/issue-keys.js).
+    // Returned inline so chips render on first paint with no extra round trip.
+    page.linked_issues = await queryAll(db, `
+      SELECT i.id, i.issue_key, i.title, i.status, i.type, i.priority,
+             u.name AS assignee_name, u.avatar_color AS assignee_color
+      FROM wiki_page_issues l
+      JOIN issues i ON i.id = l.issue_id
+      LEFT JOIN users u ON u.id = i.assignee_id
+      WHERE l.page_id = ?`, [req.params.id]);
     // Re-sign inline wiki images so the browser can load them for this session.
     page.body = signWikiImages(page.body);
     res.json(page);

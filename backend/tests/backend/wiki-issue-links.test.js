@@ -157,3 +157,59 @@ describe('GET /api/issues/:id/pages', () => {
     expect(large - small).toBeLessThanOrEqual(1);
   });
 });
+
+describe('forward reads', () => {
+  test('GET a page returns linked_issues with live issue state', async () => {
+    const page = await request(getApp())
+      .post(`/api/wiki/spaces/${spaceId}/pages`).set(headers)
+      .send({ title: 'Forward read', body: `<p>Tracking ${issueA.issue_key}</p>` });
+
+    const res = await request(getApp()).get(`/api/wiki/pages/${page.body.id}`).set(headers);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.linked_issues)).toBe(true);
+    const hit = res.body.linked_issues.find(i => i.id === issueA.id);
+    expect(hit).toMatchObject({
+      id: issueA.id,
+      issue_key: issueA.issue_key,
+      title: 'Linked issue A',
+      type: 'task',
+    });
+    expect(hit).toHaveProperty('status');
+    expect(hit).toHaveProperty('priority');
+    expect(hit).toHaveProperty('assignee_name');
+  });
+
+  test('a page with no keys returns an empty linked_issues array', async () => {
+    const page = await request(getApp())
+      .post(`/api/wiki/spaces/${spaceId}/pages`).set(headers)
+      .send({ title: 'No keys', body: '<p>plain prose</p>' });
+    const res = await request(getApp()).get(`/api/wiki/pages/${page.body.id}`).set(headers);
+    expect(res.body.linked_issues).toEqual([]);
+  });
+
+  test('POST /api/issues/resolve returns summaries for known keys only', async () => {
+    const res = await request(getApp())
+      .post('/api/issues/resolve').set(headers)
+      .send({ keys: [issueA.issue_key, 'COVID-19', 'ATLAS-99999'] });
+    expect(res.status).toBe(200);
+    expect(res.body.issues).toHaveLength(1);
+    expect(res.body.issues[0].issue_key).toBe(issueA.issue_key);
+  });
+
+  test('resolve accepts an empty list', async () => {
+    const res = await request(getApp()).post('/api/issues/resolve').set(headers).send({ keys: [] });
+    expect(res.status).toBe(200);
+    expect(res.body.issues).toEqual([]);
+  });
+
+  test('resolve rejects more than 100 keys', async () => {
+    const keys = Array.from({ length: 101 }, (_, i) => `ATLAS-${i}`);
+    const res = await request(getApp()).post('/api/issues/resolve').set(headers).send({ keys });
+    expect(res.status).toBe(400);
+  });
+
+  test('resolve rejects a non-array keys field', async () => {
+    const res = await request(getApp()).post('/api/issues/resolve').set(headers).send({ keys: 'ATLAS-1' });
+    expect(res.status).toBe(400);
+  });
+});

@@ -184,6 +184,32 @@ async function enrichIssue(db, issue) {
   return enriched;
 }
 
+// POST /api/issues/resolve — issue summaries for a batch of keys.
+// Serves wiki content that is not saved yet (editor preview, AI drafts), where
+// the stored page→issue links are not yet current.
+// Registered before any /issues/:id route so `resolve` is not read as an id.
+const RESOLVE_MAX_KEYS = 100;
+
+router.post('/issues/resolve', requireAuth, async (req, res) => {
+  try {
+    const keys = req.body?.keys;
+    if (!Array.isArray(keys)) return res.status(400).json({ error: 'keys must be an array' });
+    if (keys.length > RESOLVE_MAX_KEYS) {
+      return res.status(400).json({ error: `At most ${RESOLVE_MAX_KEYS} keys per request` });
+    }
+    if (keys.length === 0) return res.json({ issues: [] });
+
+    const db = await getDb();
+    const issues = await queryAll(db, `
+      SELECT i.id, i.issue_key, i.title, i.status, i.type, i.priority,
+             u.name AS assignee_name, u.avatar_color AS assignee_color
+      FROM issues i
+      LEFT JOIN users u ON u.id = i.assignee_id
+      WHERE i.issue_key IN (${placeholders(keys)})`, keys);
+    res.json({ issues });
+  } catch (e) { serverError(res, e); }
+});
+
 // GET /api/projects/:projectId/issues
 router.get('/projects/:projectId/issues', requireAuth, async (req, res) => {
   try {
