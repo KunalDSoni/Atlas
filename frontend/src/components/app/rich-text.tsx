@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DOMPurify, { type Config } from 'dompurify';
-import type { LinkedIssueSummary } from '@/lib/types';
+import type { JqlSearchIssue, LinkedIssueSummary } from '@/lib/types';
 import { StatusPill } from './primitives';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
@@ -107,6 +107,19 @@ function applyMacros(html: string, issues: Map<string, LinkedIssueSummary>): str
     el.replaceWith(nav);
   });
 
+  // [jql: query] paragraphs become live-table placeholders; RichTextView
+  // fetches results after render. Built from textContent, so nothing the
+  // author wrote is ever injected as HTML.
+  root.querySelectorAll('p, div').forEach((el) => {
+    const m = (el.textContent || '').trim().match(/^\[jql:\s*([^\]]+)\]$/i);
+    if (!m) return;
+    const holder = document.createElement('div');
+    holder.setAttribute('data-jql', m[1].trim());
+    holder.className = 'wiki-jql-block rounded-md border border-border bg-surface p-3 text-sm text-muted-foreground';
+    holder.textContent = `Loading issues for “${m[1].trim()}”…`;
+    el.replaceWith(holder);
+  });
+
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const targets: Text[] = [];
   let node: Node | null;
@@ -157,7 +170,10 @@ export function RichTextView({
   issues?: LinkedIssueSummary[];
 }) {
   const navigate = useNavigate();
+  const containerRef = useRef<HTMLDivElement>(null);
   const [hovered, setHovered] = useState<{ issue: LinkedIssueSummary; x: number; y: number } | null>(null);
+  // Results per [jql:] query string; an { error } value marks a failed query.
+  const [jqlResults, setJqlResults] = useState<Map<string, JqlSearchIssue[] | { error: string }>>(new Map());
 
   const issueMap = useMemo(
     () => new Map((issues ?? []).map((i) => [i.issue_key, i])),
@@ -168,6 +184,101 @@ export function RichTextView({
     return macros ? applyMacros(clean, issueMap) : clean;
   }, [html, macros, issueMap]);
 
+  // Fetch results for every [jql:] block once per query string.
+  useEffect(() => {
+    if (!macros) return;
+    const tpl = document.createElement('template');
+    tpl.innerHTML = rendered;
+    const queries = [...new Set(
+      [...tpl.content.querySelectorAll('div[data-jql]')].map((el) => el.getAttribute('data-jql') || ''),
+    )].filter((q) => q && !jqlResults.has(q));
+    if (queries.length === 0) return;
+    let cancelled = false;
+    void Promise.all(queries.map(async (q) => {
+      try {
+        const { issues: rows } = await api.search.jql(q);
+        return [q, rows] as const;
+      } catch (e) {
+        return [q, { error: e instanceof Error ? e.message : 'Query failed' }] as const;
+      }
+    })).then((pairs) => {
+      if (cancelled) return;
+      setJqlResults((prev) => new Map([...prev, ...pairs]));
+    });
+    return () => { cancelled = true; };
+  }, [rendered, macros, jqlResults]);
+
+  // Swap each placeholder for its table (or error box) as results arrive.
+  // DOM-built like the rest of the macro pipeline: every node is created via
+  // createElement/textContent, so query results are never injected as HTML.
+  useEffect(() => {
+    const root = containerRef.current;
+    if (!root) return;
+    root.querySelectorAll('div[data-jql]').forEach((el) => {
+      const q = el.getAttribute('data-jql') || '';
+      const result = jqlResults.get(q);
+      if (!result) return; // still loading
+      if (!Array.isArray(result)) {
+        el.className = 'wiki-jql-block rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm';
+        el.textContent = `JQL error: ${result.error}`;
+        return;
+      }
+      if (result.length === 0) {
+        el.className = 'wiki-jql-block rounded-md border border-border bg-surface p-3 text-sm text-muted-foreground';
+        el.textContent = 'No issues match this query.';
+        return;
+      }
+      el.className = 'wiki-jql-block overflow-x-auto';
+      el.textContent = '';
+      const table = document.createElement('table');
+      table.className = 'w-full text-sm';
+      const thead = document.createElement('thead');
+      const headRow = document.createElement('tr');
+      for (const h of ['Key', 'Title', 'Status', 'Assignee']) {
+        const th = document.createElement('th');
+        th.className = 'border-b border-border px-2 py-1.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground';
+        th.textContent = h;
+        headRow.appendChild(th);
+      }
+      thead.appendChild(headRow);
+      table.appendChild(thead);
+      const tbody = document.createElement('tbody');
+      for (const issue of result) {
+        const tr = document.createElement('tr');
+        tr.className = 'border-b border-border/50';
+        const key = document.createElement('td');
+        key.className = 'px-2 py-1.5';
+        const chip = document.createElement('a');
+        chip.href = '#';
+        chip.setAttribute('data-issue-id', issue.id);
+        chip.setAttribute('data-issue-key', issue.issue_key);
+        chip.setAttribute('data-issue-type', issue.type);
+        chip.className = 'wiki-issue-chip inline-flex items-center gap-0.5 rounded bg-primary/10 px-1 font-mono text-[11px] font-semibold text-primary no-underline hover:bg-primary/20';
+        chip.textContent = issue.issue_key;
+        key.appendChild(chip);
+        const title = document.createElement('td');
+        title.className = 'px-2 py-1.5';
+        title.textContent = issue.title;
+        const status = document.createElement('td');
+        status.className = 'px-2 py-1.5 text-xs text-muted-foreground';
+        status.textContent = issue.status;
+        const assignee = document.createElement('td');
+        assignee.className = 'px-2 py-1.5 text-xs text-muted-foreground';
+        assignee.textContent = issue.assignee_name ?? '—';
+        tr.append(key, title, status, assignee);
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+      el.appendChild(table);
+      if (result.length === 50) {
+        const note = document.createElement('p');
+        note.className = 'mt-1.5 text-xs text-muted-foreground';
+        note.textContent = 'Showing 50 — refine your query.';
+        el.appendChild(note);
+      }
+    });
+  }, [jqlResults, rendered]);
+
   function onClick(e: React.MouseEvent<HTMLDivElement>) {
     const chip = (e.target as HTMLElement).closest?.('a[data-issue-id]');
     if (!chip) return;
@@ -177,8 +288,10 @@ export function RichTextView({
     // unrelated issue when the key no longer existed.
     const id = chip.getAttribute('data-issue-id') ?? '';
     const key = chip.getAttribute('data-issue-key') ?? '';
-    const issue = issueMap.get(key);
-    navigate(issue?.type === 'epic' ? `/epics?issue=${id}` : `/board?issue=${id}`);
+    // Chips in prose resolve their type via issueMap; chips inside [jql:]
+    // tables carry it as data-issue-type since they aren't in the page's map.
+    const type = issueMap.get(key)?.type ?? chip.getAttribute('data-issue-type') ?? '';
+    navigate(type === 'epic' ? `/epics?issue=${id}` : `/board?issue=${id}`);
   }
 
   function onPointerOver(e: React.PointerEvent<HTMLDivElement>) {
@@ -193,6 +306,7 @@ export function RichTextView({
   return (
     <>
       <div
+        ref={containerRef}
         className={cn('wiki-prose', className)}
         onClick={onClick}
         onPointerOver={onPointerOver}
