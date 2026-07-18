@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   Clock, Download, Eye, FileText, Heart, History, Loader2, Lock, MoreHorizontal,
-  Pencil, Plus, Quote, Send, Sparkles, Trash2, X,
+  Paperclip, Pencil, Plus, Quote, Send, Sparkles, Trash2, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -19,7 +19,7 @@ import {
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
 import { isAdmin } from '@/lib/domain';
-import type { User, WikiComment, WikiPage, WikiRestriction, WikiTreeNode, WikiVersion } from '@/lib/types';
+import type { User, WikiAttachment, WikiComment, WikiPage, WikiRestriction, WikiTreeNode, WikiVersion } from '@/lib/types';
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -79,6 +79,7 @@ export default function WikiPageScreen() {
   const [page, setPage] = useState<WikiPage | null>(null);
   const [tree, setTree] = useState<WikiTreeNode[]>([]);
   const [comments, setComments] = useState<WikiComment[]>([]);
+  const [attachments, setAttachments] = useState<WikiAttachment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -110,14 +111,16 @@ export default function WikiPageScreen() {
       setPage(p);
       setDraftTitle(p.title);
       setDraftBody(p.body);
-      const [t, c, w] = await Promise.all([
+      const [t, c, w, a] = await Promise.all([
         api.wiki.tree(p.space_id).catch(() => []),
         api.wiki.comments(p.id).catch(() => []),
         api.wiki.watchState(p.id).catch(() => ({ count: 0, watching: false })),
+        api.wiki.attachments(p.id).catch(() => []),
       ]);
       setTree(t);
       setComments(c);
       setWatching(w.watching);
+      setAttachments(a);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load page');
     } finally {
@@ -432,7 +435,7 @@ export default function WikiPageScreen() {
           )}
 
           {editing ? (
-            <RichTextEditor value={draftBody} onChange={setDraftBody} />
+            <RichTextEditor value={draftBody} onChange={setDraftBody} pageId={page.id} />
           ) : page.body ? (
             <RichTextView html={page.body} macros />
           ) : (
@@ -445,6 +448,31 @@ export default function WikiPageScreen() {
                 </Button>
               )}
             </div>
+          )}
+
+          {!editing && attachments.length > 0 && (
+            <section className="mt-8">
+              <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold"><Paperclip className="size-4" /> Attachments ({attachments.length})</h2>
+              <ul className="divide-y divide-border-light rounded-lg border border-border">
+                {attachments.map((a) => (
+                  <li key={a.id} className="group flex items-center gap-3 px-3 py-2 text-sm">
+                    {a.is_image
+                      ? <img src={a.raw_url} alt="" className="size-9 shrink-0 rounded object-cover" />
+                      : <FileText className="size-5 shrink-0 text-faint" />}
+                    <a href={a.raw_url} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate hover:underline">{a.original_name}</a>
+                    <span className="shrink-0 text-xs text-muted-foreground">{a.size ? `${Math.max(1, Math.round(a.size / 1024))} KB` : ''}</span>
+                    <button
+                      className="shrink-0 text-muted-foreground opacity-0 transition group-hover:opacity-100"
+                      aria-label="Delete attachment"
+                      onClick={async () => {
+                        try { await api.wiki.removeAttachment(a.id); setAttachments((prev) => prev.filter((x) => x.id !== a.id)); }
+                        catch (e) { toast.error('Delete failed', { description: e instanceof Error ? e.message : undefined }); }
+                      }}
+                    ><Trash2 className="size-3.5" /></button>
+                  </li>
+                ))}
+              </ul>
+            </section>
           )}
 
           <Separator className="my-8" />

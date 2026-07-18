@@ -9,7 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import DOMPurify, { type Config } from 'dompurify';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
-import { Bold, Code, Heading2, Heading3, Italic, Link2, List, ListOrdered, Loader2, Quote, Sparkles, Strikethrough } from 'lucide-react';
+import { Bold, Code, Heading2, Heading3, Image as ImageIcon, Italic, Link2, List, ListOrdered, Loader2, Quote, Sparkles, Strikethrough } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -191,12 +191,17 @@ export function RichTextEditor({
   value,
   onChange,
   className,
+  pageId,
 }: {
   value: string;
   onChange: (html: string) => void;
   className?: string;
+  /** When set, enables image upload — files attach to this wiki page. */
+  pageId?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
   const aiEnabled = useAIEnabled();
   const [aiBusy, setAiBusy] = useState(false);
   const [draftOpen, setDraftOpen] = useState(false);
@@ -225,6 +230,24 @@ export function RichTextEditor({
 
   function emit() {
     if (ref.current) onChange(sanitizeHtml(ref.current.innerHTML));
+  }
+
+  async function uploadImage(file: File) {
+    if (!pageId || !ref.current) return;
+    setUploading(true);
+    try {
+      const [att] = await api.wiki.uploadAttachments(pageId, [file]);
+      ref.current.focus();
+      const img = att.is_image
+        ? `<img src="${att.raw_url}" alt="${att.original_name.replace(/"/g, '')}" />`
+        : `<a href="${att.raw_url}">${att.original_name}</a>`;
+      document.execCommand('insertHTML', false, `${img}<p></p>`);
+      emit();
+    } catch (e) {
+      toast.error('Upload failed', { description: e instanceof Error ? e.message : undefined });
+    } finally {
+      setUploading(false);
+    }
   }
 
   // Whether the current selection sits inside the editor and isn't collapsed.
@@ -381,6 +404,23 @@ export function RichTextEditor({
             </form>
           </PopoverContent>
         </Popover>
+
+        {pageId && (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,.pdf,.csv,.txt,.docx,.xlsx,.pptx,.zip"
+              className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadImage(f); e.target.value = ''; }}
+            />
+            <Button type="button" variant="ghost" size="icon" className="size-7" aria-label="Insert image or file"
+              title="Insert image or file" disabled={uploading}
+              onMouseDown={(e) => e.preventDefault()} onClick={() => fileInputRef.current?.click()}>
+              {uploading ? <Loader2 className="size-4 animate-spin" /> : <ImageIcon className="size-4" />}
+            </Button>
+          </>
+        )}
 
         {aiEnabled && (
           <>

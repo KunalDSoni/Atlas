@@ -7,8 +7,15 @@ const { v4: uuidv4 } = require('uuid');
 const { getDb, queryOne, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
+const config = require('../config');
 
 const router = express.Router();
+
+// GET /api/settings/email-status — whether the server can actually deliver email,
+// so the UI can tell users their toggles do nothing until SMTP is configured.
+router.get('/email-status', requireAuth, (req, res) => {
+  res.json({ email_configured: config.email.enabled() });
+});
 
 // GET /api/settings
 router.get('/', requireAuth, async (req, res) => {

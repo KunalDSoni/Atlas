@@ -412,6 +412,53 @@ const SCHEMA_SQL = [
     user_id TEXT NOT NULL REFERENCES users(id),
     created_at TEXT DEFAULT (datetime('now')),
     UNIQUE(feature_id, user_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS wiki_attachments (
+    id TEXT PRIMARY KEY,
+    page_id TEXT NOT NULL REFERENCES wiki_pages(id),
+    filename TEXT NOT NULL,
+    original_name TEXT NOT NULL,
+    mime_type TEXT,
+    size INTEGER,
+    uploaded_by TEXT REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS api_tokens (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    name TEXT NOT NULL,
+    prefix TEXT NOT NULL,
+    token_hash TEXT NOT NULL,
+    last_used_at TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS webhooks (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    url TEXT NOT NULL,
+    secret TEXT NOT NULL,
+    events TEXT NOT NULL DEFAULT '[]',
+    enabled INTEGER DEFAULT 1,
+    created_by TEXT REFERENCES users(id),
+    last_status INTEGER,
+    last_delivered_at TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS custom_fields (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    name TEXT NOT NULL,
+    field_type TEXT NOT NULL DEFAULT 'text' CHECK(field_type IN ('text','number','select','date','checkbox')),
+    options TEXT NOT NULL DEFAULT '[]',
+    position INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS issue_field_values (
+    id TEXT PRIMARY KEY,
+    issue_id TEXT NOT NULL REFERENCES issues(id),
+    field_id TEXT NOT NULL REFERENCES custom_fields(id),
+    value TEXT,
+    UNIQUE(issue_id, field_id)
   )`
 ];
 
@@ -821,6 +868,53 @@ const MYSQL_SCHEMA_SQL = [
     user_id VARCHAR(36) NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_feature_vote (feature_id, user_id)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS wiki_attachments (
+    id VARCHAR(36) PRIMARY KEY,
+    page_id VARCHAR(36) NOT NULL,
+    filename VARCHAR(255) NOT NULL,
+    original_name VARCHAR(500) NOT NULL,
+    mime_type VARCHAR(120),
+    size INT,
+    uploaded_by VARCHAR(36),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS api_tokens (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    prefix VARCHAR(40) NOT NULL,
+    token_hash VARCHAR(128) NOT NULL,
+    last_used_at DATETIME NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS webhooks (
+    id VARCHAR(36) PRIMARY KEY,
+    project_id VARCHAR(36) NOT NULL,
+    url VARCHAR(1000) NOT NULL,
+    secret VARCHAR(128) NOT NULL,
+    events TEXT NOT NULL,
+    enabled TINYINT DEFAULT 1,
+    created_by VARCHAR(36),
+    last_status INT,
+    last_delivered_at DATETIME NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS custom_fields (
+    id VARCHAR(36) PRIMARY KEY,
+    project_id VARCHAR(36) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    field_type VARCHAR(20) NOT NULL DEFAULT 'text' CHECK(field_type IN ('text','number','select','date','checkbox')),
+    options TEXT NOT NULL,
+    position INT DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS issue_field_values (
+    id VARCHAR(36) PRIMARY KEY,
+    issue_id VARCHAR(36) NOT NULL,
+    field_id VARCHAR(36) NOT NULL,
+    value TEXT,
+    UNIQUE KEY uq_issue_field (issue_id, field_id)
   ) DEFAULT CHARSET=utf8mb4`
 ];
 
@@ -1369,6 +1463,57 @@ function seedDemoData() {
         [uuid(), projId3, `ATLAS-${cnum}`, cnum, c.title, c.type, userIds[0], userIds[0], eid, ci]);
     });
   }
+
+  // ===== Platform & depth wave (epics 21-25) — shipped =====
+  const platformEpics = [
+    { title: 'Email notifications', color: 'blue',
+      desc: 'SMTP delivery for notifications, gated on config and degrading to a no-op with an in-memory outbox when unconfigured; respects each user\'s toggles.',
+      children: [
+        { title: 'utils/email.js (nodemailer) with outbox + graceful degradation', type: 'task' },
+        { title: 'Fan out notifications to email respecting per-type toggles', type: 'story' },
+      ] },
+    { title: 'Wiki page attachments & inline images', color: 'teal',
+      desc: 'Upload files to wiki pages and embed images inline; signed raw URLs, stored unsigned and re-signed per fetch so content never expires.',
+      children: [
+        { title: 'wiki_attachments table + upload/list/raw/delete routes', type: 'task' },
+        { title: 'Editor image/file upload + page attachments section', type: 'story' },
+      ] },
+    { title: 'API tokens & webhooks', color: 'purple',
+      desc: 'Personal API tokens (hashed, Bearer auth) and HMAC-signed outbound webhooks on issue events, managed from a Developer settings card.',
+      children: [
+        { title: 'api_tokens + Bearer auth in middleware', type: 'task' },
+        { title: 'Webhooks table + HMAC dispatch on issue events', type: 'task' },
+        { title: 'Developer settings: tokens + webhooks UI', type: 'story' },
+      ] },
+    { title: 'Real-time updates (SSE)', color: 'orange',
+      desc: 'In-process event bus + SSE stream endpoint; the board and notification bell update live as teammates make changes.',
+      children: [
+        { title: 'Event bus + /api/stream SSE endpoint', type: 'task' },
+        { title: 'useLiveEvents; live board refresh + instant bell', type: 'story' },
+      ] },
+    { title: 'Custom fields', color: 'pink',
+      desc: 'Per-project custom field definitions (text/number/select/date/checkbox) with type-validated values rendered and edited on every issue.',
+      children: [
+        { title: 'custom_fields + issue_field_values + validated routes', type: 'task' },
+        { title: 'Field manager + value editing on the issue sheet', type: 'story' },
+      ] },
+  ];
+  platformEpics.forEach((epic, i) => {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(20 + i);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, ?)`,
+      [eid, projId3, `ATLAS-${num}`, num, epic.title, epic.desc, userIds[0], epic.color, startDate, dueDate, 20 + i]);
+    epic.children.forEach((c, ci) => {
+      const cnum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${cnum}`, cnum, c.title, c.type, userIds[0], userIds[0], eid, ci]);
+    });
+  });
 
   // ===== CONFLUENCE SEED DATA =====
   const spaceEng = uuid();

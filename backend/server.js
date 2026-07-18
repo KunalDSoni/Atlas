@@ -39,6 +39,11 @@ const productFeaturesRoutes = require('./routes/product-features');
 const productObjectivesRoutes = require('./routes/product-objectives');
 const portalRoutes = require('./routes/portal');
 const aiRoutes = require('./routes/ai');
+const wikiAttachmentsRoutes = require('./routes/wiki-attachments');
+const tokensRoutes = require('./routes/tokens');
+const webhooksRoutes = require('./routes/webhooks');
+const streamRoutes = require('./routes/stream');
+const customFieldsRoutes = require('./routes/custom-fields');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -160,6 +165,19 @@ app.use('/api', portalRoutes);
 
 // AI assistant (Rovo-style): summarize, write, ask-your-wiki
 app.use('/api', aiRoutes);
+
+// Wiki page attachments + inline images
+app.use('/api', wikiAttachmentsRoutes);
+
+// Personal API tokens + outbound webhooks
+app.use('/api', tokensRoutes);
+app.use('/api', webhooksRoutes);
+
+// Real-time event stream (SSE)
+app.use('/api', streamRoutes);
+
+// Per-project custom fields
+app.use('/api', customFieldsRoutes);
 
 // SPA fallback (Express 5 compatible)
 app.get('/{*splat}', (req, res) => {

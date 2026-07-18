@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { FolderKanban, Plus, Trash2 } from 'lucide-react';
+import { FolderKanban, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { CustomFieldsManager } from '@/components/app/custom-fields-manager';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -144,6 +145,7 @@ export default function AdminProjectsScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [fieldsProject, setFieldsProject] = useState<Project | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -253,7 +255,10 @@ export default function AdminProjectsScreen() {
                   <TableCell className="hidden text-xs text-muted-foreground lg:table-cell">
                     {formatDate(p.created_at)}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="text-right">
+                    <Button variant="ghost" size="icon" className="size-8 text-muted-foreground" aria-label={`Custom fields for ${p.name}`} title="Custom fields" onClick={() => setFieldsProject(p)}>
+                      <SlidersHorizontal className="size-4" />
+                    </Button>
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button variant="ghost" size="icon" className="size-8 text-destructive" aria-label={`Delete ${p.name}`}>
@@ -288,6 +293,12 @@ export default function AdminProjectsScreen() {
       )}
 
       <CreateProjectDialog open={createOpen} onOpenChange={setCreateOpen} onCreated={afterChange} />
+      <CustomFieldsManager
+        projectId={fieldsProject?.id ?? null}
+        projectName={fieldsProject?.name}
+        open={!!fieldsProject}
+        onOpenChange={(o) => !o && setFieldsProject(null)}
+      />
     </>
   );
 }

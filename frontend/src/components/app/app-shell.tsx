@@ -22,6 +22,7 @@ import { timeAgo } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { UserAvatar } from './primitives';
 import { CommandPalette } from './command-palette';
+import { useLiveEvents } from '@/hooks/use-live-events';
 
 interface NavItem {
   to: string;
@@ -179,6 +180,14 @@ function NotificationBell() {
     const t = setInterval(refreshCount, 60_000);
     return () => clearInterval(t);
   }, [refreshCount]);
+
+  // Live: bump the unread count the instant the server pushes a notification.
+  useLiveEvents((e) => {
+    if (e.type === 'notification') {
+      refreshCount();
+      if (open) api.notifications.list().then(setItems).catch(() => undefined);
+    }
+  });
 
   useEffect(() => {
     if (!open) return;

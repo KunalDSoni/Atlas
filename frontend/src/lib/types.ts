@@ -116,6 +116,7 @@ export interface Issue {
   fix_version_status: string | null;
   component_name: string | null;
   labels_parsed: string[];
+  custom_fields?: CustomField[];
 }
 
 /**
@@ -411,6 +412,52 @@ export interface WikiPage {
   space_icon?: string;
   breadcrumb?: { id: string; title: string }[];
   children?: { id: string; title: string; slug: string; status: string }[];
+}
+
+export type CustomFieldType = 'text' | 'number' | 'select' | 'date' | 'checkbox';
+
+export interface CustomField {
+  id: string;
+  field_id?: string; // present on enriched issue values
+  project_id?: string;
+  name: string;
+  field_type: CustomFieldType;
+  options: string[];
+  position: number;
+  value?: string | null; // present on enriched issue values
+}
+
+export interface ApiToken {
+  id: string;
+  name: string;
+  prefix: string;
+  last_used_at: string | null;
+  created_at: string;
+  token?: string; // only present in the create response
+}
+
+export interface Webhook {
+  id: string;
+  project_id: string;
+  url: string;
+  events: string[];
+  enabled: number;
+  last_status: number | null;
+  last_delivered_at: string | null;
+  created_at: string;
+  secret?: string; // only present in the create response
+}
+
+export interface WikiAttachment {
+  id: string;
+  page_id: string;
+  original_name: string;
+  mime_type: string | null;
+  size: number | null;
+  raw_url: string;
+  is_image: boolean;
+  uploader_name: string | null;
+  created_at: string;
 }
 
 export interface WikiTreeNode {

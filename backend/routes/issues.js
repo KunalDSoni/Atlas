@@ -15,6 +15,9 @@ const { serverError } = require('../utils/errors');
 const { notify } = require('../utils/notify');
 const { projectStatuses } = require('./workflows');
 const { runAutomation, checkAllSubtasksDone } = require('../utils/automation');
+const { dispatch: dispatchWebhook } = require('../utils/webhooks');
+const { publish } = require('../utils/events');
+const { issueCustomFields } = require('./custom-fields');
 
 const requireBoardAdmin = requireRole('admin', 'board_admin');
 
@@ -108,7 +111,8 @@ async function enrichIssue(db, issue) {
     attachment_count: attachmentCount.count,
     watcher_count: watcherCount.count,
     link_count: linkCount.count,
-    labels_parsed: (() => { try { return JSON.parse(issue.labels || '[]'); } catch(e) { return []; } })()
+    labels_parsed: (() => { try { return JSON.parse(issue.labels || '[]'); } catch(e) { return []; } })(),
+    custom_fields: await issueCustomFields(db, issue),
   };
 }
 
@@ -211,6 +215,8 @@ router.post('/projects/:projectId/issues', requireAuth, requireBoardAdmin, async
     await runAutomation(db, { type: 'issue_created', issue, actorId: req.userId });
     issue = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [id]);
     auditLog({ userId: req.userId, action: 'Created issue', category: 'issues', entityType: 'issue', entityId: id, entityName: issue.issue_key, details: { title, type: type || 'task', priority: priority || 'medium' } });
+    dispatchWebhook(db, req.params.projectId, 'issue.created', { id: issue.id, issue_key: issue.issue_key, title: issue.title, type: issue.type, status: issue.status });
+    publish({ type: 'issue', action: 'created', projectId: req.params.projectId, issueId: issue.id, actorId: req.userId });
     res.status(201).json(await enrichIssue(db, issue));
   } catch (e) { serverError(res, e); }
 });
@@ -304,6 +310,8 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
       await checkAllSubtasksDone(db, updated, req.userId);
       updated = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
     }
+    dispatchWebhook(db, updated.project_id, 'issue.updated', { id: updated.id, issue_key: updated.issue_key, title: updated.title, type: updated.type, status: updated.status });
+    publish({ type: 'issue', action: 'updated', projectId: updated.project_id, issueId: updated.id, actorId: req.userId });
     res.json(await enrichIssue(db, updated));
   } catch (e) { serverError(res, e); }
 });
@@ -322,6 +330,8 @@ router.delete('/issues/:id', requireAuth, requireBoardAdmin, async (req, res) =>
     await run(db, 'DELETE FROM issue_links WHERE source_issue_id = ? OR target_issue_id = ?', [req.params.id, req.params.id]);
     await run(db, 'DELETE FROM issues WHERE id = ?', [req.params.id]);
     auditLog({ userId: req.userId, action: 'Deleted issue', category: 'issues', entityType: 'issue', entityId: req.params.id, entityName: issue ? issue.issue_key : req.params.id });
+    if (issue) dispatchWebhook(db, issue.project_id, 'issue.deleted', { id: issue.id, issue_key: issue.issue_key });
+    if (issue) publish({ type: 'issue', action: 'deleted', projectId: issue.project_id, issueId: issue.id, actorId: req.userId });
     res.json({ ok: true });
   } catch (e) { serverError(res, e); }
 });
@@ -363,6 +373,7 @@ router.put('/issues/:id/move', requireAuth, async (req, res) => {
       await checkAllSubtasksDone(db, updated, req.userId);
       updated = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
     }
+    publish({ type: 'issue', action: 'moved', projectId: updated.project_id, issueId: updated.id, actorId: req.userId });
     res.json(await enrichIssue(db, updated));
   } catch (e) { serverError(res, e); }
 });

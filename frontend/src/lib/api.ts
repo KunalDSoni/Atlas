@@ -9,6 +9,7 @@ import type {
   ProfileResponse, Project, ProjectComponent, ProjectMember, ProjectStats, SavedFilter, SearchResults, Settings, Sprint, User, Version,
   IssueLink, LinkType,
   WikiComment, WikiPage, WikiRestriction, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
+  WikiAttachment, ApiToken, Webhook, CustomField,
   WorkLog, WorkflowStatus,
   PbCompany, PbCustomer, PbInsight, PbFeature, PbObjective, PortalFeature,
 } from './types';
@@ -121,6 +122,7 @@ export const api = {
   settings: {
     get: () => get<Settings>('/settings'),
     update: (body: Partial<Settings>) => put<Settings>('/settings', body),
+    emailStatus: () => get<{ email_configured: boolean }>('/settings/email-status'),
   },
 
   projects: {
@@ -301,6 +303,14 @@ export const api = {
     search: (q: string) => get<WikiPage[]>(`/wiki/search?q=${encodeURIComponent(q)}`),
     templates: () => get<WikiTemplate[]>('/wiki/templates'),
 
+    attachments: (pageId: string) => get<WikiAttachment[]>(`/wiki/pages/${pageId}/attachments`),
+    uploadAttachments: (pageId: string, files: File[]) => {
+      const fd = new FormData();
+      files.forEach((f) => fd.append('files', f));
+      return request<WikiAttachment[]>(`/wiki/pages/${pageId}/attachments`, { method: 'POST', body: fd });
+    },
+    removeAttachment: (id: string) => del<{ ok: boolean }>(`/wiki/attachments/${id}`),
+
     watchState: (pageId: string) => get<{ count: number; watching: boolean }>(`/wiki/pages/${pageId}/watchers`),
     restrictions: (pageId: string) => get<WikiRestriction[]>(`/wiki/pages/${pageId}/restrictions`),
     exportPage: (pageId: string, format: 'markdown' | 'html') =>
@@ -377,6 +387,30 @@ export const api = {
     features: () => get<PortalFeature[]>('/portal/features'),
     submitIdea: (body: { title: string; content?: string }) => post<{ ok: boolean; id: string }>('/portal/ideas', body),
     vote: (featureId: string) => post<{ voted: boolean; vote_count: number }>(`/product/features/${featureId}/vote`),
+  },
+
+  customFields: {
+    list: (projectId: string) => get<CustomField[]>(`/projects/${projectId}/fields`),
+    create: (projectId: string, body: { name: string; field_type: string; options?: string[] }) =>
+      post<CustomField>(`/projects/${projectId}/fields`, body),
+    update: (id: string, body: { name?: string; options?: string[]; position?: number }) =>
+      put<CustomField>(`/fields/${id}`, body),
+    remove: (id: string) => del<{ ok: boolean }>(`/fields/${id}`),
+    setValues: (issueId: string, values: Record<string, string>) =>
+      put<{ ok: boolean }>(`/issues/${issueId}/fields`, { values }),
+  },
+
+  tokens: {
+    list: () => get<ApiToken[]>('/tokens'),
+    create: (name: string) => post<ApiToken>('/tokens', { name }),
+    remove: (id: string) => del<{ ok: boolean }>(`/tokens/${id}`),
+  },
+
+  webhooks: {
+    list: (projectId: string) => get<Webhook[]>(`/projects/${projectId}/webhooks`),
+    create: (projectId: string, body: { url: string; events: string[] }) => post<Webhook>(`/projects/${projectId}/webhooks`, body),
+    update: (id: string, body: Partial<Pick<Webhook, 'url' | 'events'>> & { enabled?: boolean }) => put<Webhook>(`/webhooks/${id}`, body),
+    remove: (id: string) => del<{ ok: boolean }>(`/webhooks/${id}`),
   },
 
   ai: {
