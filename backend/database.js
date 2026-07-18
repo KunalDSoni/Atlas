@@ -1511,6 +1511,41 @@ function seedDemoData() {
     });
   });
 
+  // ===== Data layer & performance wave (epics 29-30) — shipped =====
+  const perfEpics = [
+    { title: 'Schema migration runner', color: 'purple',
+      desc: 'An ordered, append-only migration list recorded in a schema_migrations ledger, replacing the try/catch ALTERs that swallowed errors and left no record of what ran. One migration list drives both sql.js and MySQL.',
+      children: [
+        { title: 'Migration runner + schema_migrations ledger', type: 'task' },
+        { title: 'Driver adapters for sql.js and mysql2', type: 'task' },
+        { title: 'Transcribe the existing ALTERs as migrations 001-006', type: 'task' },
+      ] },
+    { title: 'Batched issue enrichment', color: 'red',
+      desc: 'Issue enrichment fired ~11 queries per issue, so a 100-issue board cost 719 queries per request. Batched reads keyed by the ids in the list bring that to a flat 12, with the payload byte-identical.',
+      children: [
+        { title: 'enrichIssues: one batched read per relationship', type: 'story' },
+        { title: 'Batched custom field values', type: 'task' },
+        { title: 'Indexes on the grouped foreign keys', type: 'task' },
+        { title: 'Regression test pinning query count flat as the list grows', type: 'task' },
+      ] },
+  ];
+  perfEpics.forEach((epic, i) => {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(28 + i);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, ?)`,
+      [eid, projId3, `ATLAS-${num}`, num, epic.title, epic.desc, userIds[0], epic.color, startDate, dueDate, 28 + i]);
+    epic.children.forEach((c, ci) => {
+      const cnum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${cnum}`, cnum, c.title, c.type, userIds[0], userIds[0], eid, ci]);
+    });
+  });
+
   // ===== CONFLUENCE SEED DATA =====
   const spaceEng = uuid();
   const spaceProd = uuid();
