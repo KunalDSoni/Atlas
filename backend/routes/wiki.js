@@ -6,23 +6,66 @@ const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
 const { sanitizeRichText } = require('../utils/sanitize');
 const { syncPageIssueLinks } = require('../utils/issue-keys');
+const { placeholders } = require('../utils/sql');
 const { signWikiImages, unsignWikiImages } = require('./wiki-attachments');
 const router = express.Router();
+
+/**
+ * Access for many pages in two queries. The rules live here and nowhere else —
+ * pageAccess() below delegates, so the singular and batch paths cannot drift.
+ */
+async function pageAccessBatch(db, pageIds, userId, userRole) {
+  const result = new Map();
+  if (pageIds.length === 0) return result;
+
+  const ph = placeholders(pageIds);
+  const [rows, pages] = await Promise.all([
+    queryAll(db, `SELECT page_id, user_id, can_edit FROM wiki_page_restrictions WHERE page_id IN (${ph})`, pageIds),
+    queryAll(db, `SELECT id, author_id FROM wiki_pages WHERE id IN (${ph})`, pageIds),
+  ]);
+
+  const authorOf = new Map(pages.map((p) => [p.id, p.author_id]));
+  const byPage = new Map();
+  for (const r of rows) {
+    if (!byPage.has(r.page_id)) byPage.set(r.page_id, []);
+    byPage.get(r.page_id).push(r);
+  }
+
+  const isAdmin = userRole === 'admin';
+  for (const pageId of pageIds) {
+    const pageRows = byPage.get(pageId) || [];
+    // A page with no restriction rows — including one that does not exist — is
+    // open. This matches the pre-refactor behaviour exactly.
+    if (pageRows.length === 0) {
+      result.set(pageId, { view: true, edit: true, restricted: false });
+      continue;
+    }
+    const isOwner = authorOf.has(pageId) && authorOf.get(pageId) === userId;
+    if (isOwner || isAdmin) {
+      result.set(pageId, { view: true, edit: true, restricted: true });
+      continue;
+    }
+    const mine = pageRows.find((r) => r.user_id === userId);
+    if (!mine) {
+      result.set(pageId, { view: false, edit: false, restricted: true });
+      continue;
+    }
+    const anyEditRows = pageRows.some((r) => Number(r.can_edit) === 1);
+    result.set(pageId, {
+      view: true,
+      edit: anyEditRows ? Number(mine.can_edit) === 1 : true,
+      restricted: true,
+    });
+  }
+  return result;
+}
 
 // ===== PAGE RESTRICTIONS =====
 // Rows grant access: a page with any restriction rows is visible only to the
 // listed users, its author, and admins. can_edit=1 rows additionally gate editing.
 async function pageAccess(db, pageId, userId, userRole) {
-  const rows = await queryAll(db, 'SELECT user_id, can_edit FROM wiki_page_restrictions WHERE page_id = ?', [pageId]);
-  const page = await queryOne(db, 'SELECT author_id FROM wiki_pages WHERE id = ?', [pageId]);
-  const isOwner = page && page.author_id === userId;
-  const isAdmin = userRole === 'admin';
-  if (rows.length === 0) return { view: true, edit: true, restricted: false };
-  if (isOwner || isAdmin) return { view: true, edit: true, restricted: true };
-  const mine = rows.find((r) => r.user_id === userId);
-  if (!mine) return { view: false, edit: false, restricted: true };
-  const anyEditRows = rows.some((r) => Number(r.can_edit) === 1);
-  return { view: true, edit: anyEditRows ? Number(mine.can_edit) === 1 : true, restricted: true };
+  const map = await pageAccessBatch(db, [pageId], userId, userRole);
+  return map.get(pageId);
 }
 
 
@@ -532,3 +575,5 @@ router.get('/wiki/spaces/:spaceId/tree', requireAuth, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.pageAccess = pageAccess;
+module.exports.pageAccessBatch = pageAccessBatch;
