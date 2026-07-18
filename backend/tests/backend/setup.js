@@ -86,6 +86,7 @@ async function createTestApp() {
   testApp.use('/api', require('../../routes/tokens'));
   testApp.use('/api', require('../../routes/webhooks'));
   testApp.use('/api', require('../../routes/stream'));
+  testApp.use('/api', require('../../routes/custom-fields'));
 
   app = testApp;
   return testApp;

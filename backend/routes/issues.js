@@ -17,6 +17,7 @@ const { projectStatuses } = require('./workflows');
 const { runAutomation, checkAllSubtasksDone } = require('../utils/automation');
 const { dispatch: dispatchWebhook } = require('../utils/webhooks');
 const { publish } = require('../utils/events');
+const { issueCustomFields } = require('./custom-fields');
 
 const requireBoardAdmin = requireRole('admin', 'board_admin');
 
@@ -110,7 +111,8 @@ async function enrichIssue(db, issue) {
     attachment_count: attachmentCount.count,
     watcher_count: watcherCount.count,
     link_count: linkCount.count,
-    labels_parsed: (() => { try { return JSON.parse(issue.labels || '[]'); } catch(e) { return []; } })()
+    labels_parsed: (() => { try { return JSON.parse(issue.labels || '[]'); } catch(e) { return []; } })(),
+    custom_fields: await issueCustomFields(db, issue),
   };
 }
 

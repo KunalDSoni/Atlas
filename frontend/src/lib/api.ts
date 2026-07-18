@@ -9,7 +9,7 @@ import type {
   ProfileResponse, Project, ProjectComponent, ProjectMember, ProjectStats, SavedFilter, SearchResults, Settings, Sprint, User, Version,
   IssueLink, LinkType,
   WikiComment, WikiPage, WikiRestriction, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
-  WikiAttachment, ApiToken, Webhook,
+  WikiAttachment, ApiToken, Webhook, CustomField,
   WorkLog, WorkflowStatus,
   PbCompany, PbCustomer, PbInsight, PbFeature, PbObjective, PortalFeature,
 } from './types';
@@ -387,6 +387,17 @@ export const api = {
     features: () => get<PortalFeature[]>('/portal/features'),
     submitIdea: (body: { title: string; content?: string }) => post<{ ok: boolean; id: string }>('/portal/ideas', body),
     vote: (featureId: string) => post<{ voted: boolean; vote_count: number }>(`/product/features/${featureId}/vote`),
+  },
+
+  customFields: {
+    list: (projectId: string) => get<CustomField[]>(`/projects/${projectId}/fields`),
+    create: (projectId: string, body: { name: string; field_type: string; options?: string[] }) =>
+      post<CustomField>(`/projects/${projectId}/fields`, body),
+    update: (id: string, body: { name?: string; options?: string[]; position?: number }) =>
+      put<CustomField>(`/fields/${id}`, body),
+    remove: (id: string) => del<{ ok: boolean }>(`/fields/${id}`),
+    setValues: (issueId: string, values: Record<string, string>) =>
+      put<{ ok: boolean }>(`/issues/${issueId}/fields`, { values }),
   },
 
   tokens: {

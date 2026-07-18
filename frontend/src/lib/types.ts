@@ -116,6 +116,7 @@ export interface Issue {
   fix_version_status: string | null;
   component_name: string | null;
   labels_parsed: string[];
+  custom_fields?: CustomField[];
 }
 
 /**
@@ -411,6 +412,19 @@ export interface WikiPage {
   space_icon?: string;
   breadcrumb?: { id: string; title: string }[];
   children?: { id: string; title: string; slug: string; status: string }[];
+}
+
+export type CustomFieldType = 'text' | 'number' | 'select' | 'date' | 'checkbox';
+
+export interface CustomField {
+  id: string;
+  field_id?: string; // present on enriched issue values
+  project_id?: string;
+  name: string;
+  field_type: CustomFieldType;
+  options: string[];
+  position: number;
+  value?: string | null; // present on enriched issue values
 }
 
 export interface ApiToken {

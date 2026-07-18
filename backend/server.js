@@ -43,6 +43,7 @@ const wikiAttachmentsRoutes = require('./routes/wiki-attachments');
 const tokensRoutes = require('./routes/tokens');
 const webhooksRoutes = require('./routes/webhooks');
 const streamRoutes = require('./routes/stream');
+const customFieldsRoutes = require('./routes/custom-fields');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -174,6 +175,9 @@ app.use('/api', webhooksRoutes);
 
 // Real-time event stream (SSE)
 app.use('/api', streamRoutes);
+
+// Per-project custom fields
+app.use('/api', customFieldsRoutes);
 
 // SPA fallback (Express 5 compatible)
 app.get('/{*splat}', (req, res) => {

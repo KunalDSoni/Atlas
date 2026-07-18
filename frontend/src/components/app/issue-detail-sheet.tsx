@@ -27,6 +27,7 @@ import { formatBytes, formatDuration, timeAgo } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { PriorityIcon, StatusPill, TypeIcon, UserAvatar } from './primitives';
 import { LabelsEditor } from './labels-editor';
+import { CustomFieldsEditor } from './custom-fields-editor';
 import { LinkedIssues } from './linked-issues';
 
 const UNASSIGNED = '__unassigned__';
@@ -451,6 +452,21 @@ export function IssueDetailSheet({
                     onChange={(next) => patch({ labels: JSON.stringify(next) })}
                   />
                 </section>
+
+                {issue.custom_fields && issue.custom_fields.length > 0 && (
+                  <CustomFieldsEditor
+                    issueId={issue.id}
+                    fields={issue.custom_fields}
+                    canEdit={canEdit}
+                    onSaved={(fieldId, value) =>
+                      setIssue((prev) => prev && ({
+                        ...prev,
+                        custom_fields: (prev.custom_fields ?? []).map((f) =>
+                          (f.field_id ?? f.id) === fieldId ? { ...f, value } : f),
+                      }))
+                    }
+                  />
+                )}
 
                 <section>
                   <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
