@@ -21,7 +21,7 @@ const { sanitizeRichText } = require('../utils/sanitize');
 
 const router = express.Router();
 
-const MODEL = config.ai.model;
+const MODELS = config.ai.models;
 
 let client = null;
 function getClient() {
@@ -56,10 +56,10 @@ function firstText(message) {
   return block ? block.text.trim() : '';
 }
 
-async function complete({ system, user, maxTokens }) {
+async function complete({ model, system, user, maxTokens }) {
   const c = getClient();
   const message = await c.messages.create({
-    model: MODEL,
+    model,
     max_tokens: maxTokens,
     system,
     messages: [{ role: 'user', content: user }],
@@ -74,7 +74,8 @@ async function complete({ system, user, maxTokens }) {
 
 // GET /api/ai/status
 router.get('/ai/status', requireAuth, (req, res) => {
-  res.json({ enabled: config.ai.enabled(), model: config.ai.enabled() ? MODEL : null });
+  const on = config.ai.enabled();
+  res.json({ enabled: on, model: on ? MODELS.ask : null, models: on ? MODELS : null });
 });
 
 // POST /api/ai/summarize  { page_id? , text? }
@@ -94,6 +95,7 @@ router.post('/ai/summarize', requireAuth, requireAI, async (req, res) => {
     if (!text || text.length < 40) return res.status(400).json({ error: 'Not enough content to summarize' });
 
     const summary = await complete({
+      model: MODELS.summary,
       system: 'You summarize wiki documentation crisply for a busy reader. Reply with 3–5 short bullet points capturing the key takeaways, each on its own line beginning with "- ". No preamble, no heading, no closing remark.',
       user: `Summarize this page${title ? ` titled "${title}"` : ''}:\n\n${text.slice(0, 24000)}`,
       maxTokens: 512,
@@ -125,6 +127,7 @@ router.post('/ai/write', requireAuth, requireAI, async (req, res) => {
     if (!source.trim()) return res.status(400).json({ error: action === 'draft' ? 'Describe what to write about' : 'No text provided' });
 
     const html = await complete({
+      model: MODELS.write,
       system: 'You are a writing assistant embedded in a wiki editor. Reply with clean semantic HTML only — use <h2>/<h3>, <p>, <ul>/<ol>/<li>, <strong>, <em>, <blockquote>, <pre><code>. Do not wrap the output in <html> or <body>, do not use markdown fences, and add no commentary before or after the content.',
       user: `${instruction}\n\n---\n${source.slice(0, 24000)}`,
       maxTokens: 2048,
@@ -171,6 +174,7 @@ router.post('/ai/ask', requireAuth, requireAI, async (req, res) => {
       `[${i + 1}] ${p.title}\n${htmlToText(p.body).slice(0, 4000)}`).join('\n\n---\n\n');
 
     const answer = await complete({
+      model: MODELS.ask,
       system: 'You answer questions using ONLY the provided wiki excerpts. Cite the sources you used inline as [1], [2], etc. If the excerpts do not contain the answer, say so plainly. Be concise and direct.',
       user: `Question: ${question}\n\nWiki excerpts:\n\n${context}`,
       maxTokens: 1024,

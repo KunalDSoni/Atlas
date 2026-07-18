@@ -44,10 +44,19 @@ const config = {
 
   // AI (Rovo-style wiki assistant). Powered by the Anthropic API — the key
   // stays server-side; the frontend only ever talks to our /api/ai/* proxy.
+  //
+  // Per-feature models: cheap/fast where volume is high and the task is simple
+  // (summaries), mid-tier for quality writing, top-tier for multi-doc reasoning
+  // (ask). ANTHROPIC_MODEL, if set, overrides all three; each is also
+  // individually overridable via its own env var.
   ai: {
     apiKey: process.env.ANTHROPIC_API_KEY || null,
-    model: process.env.ANTHROPIC_MODEL || 'claude-opus-4-8',
     enabled: () => Boolean(process.env.ANTHROPIC_API_KEY),
+    models: {
+      summary: process.env.ANTHROPIC_MODEL || process.env.AI_SUMMARY_MODEL || 'claude-haiku-4-5',
+      write: process.env.ANTHROPIC_MODEL || process.env.AI_WRITE_MODEL || 'claude-sonnet-5',
+      ask: process.env.ANTHROPIC_MODEL || process.env.AI_ASK_MODEL || 'claude-opus-4-8',
+    },
   },
 
   // Helpers
