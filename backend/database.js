@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const config = require('./config');
 const { hashPasswordSync } = require('./utils/password');
+const { runMigrations, sqliteAdapter, mysqlAdapter } = require('./migrations');
 
 const DB_PATH = config.db.sqlitePath;
 let db;
@@ -933,15 +934,9 @@ async function initSqlite() {
   // Create tables
   SCHEMA_SQL.forEach(sql => db.run(sql));
 
-  // CREATE TABLE IF NOT EXISTS won't add columns to an existing data.db — patch in place.
-  // ALTER skips CHECK: existing DBs are covered by API validation in backend/routes/issues.js
-  try { db.run("ALTER TABLE issues ADD COLUMN epic_color TEXT DEFAULT 'purple'"); } catch (e) { /* column already exists */ }
-  try { db.run("ALTER TABLE issues ADD COLUMN fix_version_id TEXT"); } catch (e) { /* column already exists */ }
-  try { db.run("ALTER TABLE issues ADD COLUMN component_id TEXT"); } catch (e) { /* column already exists */ }
-  try { db.run("ALTER TABLE issues ADD COLUMN start_date TEXT"); } catch (e) { /* column already exists */ }
-  try { db.run("ALTER TABLE projects ADD COLUMN wip_limits TEXT DEFAULT '{}'"); } catch (e) { /* column already exists */ }
-  try { db.run("ALTER TABLE wiki_page_comments ADD COLUMN quote TEXT"); } catch (e) { /* column already exists */ }
-  try { db.run("ALTER TABLE wiki_pages ADD COLUMN page_type TEXT DEFAULT 'page'"); } catch (e) { /* column already exists */ }
+  // CREATE TABLE IF NOT EXISTS won't add columns to an existing data.db, so
+  // schema changes past the initial shape live in backend/migrations.js.
+  await runMigrations(sqliteAdapter(db));
 
   saveDb();
 
@@ -1006,45 +1001,9 @@ async function initMysqlSchema(pool) {
     await pool.query(sql);
   }
 
-  const [epicCol] = await pool.query(
-    "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'issues' AND column_name = 'epic_color'"
-  );
-  if (epicCol.length === 0) {
-    // ALTER skips CHECK: existing DBs are covered by API validation in backend/routes/issues.js
-    await pool.query("ALTER TABLE issues ADD COLUMN epic_color VARCHAR(20) DEFAULT 'purple'");
-  }
-
-  for (const col of ['fix_version_id', 'component_id', 'start_date']) {
-    const [hit] = await pool.query(
-      "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'issues' AND column_name = ?", [col]
-    );
-    if (hit.length === 0) {
-      await pool.query(col === 'start_date'
-        ? 'ALTER TABLE issues ADD COLUMN start_date DATETIME NULL'
-        : `ALTER TABLE issues ADD COLUMN ${col} VARCHAR(36)`);
-    }
-  }
-
-  const [quoteCol] = await pool.query(
-    "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'wiki_page_comments' AND column_name = 'quote'"
-  );
-  if (quoteCol.length === 0) {
-    await pool.query('ALTER TABLE wiki_page_comments ADD COLUMN quote TEXT');
-  }
-
-  const [ptCol] = await pool.query(
-    "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'wiki_pages' AND column_name = 'page_type'"
-  );
-  if (ptCol.length === 0) {
-    await pool.query("ALTER TABLE wiki_pages ADD COLUMN page_type VARCHAR(20) DEFAULT 'page'");
-  }
-
-  const [wipCol] = await pool.query(
-    "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'projects' AND column_name = 'wip_limits'"
-  );
-  if (wipCol.length === 0) {
-    await pool.query('ALTER TABLE projects ADD COLUMN wip_limits VARCHAR(2000)');
-  }
+  // Post-baseline schema changes live in backend/migrations.js — same ordered
+  // list the SQLite path runs, in its MySQL form.
+  await runMigrations(mysqlAdapter(pool));
 
   const [rows] = await pool.query('SELECT COUNT(*) as c FROM users');
   if (parseInt(rows[0].c, 10) === 0) {
