@@ -45,4 +45,17 @@ async function syncPageIssueLinks(db, pageId, html) {
   return rows.map((r) => r.id);
 }
 
-module.exports = { extractIssueKeys, syncPageIssueLinks };
+/**
+ * Rebuilds links for every current page. For deployments that predate this
+ * feature, whose pages have no rows until they happen to be re-saved.
+ * Idempotent — syncPageIssueLinks replaces each page's set.
+ */
+async function backfillPageIssueLinks(db) {
+  const pages = await queryAll(db, "SELECT id, body FROM wiki_pages WHERE status = 'current'");
+  for (const page of pages) {
+    await syncPageIssueLinks(db, page.id, page.body || '');
+  }
+  return pages.length;
+}
+
+module.exports = { extractIssueKeys, syncPageIssueLinks, backfillPageIssueLinks };

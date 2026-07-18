@@ -213,3 +213,52 @@ describe('forward reads', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('lifecycle', () => {
+  test('deleting an issue removes its link rows', async () => {
+    const projects = await request(getApp()).get('/api/projects').set(headers);
+    const doomed = (await request(getApp())
+      .post(`/api/projects/${projects.body[0].id}/issues`).set(headers)
+      .send({ title: 'Doomed', type: 'task' })).body;
+
+    const page = await request(getApp())
+      .post(`/api/wiki/spaces/${spaceId}/pages`).set(headers)
+      .send({ title: 'Mentions doomed', body: `<p>${doomed.issue_key}</p>` });
+    expect(await linkRows(page.body.id)).toHaveLength(1);
+
+    await request(getApp()).delete(`/api/issues/${doomed.id}`).set(headers);
+    expect(await linkRows(page.body.id)).toEqual([]);
+  });
+
+  test('deleting a page removes its link rows', async () => {
+    const page = await request(getApp())
+      .post(`/api/wiki/spaces/${spaceId}/pages`).set(headers)
+      .send({ title: 'Doomed page', body: `<p>${issueA.issue_key}</p>` });
+    const pageId = page.body.id;
+    expect(await linkRows(pageId)).toHaveLength(1);
+
+    await request(getApp()).delete(`/api/wiki/pages/${pageId}`).set(headers);
+    expect(await linkRows(pageId)).toEqual([]);
+  });
+
+  test('backfill is idempotent and rebuilds links for existing pages', async () => {
+    const { backfillPageIssueLinks } = require('../../utils/issue-keys');
+    const { run } = require('../../database');
+
+    const page = await request(getApp())
+      .post(`/api/wiki/spaces/${spaceId}/pages`).set(headers)
+      .send({ title: 'Backfill target', body: `<p>${issueA.issue_key}</p>` });
+
+    // Simulate a deployment that predates the feature: rows never written.
+    await run(db, 'DELETE FROM wiki_page_issues');
+    expect(await linkRows(page.body.id)).toEqual([]);
+
+    const count = await backfillPageIssueLinks(db);
+    expect(count).toBeGreaterThan(0);
+    expect((await linkRows(page.body.id)).map(r => r.issue_id)).toEqual([issueA.id]);
+
+    // Running it again changes nothing.
+    await backfillPageIssueLinks(db);
+    expect(await linkRows(page.body.id)).toHaveLength(1);
+  });
+});

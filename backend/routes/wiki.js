@@ -337,6 +337,7 @@ router.delete('/wiki/pages/:id', requireAuth, async (req, res) => {
     await run(db, 'DELETE FROM wiki_labels WHERE page_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM wiki_stars WHERE page_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM wiki_page_likes WHERE page_id = ?', [req.params.id]);
+    await run(db, 'DELETE FROM wiki_page_issues WHERE page_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM wiki_pages WHERE id = ?', [req.params.id]);
     res.json({ ok: true });
   } catch (e) { serverError(res, e); }

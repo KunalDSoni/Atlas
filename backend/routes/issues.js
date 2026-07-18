@@ -435,6 +435,7 @@ router.delete('/issues/:id', requireAuth, requireBoardAdmin, async (req, res) =>
     await run(db, 'DELETE FROM activity_log WHERE issue_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM issue_watchers WHERE issue_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM issue_links WHERE source_issue_id = ? OR target_issue_id = ?', [req.params.id, req.params.id]);
+    await run(db, 'DELETE FROM wiki_page_issues WHERE issue_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM issues WHERE id = ?', [req.params.id]);
     auditLog({ userId: req.userId, action: 'Deleted issue', category: 'issues', entityType: 'issue', entityId: req.params.id, entityName: issue ? issue.issue_key : req.params.id });
     if (issue) dispatchWebhook(db, issue.project_id, 'issue.deleted', { id: issue.id, issue_key: issue.issue_key });

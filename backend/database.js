@@ -957,6 +957,15 @@ async function initSqlite() {
     if (feats[0].values[0][0] === 0) seedProductDemoData();
   }
 
+  // Seeded pages are inserted directly, bypassing the route that extracts issue
+  // links — so index them here. Existing deployments use scripts/backfill-page-issues.js.
+  // Required lazily: utils/issue-keys requires this module back, and this
+  // module's exports are not assigned until the end of the file.
+  if (config.seedDemoData) {
+    const { backfillPageIssueLinks } = require('./utils/issue-keys');
+    await backfillPageIssueLinks(db);
+  }
+
   return db;
 }
 
@@ -1009,6 +1018,9 @@ async function initMysqlSchema(pool) {
   if (parseInt(rows[0].c, 10) === 0) {
     if (config.seedDemoData) {
       await seedDemoDataMysql(pool);
+      // Required lazily: utils/issue-keys requires this module back.
+      const { backfillPageIssueLinks } = require('./utils/issue-keys');
+      await backfillPageIssueLinks(createMysqlWrapper(pool));
     } else {
       await seedAdminOnlyMysql(pool);
     }
