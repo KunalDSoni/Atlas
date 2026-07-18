@@ -5,6 +5,7 @@ const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
 const { sanitizeRichText } = require('../utils/sanitize');
+const { syncPageIssueLinks } = require('../utils/issue-keys');
 const { signWikiImages, unsignWikiImages } = require('./wiki-attachments');
 const router = express.Router();
 
@@ -174,6 +175,7 @@ router.post('/wiki/spaces/:spaceId/pages', requireAuth, async (req, res) => {
         try { await run(db, "INSERT INTO wiki_labels (id, page_id, label) VALUES (?,?,?)", [uuidv4(), id, l.toLowerCase().trim()]); } catch(e){}
       }
     }
+    await syncPageIssueLinks(db, id, body || '');
     const page = await queryOne(db, 'SELECT * FROM wiki_pages WHERE id = ?', [id]);
     res.status(201).json(page);
   } catch (e) { serverError(res, e); }
@@ -261,6 +263,9 @@ router.put('/wiki/pages/:id', requireAuth, async (req, res) => {
         });
       }
     }
+
+    // Only a body edit can change which issues the page mentions.
+    if (body !== undefined) await syncPageIssueLinks(db, req.params.id, body);
 
     const updated = await queryOne(db, 'SELECT * FROM wiki_pages WHERE id = ?', [req.params.id]);
     res.json(updated);
