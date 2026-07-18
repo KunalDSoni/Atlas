@@ -79,10 +79,14 @@ async function sendNotificationEmail(recipient, { type, message, link, actorName
   if (toggle && recipient[toggle] === 0) return { skipped: true };
 
   const url = link ? `${config.email.appUrl.replace(/\/$/, '')}${link.startsWith('/') ? '' : '/'}${link}` : null;
-  const safe = String(message || '').replace(/</g, '&lt;');
-  const body = actorName
-    ? `<strong>${actorName.replace(/</g, '&lt;')}</strong> ${safe.replace(new RegExp(`^${actorName}\\s*`), '')}`
-    : safe;
+  const esc = (s) => String(s || '').replace(/</g, '&lt;');
+  const safe = esc(message);
+  // The message usually leads with the actor's name; bold it and drop the
+  // duplicate prefix. Plain string ops — the name is untrusted, so never build
+  // a RegExp from it (special chars would throw).
+  let rest = safe;
+  if (actorName && rest.startsWith(actorName)) rest = rest.slice(actorName.length).replace(/^\s+/, '');
+  const body = actorName ? `<strong>${esc(actorName)}</strong> ${rest}` : safe;
   return sendMail({
     to: recipient.email,
     subject: safe.slice(0, 120),
