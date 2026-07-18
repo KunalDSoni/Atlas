@@ -1515,6 +1515,43 @@ function seedDemoData() {
     });
   });
 
+  // ===== Production hardening wave (epics 26-28) — shipped =====
+  const hardeningEpics = [
+    { title: 'E2E verification harness', color: 'green',
+      desc: 'Playwright suite that boots the real backend + built SPA and drives it headless: login, every main route renders, and key flows. The verification layer the app was missing.',
+      children: [
+        { title: 'Playwright config booting the real app on a temp DB', type: 'task' },
+        { title: 'Smoke + flow specs (login, all routes, board/wiki/product/settings)', type: 'story' },
+        { title: 'Health + readiness endpoints', type: 'task' },
+      ] },
+    { title: 'Ops & rate limiting', color: 'orange',
+      desc: 'General per-IP API throttle as an abuse safety net (stream/health exempt), alongside the existing baseline security headers and login limiter.',
+      children: [
+        { title: 'General /api rate limit with X-RateLimit headers', type: 'task' },
+      ] },
+    { title: 'List pagination', color: 'blue',
+      desc: 'Opt-in pagination on the issues list (X-Total-Count) that stays backward-compatible with the board; confirmed other list endpoints are bounded.',
+      children: [
+        { title: 'Opt-in ?limit=&offset= on the issues list', type: 'task' },
+      ] },
+  ];
+  hardeningEpics.forEach((epic, i) => {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(25 + i);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, ?)`,
+      [eid, projId3, `ATLAS-${num}`, num, epic.title, epic.desc, userIds[0], epic.color, startDate, dueDate, 25 + i]);
+    epic.children.forEach((c, ci) => {
+      const cnum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${cnum}`, cnum, c.title, c.type, userIds[0], userIds[0], eid, ci]);
+    });
+  });
+
   // ===== CONFLUENCE SEED DATA =====
   const spaceEng = uuid();
   const spaceProd = uuid();
