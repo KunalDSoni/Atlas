@@ -38,20 +38,29 @@ const buttonVariants = cva(
   }
 )
 
-function Button({
-  className,
-  variant = "default",
-  size = "default",
-  asChild = false,
-  ...props
-}: React.ComponentProps<"button"> &
+type ButtonProps = React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean
-  }) {
+  }
+
+// forwardRef is REQUIRED on React 18. This file ships in shadcn's React 19
+// style, where `ref` is an ordinary prop — but a plain function component on
+// React 18 cannot receive a ref at all, so it silently arrives as null.
+//
+// That broke every Radix popper in the app: `<DropdownMenuTrigger asChild>`
+// hands its anchor ref to this component, floating-ui then had no element to
+// measure, `isPositioned` stayed false, and Radix kept its unpositioned
+// placeholder transform `translate3d(0, -200%, 0)` — which is why menus
+// rendered at exactly -2x their own height, off-screen. See KNOWN-ISSUES.md.
+const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function Button(
+  { className, variant = "default", size = "default", asChild = false, ...props },
+  ref
+) {
   const Comp = asChild ? Slot.Root : "button"
 
   return (
     <Comp
+      ref={ref}
       data-slot="button"
       data-variant={variant}
       data-size={size}
@@ -59,6 +68,6 @@ function Button({
       {...props}
     />
   )
-}
+})
 
 export { Button, buttonVariants }

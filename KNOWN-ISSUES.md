@@ -1,35 +1,43 @@
 # Known Issues
 
-## Radix popper menus render off-screen (open, unfixed)
+## RESOLVED — Radix popper menus rendered off-screen
 
-**Symptom.** Every `DropdownMenu` in the app opens (`data-state="open"`) but is
-positioned outside the viewport, so nothing appears when you click the trigger.
+**Symptom.** Every `DropdownMenu` opened (`data-state="open"`) but was positioned
+outside the viewport, so clicking a trigger appeared to do nothing. The project
+switcher was unusable and the account menu — with Settings inside it — was
+unreachable.
 
-**Measured** (Chromium, 1280x720 viewport, `/dashboard`):
+**Measured before the fix** (Chromium, 1280x720, `/dashboard`):
 
 | Menu | content height | rendered y | wrapper transform |
 |---|---|---|---|
 | Project switcher | 159px | -318 | `matrix(1, 0, 0, 1, 0, -318)` |
-| Account menu (pre-fix) | 337px | -674 | `matrix(1, 0, 0, 1, 0, -674)` |
+| Account menu | 337px | -674 | `matrix(1, 0, 0, 1, 0, -674)` |
 
-The offset is consistently **exactly -2x the menu's own height**, which points at
-the popper's position calculation rather than at CSS: the content element itself
-has `transform: none` and `position: static`, and the bad translation is on the
-Radix-generated wrapper. `animationName` is `none` at measurement time, so this
-is not an unfinished enter animation.
+Always **exactly -2x the menu's own height** — which is the tell. Radix's popper
+renders unpositioned content at `translate3d(0, -200%, 0)` until floating-ui
+reports `isPositioned`. The menus were never positioned at all; they sat in the
+placeholder transform forever.
 
-**Impact.** Any menu built on `components/ui/dropdown-menu.tsx` is unreachable —
-including the wiki page's "More actions" menu. The account menu was affected
-until it was rewritten (below).
+**Root cause.** `components/ui/button.tsx` shipped in shadcn's React 19 style —
+a plain function component, no `forwardRef` — because React 19 accepts `ref` as
+an ordinary prop. This project runs **React 18.3.1**, where a plain function
+component cannot receive a ref: it silently arrives as `null`.
 
-**Worked around, not fixed.** `UserMenu` in `components/app/app-shell.tsx` no
-longer uses Radix; it is a plain absolutely-positioned panel anchored to the
-header, with click-outside and Escape handling. `e2e/account-menu.spec.ts`
-asserts it lies fully within the viewport, so a regression to off-screen
-positioning fails the suite rather than shipping silently.
+Every popper trigger uses `asChild` and forwards its anchor ref to `Button`
+(`<DropdownMenuTrigger asChild><Button/></DropdownMenuTrigger>`). With the ref
+dropped, floating-ui had no reference element to measure, `isPositioned` stayed
+`false`, and the placeholder transform was never replaced.
 
-**Not yet investigated:** whether this is a version mismatch in the unified
-`radix-ui` package's popper, a Tailwind v4 interaction with the
-`--radix-*-content-transform-origin` / `-available-height` custom properties, or
-an ancestor style breaking fixed-position measurement. Other dropdowns still
-need the real fix.
+**Fix.** `Button` is wrapped in `React.forwardRef` and passes `ref` to its
+underlying element. One change; every popper in the app positions correctly.
+
+**Regression cover.** `e2e/project-switcher.spec.ts` and `e2e/account-menu.spec.ts`
+assert menus lie fully **inside the viewport** rather than merely existing in the
+DOM — the distinction that made this bug invisible to the previous tests.
+
+**If you add UI primitives:** anything used as an `asChild` trigger must forward
+its ref while this project stays on React 18. `input.tsx` and `textarea.tsx`
+have the same missing-`forwardRef` shape; they are not popper anchors today, so
+they are not currently broken, but they will bite the moment one is used with
+`asChild` or given a ref.

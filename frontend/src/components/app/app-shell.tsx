@@ -101,7 +101,11 @@ function ProjectSwitcher() {
     <div className="px-3">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" className="h-auto w-full justify-between px-2 py-2 hover:bg-muted">
+          <Button
+            variant="ghost"
+            className="h-auto w-full justify-between px-2 py-2 hover:bg-muted"
+            aria-label="Switch project"
+          >
             <span className="flex min-w-0 items-center gap-2">
               <span className="grid size-7 shrink-0 place-items-center rounded bg-primary text-[11px] font-bold text-primary-foreground">
                 {currentProject?.key?.slice(0, 2) ?? '—'}
