@@ -261,6 +261,7 @@ router.get('/wiki/pages/:id', requireAuth, async (req, res) => {
     page.breadcrumb = breadcrumb;
     // Children
     page.children = await queryAll(db, "SELECT id, title, slug, status FROM wiki_pages WHERE parent_id = ? AND status = 'current' ORDER BY position, title", [req.params.id]);
+    page.approval = await pageApproval(db, page);
     // Issues this page mentions, resolved at write time (see utils/issue-keys.js).
     // Returned inline so chips render on first paint with no extra round trip.
     page.linked_issues = await queryAll(db, `
@@ -319,6 +320,15 @@ router.put('/wiki/pages/:id', requireAuth, async (req, res) => {
     // Only a body edit can change which issues the page mentions.
     if (body !== undefined) await syncPageIssueLinks(db, req.params.id, body);
 
+    // A rename bumps the version but does not change what a reviewer read, so
+    // carry an existing approval forward rather than letting it read as stale.
+    // A body edit deliberately does NOT do this — that is what staleness is for.
+    if (body === undefined && title !== undefined
+        && page.approved_version !== null && page.approved_version !== undefined
+        && Number(page.approved_version) === Number(page.version)) {
+      await run(db, 'UPDATE wiki_pages SET approved_version = version WHERE id = ?', [req.params.id]);
+    }
+
     const updated = await queryOne(db, 'SELECT * FROM wiki_pages WHERE id = ?', [req.params.id]);
     res.json(updated);
   } catch (e) { serverError(res, e); }
@@ -338,8 +348,106 @@ router.delete('/wiki/pages/:id', requireAuth, async (req, res) => {
     await run(db, 'DELETE FROM wiki_stars WHERE page_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM wiki_page_likes WHERE page_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM wiki_page_issues WHERE page_id = ?', [req.params.id]);
+    await run(db, 'DELETE FROM wiki_page_approvals WHERE page_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM wiki_pages WHERE id = ?', [req.params.id]);
     res.json({ ok: true });
+  } catch (e) { serverError(res, e); }
+});
+
+// ===== PAGE APPROVALS =====
+// Approval is pinned to the version it covers. An edit does not erase the
+// approval — it marks it stale, so a reader can still see who signed off on
+// what, and that the page has moved on since.
+
+/** 'YYYY-MM-DD HH:MM:SS.mmm' — matches the stored datetime format at ms
+ *  precision, so the append-only log sorts in true insertion order rather than
+ *  tying on the second and falling back to a random UUID. */
+function nowMs() {
+  return new Date().toISOString().slice(0, 23).replace('T', ' ');
+}
+
+/** Approval state for a page row (needs its id + current version). */
+async function pageApproval(db, page) {
+  const empty = {
+    approved: false, version: null, stale: false,
+    approved_by: null, approved_by_name: null, approved_at: null, note: null,
+  };
+  if (page.approved_version === null || page.approved_version === undefined) return empty;
+
+  const last = await queryOne(db, `
+    SELECT a.user_id, a.version, a.note, a.created_at, u.name AS user_name
+    FROM wiki_page_approvals a
+    LEFT JOIN users u ON u.id = a.user_id
+    WHERE a.page_id = ? AND a.action = 'approved'
+    ORDER BY a.created_at DESC, a.version DESC LIMIT 1`, [page.id]);
+  if (!last) return empty;
+
+  return {
+    approved: true,
+    version: Number(page.approved_version),
+    stale: Number(page.approved_version) !== Number(page.version),
+    approved_by: last.user_id,
+    approved_by_name: last.user_name || null,
+    approved_at: last.created_at,
+    note: last.note || null,
+  };
+}
+
+// POST /api/wiki/pages/:id/approve
+router.post('/wiki/pages/:id/approve', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const page = await queryOne(db, 'SELECT id, version FROM wiki_pages WHERE id = ?', [req.params.id]);
+    if (!page) return res.status(404).json({ error: 'Page not found' });
+    // Approving is an editorial act — gate it on the same rule as editing.
+    const access = await pageAccess(db, req.params.id, req.userId, req.userRole);
+    if (!access.edit) return res.status(403).json({ error: 'You cannot approve this restricted page' });
+
+    const note = typeof req.body?.note === 'string' && req.body.note.trim()
+      ? req.body.note.trim().slice(0, 500)
+      : null;
+    await run(db, `INSERT INTO wiki_page_approvals (id, page_id, version, user_id, action, note, created_at)
+      VALUES (?, ?, ?, ?, 'approved', ?, ?)`, [uuidv4(), page.id, page.version, req.userId, note, nowMs()]);
+    await run(db, 'UPDATE wiki_pages SET approved_version = ? WHERE id = ?', [page.version, page.id]);
+
+    const updated = await queryOne(db, 'SELECT id, version, approved_version FROM wiki_pages WHERE id = ?', [page.id]);
+    res.json(await pageApproval(db, updated));
+  } catch (e) { serverError(res, e); }
+});
+
+// DELETE /api/wiki/pages/:id/approve — revoke. Idempotent: revoking an
+// unapproved page succeeds and changes nothing.
+router.delete('/wiki/pages/:id/approve', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const page = await queryOne(db, 'SELECT id, version, approved_version FROM wiki_pages WHERE id = ?', [req.params.id]);
+    if (!page) return res.status(404).json({ error: 'Page not found' });
+    const access = await pageAccess(db, req.params.id, req.userId, req.userRole);
+    if (!access.edit) return res.status(403).json({ error: 'You cannot change approval on this restricted page' });
+
+    if (page.approved_version !== null && page.approved_version !== undefined) {
+      await run(db, `INSERT INTO wiki_page_approvals (id, page_id, version, user_id, action, note, created_at)
+        VALUES (?, ?, ?, ?, 'revoked', NULL, ?)`, [uuidv4(), page.id, page.version, req.userId, nowMs()]);
+      await run(db, 'UPDATE wiki_pages SET approved_version = NULL WHERE id = ?', [page.id]);
+    }
+    const updated = await queryOne(db, 'SELECT id, version, approved_version FROM wiki_pages WHERE id = ?', [page.id]);
+    res.json(await pageApproval(db, updated));
+  } catch (e) { serverError(res, e); }
+});
+
+// GET /api/wiki/pages/:id/approvals — append-only log, newest first.
+router.get('/wiki/pages/:id/approvals', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const access = await pageAccess(db, req.params.id, req.userId, req.userRole);
+    if (!access.view) return res.status(403).json({ error: 'This page is restricted' });
+    const rows = await queryAll(db, `
+      SELECT a.id, a.version, a.action, a.note, a.created_at, a.user_id, u.name AS user_name
+      FROM wiki_page_approvals a
+      LEFT JOIN users u ON u.id = a.user_id
+      WHERE a.page_id = ?
+      ORDER BY a.created_at DESC, a.id DESC`, [req.params.id]);
+    res.json(rows);
   } catch (e) { serverError(res, e); }
 });
 
