@@ -6,6 +6,7 @@ const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
 const { sanitizeRichText } = require('../utils/sanitize');
 const { syncPageIssueLinks } = require('../utils/issue-keys');
+const { extractTasks } = require('../utils/wiki-tasks');
 const { placeholders } = require('../utils/sql');
 const { signWikiImages, unsignWikiImages } = require('./wiki-attachments');
 const router = express.Router();
@@ -262,6 +263,7 @@ router.get('/wiki/pages/:id', requireAuth, async (req, res) => {
     // Children
     page.children = await queryAll(db, "SELECT id, title, slug, status FROM wiki_pages WHERE parent_id = ? AND status = 'current' ORDER BY position, title", [req.params.id]);
     page.approval = await pageApproval(db, page);
+    page.tasks = await pageTasks(db, page);
     // Issues this page mentions, resolved at write time (see utils/issue-keys.js).
     // Returned inline so chips render on first paint with no extra round trip.
     page.linked_issues = await queryAll(db, `
@@ -349,8 +351,136 @@ router.delete('/wiki/pages/:id', requireAuth, async (req, res) => {
     await run(db, 'DELETE FROM wiki_page_likes WHERE page_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM wiki_page_issues WHERE page_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM wiki_page_approvals WHERE page_id = ?', [req.params.id]);
+    await run(db, 'DELETE FROM wiki_page_tasks WHERE page_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM wiki_pages WHERE id = ?', [req.params.id]);
     res.json({ ok: true });
+  } catch (e) { serverError(res, e); }
+});
+
+// ===== TASK LISTS =====
+// Tasks are parsed from the body, but their checked state and the issue they
+// were converted into live in wiki_page_tasks. Ticking a box is therefore not
+// an edit: no version bump, no version-history row, no stale approval.
+
+/** Tasks for a page, merged with their stored state. One query. */
+async function pageTasks(db, page) {
+  const parsed = extractTasks(page.body || '');
+  if (parsed.length === 0) return [];
+
+  const rows = await queryAll(db, `
+    SELECT t.task_key, t.checked, t.checked_by, t.checked_at, t.issue_id,
+           u.name AS checked_by_name,
+           i.issue_key AS issue_key, i.status AS issue_status, i.title AS issue_title
+    FROM wiki_page_tasks t
+    LEFT JOIN users u ON u.id = t.checked_by
+    LEFT JOIN issues i ON i.id = t.issue_id
+    WHERE t.page_id = ?`, [page.id]);
+  const byKey = new Map(rows.map((r) => [r.task_key, r]));
+
+  return parsed.map((t) => {
+    const row = byKey.get(t.key);
+    return {
+      key: t.key,
+      text: t.text,
+      // The stored row wins over the body marker: the marker is only what the
+      // author typed, the row is what someone actually ticked.
+      checked: row ? Number(row.checked) === 1 : t.checked,
+      checked_by: row?.checked_by ?? null,
+      checked_by_name: row?.checked_by_name ?? null,
+      checked_at: row?.checked_at ?? null,
+      issue_id: row?.issue_id ?? null,
+      issue_key: row?.issue_key ?? null,
+      issue_status: row?.issue_status ?? null,
+    };
+  });
+}
+
+// PUT /api/wiki/pages/:id/tasks/:taskKey — tick or untick.
+router.put('/wiki/pages/:id/tasks/:taskKey', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const page = await queryOne(db, 'SELECT id, body FROM wiki_pages WHERE id = ?', [req.params.id]);
+    if (!page) return res.status(404).json({ error: 'Page not found' });
+    // Viewing is the bar: ticking a checkbox is participation, not authorship.
+    const access = await pageAccess(db, req.params.id, req.userId, req.userRole);
+    if (!access.view) return res.status(403).json({ error: 'This page is restricted' });
+
+    // The key must correspond to a task actually present in the body, so a
+    // stale or invented key cannot accumulate orphan rows.
+    const known = extractTasks(page.body || '').some((t) => t.key === req.params.taskKey);
+    if (!known) return res.status(404).json({ error: 'Task not found on this page' });
+
+    const checked = req.body?.checked === true;
+    const existing = await queryOne(db,
+      'SELECT task_key FROM wiki_page_tasks WHERE page_id = ? AND task_key = ?',
+      [req.params.id, req.params.taskKey]);
+
+    if (existing) {
+      await run(db, `UPDATE wiki_page_tasks SET checked = ?, checked_by = ?, checked_at = ?
+        WHERE page_id = ? AND task_key = ?`,
+        [checked ? 1 : 0, checked ? req.userId : null, checked ? nowMs() : null,
+          req.params.id, req.params.taskKey]);
+    } else {
+      await run(db, `INSERT INTO wiki_page_tasks (page_id, task_key, checked, checked_by, checked_at)
+        VALUES (?, ?, ?, ?, ?)`,
+        [req.params.id, req.params.taskKey, checked ? 1 : 0,
+          checked ? req.userId : null, checked ? nowMs() : null]);
+    }
+
+    const fresh = await queryOne(db, 'SELECT id, body FROM wiki_pages WHERE id = ?', [req.params.id]);
+    const tasks = await pageTasks(db, fresh);
+    res.json(tasks.find((t) => t.key === req.params.taskKey));
+  } catch (e) { serverError(res, e); }
+});
+
+// POST /api/wiki/pages/:id/tasks/:taskKey/convert — turn a task into an issue.
+// Idempotent: converting an already-converted task returns the same issue.
+router.post('/wiki/pages/:id/tasks/:taskKey/convert', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const page = await queryOne(db, 'SELECT id, body FROM wiki_pages WHERE id = ?', [req.params.id]);
+    if (!page) return res.status(404).json({ error: 'Page not found' });
+    const access = await pageAccess(db, req.params.id, req.userId, req.userRole);
+    if (!access.view) return res.status(403).json({ error: 'This page is restricted' });
+
+    const task = extractTasks(page.body || '').find((t) => t.key === req.params.taskKey);
+    if (!task) return res.status(404).json({ error: 'Task not found on this page' });
+
+    const existing = await queryOne(db,
+      'SELECT issue_id FROM wiki_page_tasks WHERE page_id = ? AND task_key = ?',
+      [req.params.id, req.params.taskKey]);
+    if (existing?.issue_id) {
+      const already = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [existing.issue_id]);
+      if (already) return res.status(200).json({ issue: already, created: false });
+    }
+
+    const projectId = req.body?.project_id;
+    if (!projectId) return res.status(400).json({ error: 'project_id is required' });
+    const project = await queryOne(db, 'SELECT id, key FROM projects WHERE id = ?', [projectId]);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const countRow = await queryOne(db, 'SELECT COUNT(*) as count FROM issues WHERE project_id = ?', [projectId]);
+    const issueNumber = Number(countRow.count) + 1;
+    const issueId = uuidv4();
+    await run(db, `INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id)
+      VALUES (?, ?, ?, ?, ?, ?, 'task', 'todo', 'medium', ?)`,
+      [issueId, projectId, `${project.key}-${issueNumber}`, issueNumber, task.text,
+        `Created from wiki page task.`, req.userId]);
+
+    if (existing) {
+      await run(db, 'UPDATE wiki_page_tasks SET issue_id = ? WHERE page_id = ? AND task_key = ?',
+        [issueId, req.params.id, req.params.taskKey]);
+    } else {
+      await run(db, 'INSERT INTO wiki_page_tasks (page_id, task_key, checked, issue_id) VALUES (?, ?, 0, ?)',
+        [req.params.id, req.params.taskKey, issueId]);
+    }
+    // Register the page↔issue link so the issue's "Mentioned on pages" panel
+    // shows where the work came from, without needing the key typed in prose.
+    await run(db, 'INSERT INTO wiki_page_issues (page_id, issue_id) VALUES (?, ?)',
+      [req.params.id, issueId]);
+
+    const issue = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [issueId]);
+    res.status(201).json({ issue, created: true });
   } catch (e) { serverError(res, e); }
 });
 

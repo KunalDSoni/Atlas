@@ -469,6 +469,21 @@ export interface WikiPage {
   children?: { id: string; title: string; slug: string; status: string }[];
   /** Sign-off state, pinned to the version that was approved. */
   approval?: PageApproval;
+  /** Task-list items parsed from the body, merged with their stored state. */
+  tasks?: PageTask[];
+}
+
+export interface PageTask {
+  key: string;
+  text: string;
+  checked: boolean;
+  checked_by: string | null;
+  checked_by_name: string | null;
+  checked_at: string | null;
+  /** Set when this task was converted into a real issue. */
+  issue_id: string | null;
+  issue_key: string | null;
+  issue_status: string | null;
 }
 
 export interface PageApproval {

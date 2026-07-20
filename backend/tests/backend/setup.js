@@ -18,9 +18,17 @@ process.env.DB_DRIVER = 'sqlite';
 // sql.js has no true in-memory mode here — database.js persists to whatever path it is
 // given. Point each run at a throwaway file so tests never touch data.db (or leave a
 // stray file literally named ':memory:' in the repo).
-process.env.SQLITE_PATH = path.join(os.tmpdir(), `atlas-test-${process.pid}.db`);
+//
+// The random suffix matters: this path was previously keyed on the pid alone, and
+// database.js LOADS an existing file if it finds one. Because the OS recycles pids and
+// this file was never cleaned up, a run could draw a pid matching a leftover file and
+// silently inherit a previous run's database — producing intermittent failures in
+// whichever suites read seeded data. Uniqueness makes that impossible; the cleanup
+// below stops the files accumulating in the first place.
+const bootDbPath = path.join(os.tmpdir(), `atlas-test-${process.pid}-${crypto.randomUUID()}.db`);
+process.env.SQLITE_PATH = bootDbPath;
 
-const tempDbs = [];
+const tempDbs = [bootDbPath];
 
 let app;
 
