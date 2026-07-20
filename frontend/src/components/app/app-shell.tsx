@@ -20,6 +20,7 @@ import { isAdmin } from '@/lib/domain';
 import type { AppNotification } from '@/lib/types';
 import { timeAgo } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { useFocusMode } from '@/context/focus-mode';
 import { UserAvatar } from './primitives';
 import { CommandPalette } from './command-palette';
 import { useLiveEvents } from '@/hooks/use-live-events';
@@ -303,11 +304,19 @@ function UserMenu() {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Focus mode collapses the nav so a screen can use the full window; the
+  // mobile sheet trigger in the header still reaches every destination.
+  const { focused } = useFocusMode();
 
   return (
     <div className="flex min-h-screen">
       {/* Desktop sidebar */}
-      <aside className="hidden w-60 shrink-0 border-r border-sidebar-border bg-sidebar lg:block">
+      <aside
+        className={cn(
+          'hidden w-60 shrink-0 border-r border-sidebar-border bg-sidebar',
+          focused ? 'lg:hidden' : 'lg:block',
+        )}
+      >
         <div className="sticky top-0 h-screen">
           <SidebarContent />
         </div>
@@ -317,7 +326,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border bg-background/85 px-4 backdrop-blur">
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Open navigation">
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(focused ? '' : 'lg:hidden')}
+                aria-label="Open navigation"
+              >
                 <Menu className="size-5" />
               </Button>
             </SheetTrigger>
@@ -343,7 +357,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <UserMenu />
         </header>
 
-        <main className="min-w-0 flex-1 p-4 sm:p-6">{children}</main>
+        <main className={cn('min-w-0 flex-1', focused ? 'p-3 sm:p-4' : 'p-4 sm:p-6')}>{children}</main>
         <CommandPalette />
       </div>
     </div>

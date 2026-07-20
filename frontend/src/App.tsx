@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from '@/context/auth-provider';
 import { ThemeProvider } from '@/context/theme-provider';
 import { ProjectsProvider } from '@/hooks/use-projects';
 import { SettingsProvider } from '@/hooks/use-settings';
+import { FocusModeProvider } from '@/context/focus-mode';
 import { AppShell } from '@/components/app/app-shell';
 import LoginScreen from '@/screens/login';
 
@@ -63,6 +64,7 @@ function ProtectedLayout() {
     <RequireAuth>
       <SettingsProvider>
       <ProjectsProvider>
+        <FocusModeProvider>
         <AppShell>
           <Suspense fallback={<div className="grid h-64 place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>}>
             <Routes>
@@ -95,6 +97,7 @@ function ProtectedLayout() {
             </Routes>
           </Suspense>
         </AppShell>
+        </FocusModeProvider>
       </ProjectsProvider>
       </SettingsProvider>
     </RequireAuth>

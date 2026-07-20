@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  AlertTriangle, BadgeCheck, Clock, Download, Eye, FileText, Heart, History, Loader2, Lock,
+  AlertTriangle, BadgeCheck, Clock, Download, Eye, FileText, Heart, History, Loader2, Lock, Maximize2, Minimize2,
   MoreHorizontal, Paperclip, Pencil, Plus, Quote, Send, Sparkles, Trash2, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -35,6 +35,7 @@ import { useAIEnabled } from '@/hooks/use-ai';
 import { CreatePageDialog } from './wiki-space';
 import { timeAgo } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { useFocusMode } from '@/context/focus-mode';
 
 /** Rough reading time from the page body text. */
 function readingTime(html: string): number {
@@ -99,6 +100,7 @@ export default function WikiPageScreen() {
   const [restrictions, setRestrictions] = useState<Map<string, boolean>>(new Map());
   const [historyOpen, setHistoryOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const { focused, setFocused, toggle: toggleFocus } = useFocusMode();
   const aiEnabled = useAIEnabled();
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [summarizing, setSummarizing] = useState(false);
@@ -134,6 +136,25 @@ export default function WikiPageScreen() {
     setEditing(false);
     setAiSummary(null);
   }, [load]);
+
+  // Editing claims the full window — the nav and page tree cost ~480px that the
+  // writing column needs more. Leaving edit mode hands it back.
+  // A deliberate toggle outlives edit mode; an auto-entered one is handed back
+  // on save/cancel, which is what "distraction-free editing" should do.
+  const manualFocusRef = useRef(false);
+  useEffect(() => {
+    if (editing) setFocused(true);
+    else if (!manualFocusRef.current) setFocused(false);
+  }, [editing, setFocused]);
+
+  function onToggleFocus() {
+    manualFocusRef.current = !focused;
+    toggleFocus();
+  }
+
+  // Never strand the app without navigation: release focus when this screen
+  // unmounts, however the user leaves it.
+  useEffect(() => () => setFocused(false), [setFocused]);
 
   async function summarize() {
     if (!page) return;
@@ -309,8 +330,15 @@ export default function WikiPageScreen() {
   ];
 
   return (
-    <div className="mx-auto grid max-w-[1440px] gap-x-8 gap-y-6 lg:grid-cols-[236px_minmax(0,1fr)] xl:grid-cols-[236px_minmax(0,1fr)_200px]">
-      <aside className="hidden lg:block">
+    <div
+      className={cn(
+        'mx-auto grid gap-x-8 gap-y-6',
+        focused
+          ? 'max-w-[1100px] grid-cols-1'
+          : 'max-w-[1440px] lg:grid-cols-[236px_minmax(0,1fr)] xl:grid-cols-[236px_minmax(0,1fr)_200px]',
+      )}
+    >
+      <aside className={cn('hidden', focused ? '' : 'lg:block')}>
         <div className="sticky top-6">
           <Link
             to={`/wiki/space/${page.space_id}`}
@@ -357,6 +385,16 @@ export default function WikiPageScreen() {
                   <>
                     <Button variant="ghost" size="sm" onClick={like} className="gap-1.5 text-muted-foreground" aria-label="Like page">
                       <Heart className="size-4" /> {page.like_count}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={onToggleFocus}
+                      title={focused ? 'Show sidebars' : 'Focus mode — hide sidebars'}
+                      aria-label={focused ? 'Show sidebars' : 'Focus mode'}
+                      aria-pressed={focused}
+                    >
+                      {focused ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
                     </Button>
                     {page.can_edit_page !== 0 && (
                       <Button size="sm" onClick={() => setEditing(true)}>
@@ -643,7 +681,7 @@ export default function WikiPageScreen() {
         </div>
       </article>
 
-      <div className="hidden xl:block">
+      <div className={cn('hidden', focused ? '' : 'xl:block')}>
         <OnThisPage headings={headings} />
       </div>
 
