@@ -1659,6 +1659,39 @@ function seedDemoData() {
     });
   });
 
+  // ===== Wiki task lists wave (epics 37-38) — shipped =====
+  const taskEpics = [
+    { title: 'Wiki task lists', color: 'purple',
+      desc: 'Checkbox items in wiki pages, with state stored outside the page body so ticking a box is not an edit: no version bump, no history row, and an approved page stays approved.',
+      children: [
+        { title: 'Task extraction with edit-stable identity', type: 'task' },
+        { title: 'Task state table + check/uncheck endpoint (migration 010)', type: 'task' },
+        { title: 'Interactive checkboxes in the page renderer', type: 'story' },
+      ] },
+    { title: 'Action items to issues', color: 'orange',
+      desc: 'Convert a page task into a real tracked issue, linked both ways: the task shows the issue key and its live status, and the issue lists the page it came from. Idempotent — converting twice returns the same issue.',
+      children: [
+        { title: 'Task to issue conversion endpoint', type: 'story' },
+        { title: 'Issue chip with live status on the task', type: 'task' },
+      ] },
+  ];
+  taskEpics.forEach((epic, i) => {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(36 + i);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, ?)`,
+      [eid, projId3, `ATLAS-${num}`, num, epic.title, epic.desc, userIds[0], epic.color, startDate, dueDate, 36 + i]);
+    epic.children.forEach((c, ci) => {
+      const cnum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${cnum}`, cnum, c.title, c.type, userIds[0], userIds[0], eid, ci]);
+    });
+  });
+
   // ===== CONFLUENCE SEED DATA =====
   const spaceEng = uuid();
   const spaceProd = uuid();

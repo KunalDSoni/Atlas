@@ -208,7 +208,7 @@ describe('epic rollup + children endpoints', () => {
 });
 
 describe('Atlas Development dogfood seed', () => {
-  test('seeds the ATLAS project with 36 roadmap epics, Epic support done', async () => {
+  test('seeds the ATLAS project with 38 roadmap epics, Epic support done', async () => {
     const projects = await request(app).get('/api/projects').set(headers);
     const atlas = projects.body.find((p) => p.key === 'ATLAS');
     expect(atlas).toBeDefined();
@@ -217,8 +217,8 @@ describe('Atlas Development dogfood seed', () => {
     const epics = await request(app).get(`/api/projects/${atlas.id}/epics`).set(headers);
     expect(epics.status).toBe(200);
     // 12 parity + 6 Productboard + 1 wiki UX + 1 wiki AI + 5 platform-depth + 3 hardening
-    // + 2 data-layer/perf + 2 wiki-link + 2 flow/jql + 2 ops/approvals.
-    expect(epics.body.length).toBe(36);
+    // + 2 data-layer/perf + 2 wiki-link + 2 flow/jql + 2 ops/approvals + 2 tasks.
+    expect(epics.body.length).toBe(38);
 
     const first = epics.body.find((e) => e.issue_key === 'ATLAS-1');
     expect(first.title).toBe('Epic support');
@@ -227,7 +227,7 @@ describe('Atlas Development dogfood seed', () => {
     expect(second.title).toBe('Subtasks');
     expect(second.status).toBe('done');
     // Every roadmap epic is seeded done.
-    expect(epics.body.filter((e) => e.status === 'done').length).toBe(36);
+    expect(epics.body.filter((e) => e.status === 'done').length).toBe(38);
     expect(epics.body.some((e) => e.title === 'Product: Insights inbox')).toBe(true);
     expect(epics.body.some((e) => e.title === 'Wiki AI assistant')).toBe(true);
     expect(epics.body.some((e) => e.title === 'Custom fields')).toBe(true);
@@ -236,5 +236,6 @@ describe('Atlas Development dogfood seed', () => {
     expect(epics.body.some((e) => e.title === 'Page back-links')).toBe(true);
     expect(epics.body.some((e) => e.title === 'Flow metrics')).toBe(true);
     expect(epics.body.some((e) => e.title === 'Page approvals')).toBe(true);
+    expect(epics.body.some((e) => e.title === 'Wiki task lists')).toBe(true);
   });
 });
