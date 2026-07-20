@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DOMPurify, { type Config } from 'dompurify';
-import type { JqlSearchIssue, LinkedIssueSummary } from '@/lib/types';
+import type { JqlSearchIssue, LinkedIssueSummary, PageTask } from '@/lib/types';
 import { StatusPill } from './primitives';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
@@ -75,7 +75,7 @@ export function extractHeadings(html: string): HeadingEntry[] {
  *   resolves to a real issue in `issues`. That check is what keeps prose like
  *   COVID-19, ISO-8601 and SEV-1 from rendering as links.
  */
-function applyMacros(html: string, issues: Map<string, LinkedIssueSummary>): string {
+function applyMacros(html: string, issues: Map<string, LinkedIssueSummary>, tasks: PageTask[] = []): string {
   const tpl = document.createElement('template');
   tpl.innerHTML = html;
   const root = tpl.content;
@@ -120,6 +120,50 @@ function applyMacros(html: string, issues: Map<string, LinkedIssueSummary>): str
     el.replaceWith(holder);
   });
 
+  // Task-list items: `[ ] text` / `[x] text` become real checkboxes. The server
+  // parses the same body and returns tasks in document order, so the Nth task
+  // item here is tasks[n] — no need to recompute the server's hash in-browser.
+  let taskIndex = 0;
+  root.querySelectorAll('li').forEach((li) => {
+    const raw = (li.textContent || '').trim();
+    const m = raw.match(/^\[( |x|X)\]\s*(.+)$/);
+    if (!m) return;
+    const task = tasks[taskIndex];
+    taskIndex += 1;
+    const text = m[2].trim();
+
+    li.classList.add('wiki-task-item');
+    li.textContent = '';
+
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.className = 'wiki-task-box mr-2 align-middle accent-primary';
+    box.checked = task ? task.checked : m[1].toLowerCase() === 'x';
+    // No stored task means the page data is stale relative to the body; render
+    // it read-only rather than letting a click write against a guessed key.
+    if (task) box.setAttribute('data-task-key', task.key);
+    else box.disabled = true;
+    li.appendChild(box);
+
+    const label = document.createElement('span');
+    label.textContent = text;
+    if (box.checked) label.className = 'text-muted-foreground line-through';
+    li.appendChild(label);
+
+    // A converted task shows its issue, so the page reflects real progress
+    // rather than a checkbox someone forgot to tick.
+    if (task?.issue_key) {
+      const chip = document.createElement('a');
+      chip.href = '#';
+      chip.setAttribute('data-issue-id', task.issue_id || '');
+      chip.setAttribute('data-issue-key', task.issue_key);
+      chip.setAttribute('data-issue-type', 'task');
+      chip.className = 'wiki-issue-chip ml-2 inline-flex items-center gap-0.5 rounded bg-primary/10 px-1 font-mono text-[11px] font-semibold text-primary no-underline hover:bg-primary/20';
+      chip.textContent = task.issue_status ? `${task.issue_key} · ${task.issue_status}` : task.issue_key;
+      li.appendChild(chip);
+    }
+  });
+
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const targets: Text[] = [];
   let node: Node | null;
@@ -161,6 +205,8 @@ export function RichTextView({
   className,
   macros = false,
   issues,
+  tasks,
+  onToggleTask,
 }: {
   html: string;
   className?: string;
@@ -168,6 +214,10 @@ export function RichTextView({
   macros?: boolean;
   /** Issues mentioned by this content. A key only becomes a chip if it appears here. */
   issues?: LinkedIssueSummary[];
+  /** Task-list state, in document order. Enables interactive checkboxes. */
+  tasks?: PageTask[];
+  /** Called when a checkbox is toggled; the parent persists and reloads. */
+  onToggleTask?: (taskKey: string, checked: boolean) => void;
 }) {
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -181,8 +231,8 @@ export function RichTextView({
   );
   const rendered = useMemo(() => {
     const clean = sanitizeHtml(html);
-    return macros ? applyMacros(clean, issueMap) : clean;
-  }, [html, macros, issueMap]);
+    return macros ? applyMacros(clean, issueMap, tasks ?? []) : clean;
+  }, [html, macros, issueMap, tasks]);
 
   // Fetch results for every [jql:] block once per query string.
   useEffect(() => {
@@ -280,6 +330,14 @@ export function RichTextView({
   }, [jqlResults, rendered]);
 
   function onClick(e: React.MouseEvent<HTMLDivElement>) {
+    const box = (e.target as HTMLElement).closest?.('input[data-task-key]') as HTMLInputElement | null;
+    if (box) {
+      const key = box.getAttribute('data-task-key') ?? '';
+      // The DOM checkbox already flipped; report the state it moved to. The
+      // parent reloads the page, which re-renders from server truth.
+      onToggleTask?.(key, box.checked);
+      return;
+    }
     const chip = (e.target as HTMLElement).closest?.('a[data-issue-id]');
     if (!chip) return;
     e.preventDefault();

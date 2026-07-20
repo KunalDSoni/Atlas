@@ -10,7 +10,7 @@ import type {
   IssueLink, LinkType, LinkedIssueSummary, MentioningPage, JqlSearchIssue,
   CycleTimeResponse, TimeInStatusResponse, CumulativeFlowResponse,
   WikiComment, WikiPage, WikiRestriction, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
-  PageApproval, PageApprovalEntry,
+  PageApproval, PageApprovalEntry, PageTask,
   WikiAttachment, ApiToken, Webhook, CustomField,
   WorkLog, WorkflowStatus,
   PbCompany, PbCustomer, PbInsight, PbFeature, PbObjective, PortalFeature,
@@ -304,6 +304,11 @@ export const api = {
     approve: (id: string, note?: string) => post<PageApproval>(`/wiki/pages/${id}/approve`, { note }),
     revokeApproval: (id: string) => del<PageApproval>(`/wiki/pages/${id}/approve`),
     approvals: (id: string) => get<PageApprovalEntry[]>(`/wiki/pages/${id}/approvals`),
+    setTask: (pageId: string, taskKey: string, checked: boolean) =>
+      put<PageTask>(`/wiki/pages/${pageId}/tasks/${encodeURIComponent(taskKey)}`, { checked }),
+    convertTask: (pageId: string, taskKey: string, projectId: string) =>
+      post<{ issue: Issue; created: boolean }>(
+        `/wiki/pages/${pageId}/tasks/${encodeURIComponent(taskKey)}/convert`, { project_id: projectId }),
     comments: (id: string) => get<WikiComment[]>(`/wiki/pages/${id}/comments`),
     addComment: (id: string, body: string, quote?: string) => post<WikiComment>(`/wiki/pages/${id}/comments`, { body, quote }),
     deleteComment: (id: string) => del<{ ok: boolean }>(`/wiki/comments/${id}`),

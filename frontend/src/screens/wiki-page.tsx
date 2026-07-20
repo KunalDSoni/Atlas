@@ -226,6 +226,25 @@ export default function WikiPageScreen() {
     }
   }
 
+  async function toggleTask(taskKey: string, checked: boolean) {
+    if (!page) return;
+    // Optimistic: the box already flipped in the DOM, so update local state to
+    // match and reconcile from the server response.
+    setPage({
+      ...page,
+      tasks: (page.tasks ?? []).map((t) => (t.key === taskKey ? { ...t, checked } : t)),
+    });
+    try {
+      const updated = await api.wiki.setTask(page.id, taskKey, checked);
+      setPage((prev) => (prev
+        ? { ...prev, tasks: (prev.tasks ?? []).map((t) => (t.key === taskKey ? updated : t)) }
+        : prev));
+    } catch (e) {
+      toast.error('Could not update task', { description: e instanceof Error ? e.message : undefined });
+      await load(); // put the checkbox back where the server says it belongs
+    }
+  }
+
   async function toggleApproval() {
     if (!page) return;
     // A stale approval re-approves rather than revokes: the menu offers
@@ -489,7 +508,13 @@ export default function WikiPageScreen() {
           {editing ? (
             <RichTextEditor value={draftBody} onChange={setDraftBody} pageId={page.id} />
           ) : page.body ? (
-            <RichTextView html={page.body} macros issues={page.linked_issues} />
+            <RichTextView
+              html={page.body}
+              macros
+              issues={page.linked_issues}
+              tasks={page.tasks}
+              onToggleTask={(k, c) => void toggleTask(k, c)}
+            />
           ) : (
             <div className="rounded-lg border border-dashed border-border bg-card/50 px-6 py-12 text-center">
               <FileText className="mx-auto mb-2 size-7 text-faint" />
