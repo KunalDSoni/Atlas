@@ -35,3 +35,45 @@ jobs:
       - name: Run frontend tests
         working-directory: backend
         run: npm run test:frontend
+
+  # The main suite runs on sql.js, so migrations.js's MySQL branch would ship
+  # untested — and a MySQL-only migration bug crashes production on boot rather
+  # than failing a test. This job exercises it against a real server.
+  mysql-migrations:
+    name: MySQL migrations
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: testpw
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -ptestpw"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Run migration tests against MySQL
+        working-directory: backend
+        env:
+          MYSQL_TEST_HOST: 127.0.0.1
+          MYSQL_TEST_PORT: 3306
+          MYSQL_TEST_USER: root
+          MYSQL_TEST_PASSWORD: testpw
+        run: npx jest tests/backend/mysql-migrations.test.js --runInBand --forceExit

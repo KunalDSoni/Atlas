@@ -10,6 +10,7 @@ import type {
   IssueLink, LinkType, LinkedIssueSummary, MentioningPage, JqlSearchIssue,
   CycleTimeResponse, TimeInStatusResponse, CumulativeFlowResponse,
   WikiComment, WikiPage, WikiRestriction, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
+  PageApproval, PageApprovalEntry,
   WikiAttachment, ApiToken, Webhook, CustomField,
   WorkLog, WorkflowStatus,
   PbCompany, PbCustomer, PbInsight, PbFeature, PbObjective, PortalFeature,
@@ -300,6 +301,9 @@ export const api = {
     deletePage: (id: string) => del<{ ok: boolean }>(`/wiki/pages/${id}`),
 
     versions: (id: string) => get<WikiVersion[]>(`/wiki/pages/${id}/versions`),
+    approve: (id: string, note?: string) => post<PageApproval>(`/wiki/pages/${id}/approve`, { note }),
+    revokeApproval: (id: string) => del<PageApproval>(`/wiki/pages/${id}/approve`),
+    approvals: (id: string) => get<PageApprovalEntry[]>(`/wiki/pages/${id}/approvals`),
     comments: (id: string) => get<WikiComment[]>(`/wiki/pages/${id}/comments`),
     addComment: (id: string, body: string, quote?: string) => post<WikiComment>(`/wiki/pages/${id}/comments`, { body, quote }),
     deleteComment: (id: string) => del<{ ok: boolean }>(`/wiki/comments/${id}`),

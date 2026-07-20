@@ -162,6 +162,55 @@ const MIGRATIONS = [
       },
     ],
   },
+  {
+    id: '009_wiki_page_approvals',
+    description: 'Page approval state + an append-only approval log',
+    steps: [
+      // Approval is pinned to the version that was approved: editing a page
+      // after approval must not leave it reading as "verified" for content
+      // nobody signed off on.
+      {
+        addColumn: {
+          table: 'wiki_pages',
+          column: 'approved_version',
+          sqlite: 'ALTER TABLE wiki_pages ADD COLUMN approved_version INTEGER',
+          mysql: 'ALTER TABLE wiki_pages ADD COLUMN approved_version INT NULL',
+        },
+      },
+      {
+        sql: {
+          sqlite: `CREATE TABLE IF NOT EXISTS wiki_page_approvals (
+            id TEXT PRIMARY KEY,
+            page_id TEXT NOT NULL REFERENCES wiki_pages(id),
+            version INTEGER NOT NULL,
+            user_id TEXT NOT NULL REFERENCES users(id),
+            action TEXT NOT NULL CHECK(action IN ('approved','revoked')),
+            note TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+          )`,
+          mysql: `CREATE TABLE IF NOT EXISTS wiki_page_approvals (
+            id VARCHAR(36) PRIMARY KEY,
+            page_id VARCHAR(36) NOT NULL,
+            version INT NOT NULL,
+            user_id VARCHAR(36) NOT NULL,
+            action VARCHAR(20) NOT NULL,
+            note TEXT,
+            -- Millisecond precision: an audit log ordered by a second-granularity
+            -- timestamp ties on same-second events and falls back to a random
+            -- UUID, so the displayed order is arbitrary. Writers pass an explicit
+            -- ms timestamp; see routes/wiki.js.
+            created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
+          ) DEFAULT CHARSET=utf8mb4`,
+        },
+      },
+      {
+        sql: {
+          sqlite: 'CREATE INDEX IF NOT EXISTS idx_page_approvals_page ON wiki_page_approvals(page_id)',
+          mysql: 'CREATE INDEX idx_page_approvals_page ON wiki_page_approvals(page_id)',
+        },
+      },
+    ],
+  },
 ];
 
 const LEDGER_SQL = {

@@ -1626,6 +1626,39 @@ function seedDemoData() {
     });
   });
 
+  // ===== CI hardening & approvals wave (epics 35-36) — shipped =====
+  const opsEpics = [
+    { title: 'MySQL migrations in CI', color: 'yellow',
+      desc: 'The suite runs on sql.js, so the migration runner\'s MySQL branch shipped verified only by hand. CI now applies every migration against a real MySQL service, including the ledger-less upgrade path an existing deployment takes.',
+      children: [
+        { title: 'MySQL migration test suite (skips without a server)', type: 'task' },
+        { title: 'MySQL service job in the CI workflow', type: 'task' },
+      ] },
+    { title: 'Page approvals', color: 'green',
+      desc: 'Version-pinned sign-off on wiki pages: editing an approved page marks it stale rather than silently keeping a verified badge, and the approval log is append-only so revoking preserves history.',
+      children: [
+        { title: 'Approval state + append-only log (migration 009)', type: 'task' },
+        { title: 'Approve, revoke, and log endpoints', type: 'story' },
+        { title: 'Approval badge with stale state', type: 'task' },
+      ] },
+  ];
+  opsEpics.forEach((epic, i) => {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(34 + i);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, ?)`,
+      [eid, projId3, `ATLAS-${num}`, num, epic.title, epic.desc, userIds[0], epic.color, startDate, dueDate, 34 + i]);
+    epic.children.forEach((c, ci) => {
+      const cnum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${cnum}`, cnum, c.title, c.type, userIds[0], userIds[0], eid, ci]);
+    });
+  });
+
   // ===== CONFLUENCE SEED DATA =====
   const spaceEng = uuid();
   const spaceProd = uuid();

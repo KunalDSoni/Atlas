@@ -467,6 +467,30 @@ export interface WikiPage {
   linked_issues?: LinkedIssueSummary[];
   breadcrumb?: { id: string; title: string }[];
   children?: { id: string; title: string; slug: string; status: string }[];
+  /** Sign-off state, pinned to the version that was approved. */
+  approval?: PageApproval;
+}
+
+export interface PageApproval {
+  approved: boolean;
+  /** The page version the approval covers; null when never approved. */
+  version: number | null;
+  /** True when the page has been edited since it was approved. */
+  stale: boolean;
+  approved_by: string | null;
+  approved_by_name: string | null;
+  approved_at: string | null;
+  note: string | null;
+}
+
+export interface PageApprovalEntry {
+  id: string;
+  version: number;
+  action: 'approved' | 'revoked';
+  note: string | null;
+  created_at: string;
+  user_id: string;
+  user_name: string | null;
 }
 
 export type CustomFieldType = 'text' | 'number' | 'select' | 'date' | 'checkbox';
