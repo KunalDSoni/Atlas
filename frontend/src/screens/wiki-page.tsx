@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  Clock, Download, Eye, FileText, Heart, History, Loader2, Lock, MoreHorizontal,
-  Paperclip, Pencil, Plus, Quote, Send, Sparkles, Trash2, X,
+  AlertTriangle, BadgeCheck, Clock, Download, Eye, FileText, Heart, History, Loader2, Lock,
+  MoreHorizontal, Paperclip, Pencil, Plus, Quote, Send, Sparkles, Trash2, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -34,6 +34,7 @@ import { WikiBreadcrumb, OnThisPage, type Crumb } from '@/components/app/wiki-do
 import { useAIEnabled } from '@/hooks/use-ai';
 import { CreatePageDialog } from './wiki-space';
 import { timeAgo } from '@/lib/format';
+import { cn } from '@/lib/utils';
 
 /** Rough reading time from the page body text. */
 function readingTime(html: string): number {
@@ -225,6 +226,21 @@ export default function WikiPageScreen() {
     }
   }
 
+  async function toggleApproval() {
+    if (!page) return;
+    // A stale approval re-approves rather than revokes: the menu offers
+    // "Re-approve this version", so revoking there would contradict the label.
+    const revoking = (page.approval?.approved ?? false) && !page.approval?.stale;
+    try {
+      if (revoking) await api.wiki.revokeApproval(page.id);
+      else await api.wiki.approve(page.id);
+      toast.success(revoking ? 'Approval revoked' : 'Page approved');
+      await load();
+    } catch (e) {
+      toast.error('Could not change approval', { description: e instanceof Error ? e.message : undefined });
+    }
+  }
+
   async function toggleWatch() {
     if (!page) return;
     try {
@@ -338,6 +354,14 @@ export default function WikiPageScreen() {
                         <DropdownMenuItem onSelect={() => void toggleWatch()}>
                           <Eye className="size-4" /> {watching ? 'Stop watching' : 'Watch page'}
                         </DropdownMenuItem>
+                        {page.can_edit_page !== 0 && (
+                          <DropdownMenuItem onSelect={() => void toggleApproval()}>
+                            <BadgeCheck className="size-4" />
+                            {page.approval?.approved
+                              ? (page.approval.stale ? 'Re-approve this version' : 'Revoke approval')
+                              : 'Approve page'}
+                          </DropdownMenuItem>
+                        )}
                         {aiEnabled && (
                           <DropdownMenuItem onSelect={() => void summarize()} disabled={summarizing}>
                             <Sparkles className="size-4" /> Summarize with AI
@@ -400,6 +424,34 @@ export default function WikiPageScreen() {
                 </>
               ) : null}
             </div>
+
+            {page.approval?.approved && (
+              // Stale is deliberately not "unapproved": the sign-off happened and
+              // is worth showing, it just no longer covers the current version.
+              <div
+                className={cn(
+                  'mt-2.5 flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-sm',
+                  page.approval.stale
+                    ? 'border-warning/40 bg-warning/5 text-warning'
+                    : 'border-success/40 bg-success/5 text-success',
+                )}
+              >
+                {page.approval.stale
+                  ? <AlertTriangle className="size-4 shrink-0" />
+                  : <BadgeCheck className="size-4 shrink-0" />}
+                <span className="font-medium">
+                  {page.approval.stale
+                    ? `Approved at v${page.approval.version} — edited since`
+                    : `Approved by ${page.approval.approved_by_name ?? 'someone'}`}
+                </span>
+                {page.approval.approved_at && (
+                  <span className="text-xs opacity-80">{timeAgo(page.approval.approved_at)}</span>
+                )}
+                {page.approval.note && (
+                  <span className="text-xs opacity-80">· {page.approval.note}</span>
+                )}
+              </div>
+            )}
 
             {page.labels?.length > 0 && (
               <div className="mt-2.5 flex flex-wrap gap-1">
