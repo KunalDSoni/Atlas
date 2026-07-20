@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Bell, CalendarRange, ChevronsUpDown, Columns3, FileClock, Gauge, LayoutDashboard, ListTodo, LogOut, Menu, Package,
@@ -20,6 +20,7 @@ import { isAdmin } from '@/lib/domain';
 import type { AppNotification } from '@/lib/types';
 import { timeAgo } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { useFocusMode } from '@/context/focus-mode';
 import { UserAvatar } from './primitives';
 import { CommandPalette } from './command-palette';
 import { useLiveEvents } from '@/hooks/use-live-events';
@@ -265,49 +266,121 @@ function NotificationBell() {
 function UserMenu() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  // Deliberately NOT a Radix DropdownMenu. Every popper-positioned menu in this
+  // app currently renders off-screen (measured: the wrapper is transformed to
+  // exactly -2x the menu's own height), which made this menu — and Settings
+  // with it — unreachable. Anchoring to the header ourselves is deterministic
+  // and cannot be mispositioned. See KNOWN-ISSUES.md for the popper bug.
+  useEffect(() => {
+    if (!open) return;
+    function onDocDown(e: MouseEvent) {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', onDocDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
   if (!user) return null;
 
+  const go = (to: string) => {
+    setOpen(false);
+    navigate(to);
+  };
+
+  const itemClass =
+    'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground';
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="rounded-full" aria-label="Account menu">
-          <UserAvatar name={user.name} color={user.avatar_color} className="size-7" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel className="font-normal">
-          <p className="truncate text-sm font-semibold">{user.name}</p>
-          <p className="truncate text-xs text-muted-foreground">{user.email}</p>
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => navigate('/profile')} className="gap-2">
-          <UserIcon className="size-4" /> Profile
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => navigate('/settings')} className="gap-2">
-          <SettingsIcon className="size-4" /> Settings
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onSelect={async () => {
-            await logout();
-            navigate('/login');
-          }}
-          className="gap-2 text-destructive focus:text-destructive"
+    <div className="relative" ref={wrapRef}>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="rounded-full"
+        aria-label="Account menu"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <UserAvatar name={user.name} color={user.avatar_color} className="size-7" />
+      </Button>
+
+      {open && (
+        <div
+          role="menu"
+          aria-label="Account"
+          className="absolute right-0 top-full z-50 mt-2 w-56 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
         >
-          <LogOut className="size-4" /> Sign out
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+          <div className="px-2 py-1.5">
+            <p className="truncate text-sm font-semibold">{user.name}</p>
+            <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+          </div>
+          <Separator className="my-1" />
+          <button type="button" role="menuitem" className={itemClass} onClick={() => go('/profile')}>
+            <UserIcon className="size-4" /> Profile
+          </button>
+          <button type="button" role="menuitem" className={itemClass} onClick={() => go('/settings')}>
+            <SettingsIcon className="size-4" /> Settings
+          </button>
+
+          {/* Admin also lives in the sidebar, but below Project + Product it
+              falls under the fold on shorter viewports. Same ADMIN_NAV list,
+              so the two cannot drift. */}
+          {isAdmin(user.role) && (
+            <>
+              <Separator className="my-1" />
+              <p className="px-2 py-1 text-xs font-medium text-muted-foreground">Administration</p>
+              {ADMIN_NAV.map(({ to, label, icon: Icon }) => (
+                <button key={to} type="button" role="menuitem" className={itemClass} onClick={() => go(to)}>
+                  <Icon className="size-4" /> {label}
+                </button>
+              ))}
+            </>
+          )}
+
+          <Separator className="my-1" />
+          <button
+            type="button"
+            role="menuitem"
+            className={cn(itemClass, 'text-destructive hover:text-destructive')}
+            onClick={async () => {
+              setOpen(false);
+              await logout();
+              navigate('/login');
+            }}
+          >
+            <LogOut className="size-4" /> Sign out
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Focus mode collapses the nav so a screen can use the full window; the
+  // mobile sheet trigger in the header still reaches every destination.
+  const { focused } = useFocusMode();
 
   return (
     <div className="flex min-h-screen">
       {/* Desktop sidebar */}
-      <aside className="hidden w-60 shrink-0 border-r border-sidebar-border bg-sidebar lg:block">
+      <aside
+        className={cn(
+          'hidden w-60 shrink-0 border-r border-sidebar-border bg-sidebar',
+          focused ? 'lg:hidden' : 'lg:block',
+        )}
+      >
         <div className="sticky top-0 h-screen">
           <SidebarContent />
         </div>
@@ -317,7 +390,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border bg-background/85 px-4 backdrop-blur">
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Open navigation">
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(focused ? '' : 'lg:hidden')}
+                aria-label="Open navigation"
+              >
                 <Menu className="size-5" />
               </Button>
             </SheetTrigger>
@@ -343,7 +421,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <UserMenu />
         </header>
 
-        <main className="min-w-0 flex-1 p-4 sm:p-6">{children}</main>
+        <main className={cn('min-w-0 flex-1', focused ? 'p-3 sm:p-4' : 'p-4 sm:p-6')}>{children}</main>
         <CommandPalette />
       </div>
     </div>
