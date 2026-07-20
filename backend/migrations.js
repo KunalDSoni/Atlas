@@ -211,6 +211,44 @@ const MIGRATIONS = [
       },
     ],
   },
+  {
+    id: '010_wiki_page_tasks',
+    description: 'Checkbox state for wiki task lists, and the issue a task was converted into',
+    steps: [
+      // Task state is deliberately NOT stored in the page body. Ticking a box
+      // would otherwise rewrite the body, bumping the version, spamming version
+      // history, and staling the page's approval (migration 009) for what is
+      // not an editorial change.
+      {
+        sql: {
+          sqlite: `CREATE TABLE IF NOT EXISTS wiki_page_tasks (
+            page_id TEXT NOT NULL REFERENCES wiki_pages(id),
+            task_key TEXT NOT NULL,
+            checked INTEGER DEFAULT 0,
+            checked_by TEXT REFERENCES users(id),
+            checked_at TEXT,
+            issue_id TEXT REFERENCES issues(id),
+            PRIMARY KEY (page_id, task_key)
+          )`,
+          mysql: `CREATE TABLE IF NOT EXISTS wiki_page_tasks (
+            page_id VARCHAR(36) NOT NULL,
+            task_key VARCHAR(80) NOT NULL,
+            checked TINYINT DEFAULT 0,
+            checked_by VARCHAR(36) NULL,
+            checked_at DATETIME(3) NULL,
+            issue_id VARCHAR(36) NULL,
+            PRIMARY KEY (page_id, task_key)
+          ) DEFAULT CHARSET=utf8mb4`,
+        },
+      },
+      {
+        sql: {
+          sqlite: 'CREATE INDEX IF NOT EXISTS idx_page_tasks_issue ON wiki_page_tasks(issue_id)',
+          mysql: 'CREATE INDEX idx_page_tasks_issue ON wiki_page_tasks(issue_id)',
+        },
+      },
+    ],
+  },
 ];
 
 const LEDGER_SQL = {
