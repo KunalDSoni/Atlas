@@ -115,3 +115,30 @@ describe('Migration runner against a live SQLite database', () => {
     expect(cols.filter(c => c === 'epic_color').length).toBe(1); // added once, not twice
   });
 });
+
+describe('015_insight_origins', () => {
+  test('adds the origin columns to pb_insights', async () => {
+    const db = await getDb();
+    const names = (await queryAll(db, 'PRAGMA table_info(pb_insights)')).map(c => c.name);
+    expect(names).toContain('origin_kind');
+    expect(names).toContain('origin_id');
+    expect(names).toContain('origin_excerpt');
+    expect(names).toContain('dismissed_at');
+  });
+
+  test('is recorded in the migration ledger', async () => {
+    const db = await getDb();
+    const row = await queryOne(db, 'SELECT id FROM schema_migrations WHERE id = ?', ['015_insight_origins']);
+    expect(row).toBeTruthy();
+  });
+
+  test('existing insights survive with null origins rather than being rewritten', async () => {
+    // The columns are additive: a pre-existing insight keeps its row and simply
+    // has no origin, which the inbox renders as a manual capture.
+    const db = await getDb();
+    const seeded = await queryOne(db, 'SELECT id, title, origin_kind FROM pb_insights LIMIT 1');
+    expect(seeded).toBeTruthy();
+    expect(seeded.title).toBeTruthy();
+    expect(seeded.origin_kind ?? null).toBeNull();
+  });
+});

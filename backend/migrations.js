@@ -396,6 +396,49 @@ const MIGRATIONS = [
       },
     ],
   },
+  // ids 012–014 are reserved for the service desk wave (queues, SLAs,
+  // deflection/CSAT). The runner applies migrations in array order and the
+  // ledger keys on id, so a gap costs nothing — but reusing one of those ids
+  // later would collide with a deployment that had already stamped it.
+  {
+    id: '015_insight_origins',
+    description: 'Where an insight came from, and a snapshot of the captured text',
+    steps: [
+      {
+        addColumn: {
+          table: 'pb_insights', column: 'origin_kind',
+          // ALTER cannot carry the CHECK the CREATE TABLE has; the allowed set
+          // is enforced by ORIGIN_KINDS in utils/insight-origin.js.
+          sqlite: 'ALTER TABLE pb_insights ADD COLUMN origin_kind TEXT',
+          mysql: 'ALTER TABLE pb_insights ADD COLUMN origin_kind VARCHAR(20)',
+        },
+      },
+      {
+        addColumn: {
+          table: 'pb_insights', column: 'origin_id',
+          // Deliberately not a foreign key: it points at issues, comments or
+          // wiki_pages depending on origin_kind, and a deleted source must
+          // leave the insight and its excerpt intact.
+          sqlite: 'ALTER TABLE pb_insights ADD COLUMN origin_id TEXT',
+          mysql: 'ALTER TABLE pb_insights ADD COLUMN origin_id VARCHAR(36)',
+        },
+      },
+      {
+        addColumn: {
+          table: 'pb_insights', column: 'origin_excerpt',
+          sqlite: 'ALTER TABLE pb_insights ADD COLUMN origin_excerpt TEXT',
+          mysql: 'ALTER TABLE pb_insights ADD COLUMN origin_excerpt TEXT',
+        },
+      },
+      {
+        addColumn: {
+          table: 'pb_insights', column: 'dismissed_at',
+          sqlite: 'ALTER TABLE pb_insights ADD COLUMN dismissed_at TEXT',
+          mysql: 'ALTER TABLE pb_insights ADD COLUMN dismissed_at DATETIME(3) NULL',
+        },
+      },
+    ],
+  },
 ];
 
 const LEDGER_SQL = {
