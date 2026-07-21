@@ -36,6 +36,59 @@ jobs:
         working-directory: backend
         run: npm run test:frontend
 
+  # The jest suites never render the app. The zero-project regression documented
+  # in KNOWN-ISSUES.md — a fresh deployment with no way to create its first
+  # project — was invisible to every check above and only showed up in
+  # production. These two Playwright suites drive the real built SPA against the
+  # real backend, and `e2e:empty` is the only one that sees an unseeded install.
+  e2e:
+    name: E2E (browser)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      # Build from source so the suites exercise the current tree, not whatever
+      # frontend/build/ happens to be committed.
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Run E2E suite (seeded)
+        working-directory: frontend
+        run: npm run test:e2e
+
+      - name: Run E2E suite (fresh install, no seed data)
+        working-directory: frontend
+        run: npm run test:e2e:empty
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-failures
+          path: frontend/test-results/
+          retention-days: 7
+
   # The main suite runs on sql.js, so migrations.js's MySQL branch would ship
   # untested — and a MySQL-only migration bug crashes production on boot rather
   # than failing a test. This job exercises it against a real server.
