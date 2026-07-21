@@ -43,9 +43,15 @@ router.post('/portal/ideas', requireAuth, async (req, res) => {
       ? await queryOne(db, 'SELECT id FROM pb_customers WHERE email = ?', [user.email])
       : null;
 
+    // origin_id stays null: a portal idea has no separate source row to point
+    // back at — the insight IS the submission. origin_kind exists so the inbox
+    // renders one consistent source chip across every capture path.
     const id = uuidv4();
-    await run(db, "INSERT INTO pb_insights (id, title, content, source, customer_id, created_by) VALUES (?, ?, ?, 'portal', ?, ?)",
-      [id, title.trim(), content || '', customer?.id || null, req.userId]);
+    await run(db, `INSERT INTO pb_insights
+        (id, title, content, source, customer_id, created_by, origin_kind, origin_excerpt)
+      VALUES (?, ?, ?, 'portal', ?, ?, 'portal', ?)`,
+      [id, title.trim(), content || '', customer?.id || null, req.userId,
+       String(content || title).slice(0, 500)]);
     res.status(201).json({ ok: true, id });
   } catch (e) { serverError(res, e); }
 });

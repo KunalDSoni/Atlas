@@ -202,3 +202,55 @@ describe('capture endpoint', () => {
     expect(res.body.title).toBe('Bulk export blocks renewal');
   });
 });
+
+describe('inbox triage', () => {
+  // Submitted by a STAFF user, not a client. Since epic 41 mounted blockClients
+  // ahead of the portal routes (server.js:126 before :197, mirrored in
+  // setup.js), role='client' receives 403 from /api/portal/ideas — the
+  // "customer-facing" idea portal currently excludes the one role that
+  // represents customers. That is a real gap, but it belongs to epic 52
+  // (portal v2), which rebuilds this surface; capture must not quietly change
+  // the portal's access rules on its way past.
+  test('a portal idea is stamped with its origin so the inbox can chip it', async () => {
+    const res = await request(app).post('/api/portal/ideas').set(staffHeaders)
+      .send({ title: 'Dark mode please', content: 'The dashboard is blinding at night.' });
+    expect(res.status).toBe(201);
+
+    const list = await request(app).get('/api/product/insights?source=portal').set(headers);
+    const mine = list.body.find((i) => i.title === 'Dark mode please');
+    expect(mine).toBeTruthy();
+    expect(mine.origin_kind).toBe('portal');
+    expect(mine.origin_excerpt).toContain('blinding at night');
+  });
+
+  test('dismiss hides an insight from the inbox without deleting it', async () => {
+    const created = await request(app).post('/api/product/insights').set(headers)
+      .send({ title: 'Not actionable', content: 'A rant about the weather.' });
+    expect(created.status).toBe(201);
+
+    const dismissed = await request(app)
+      .post(`/api/product/insights/${created.body.id}/dismiss`).set(headers);
+    expect(dismissed.status).toBe(200);
+
+    const inbox = await request(app)
+      .get('/api/product/insights?processed=0&dismissed=0').set(headers);
+    expect(inbox.body.find((i) => i.id === created.body.id)).toBeUndefined();
+
+    // Kept, not deleted: a dismissed insight is still evidence of what was asked.
+    const still = await request(app).get(`/api/product/insights/${created.body.id}`).set(headers);
+    expect(still.status).toBe(200);
+    expect(still.body.dismissed_at).toBeTruthy();
+  });
+
+  test('dismissed=1 lists exactly what was dismissed', async () => {
+    const listed = await request(app).get('/api/product/insights?dismissed=1').set(headers);
+    expect(listed.status).toBe(200);
+    expect(listed.body.length).toBeGreaterThan(0);
+    for (const i of listed.body) expect(i.dismissed_at).toBeTruthy();
+  });
+
+  test('dismissing an insight that does not exist is a 404', async () => {
+    const res = await request(app).post('/api/product/insights/nope/dismiss').set(headers);
+    expect(res.status).toBe(404);
+  });
+});

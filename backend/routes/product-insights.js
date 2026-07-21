@@ -37,6 +37,9 @@ router.get('/product/insights', requireAuth, async (req, res) => {
     if (req.query.processed !== undefined) { clauses.push('ins.processed = ?'); params.push(Number(req.query.processed)); }
     if (req.query.source) { clauses.push('ins.source = ?'); params.push(req.query.source); }
     if (req.query.customer_id) { clauses.push('ins.customer_id = ?'); params.push(req.query.customer_id); }
+    if (req.query.dismissed !== undefined) {
+      clauses.push(Number(req.query.dismissed) ? 'ins.dismissed_at IS NOT NULL' : 'ins.dismissed_at IS NULL');
+    }
     const where = clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '';
     const insights = await queryAll(db, `${ENRICHED_SELECT}${where} ORDER BY ins.created_at DESC`, params);
     res.json(insights);
@@ -136,6 +139,19 @@ router.put('/product/insights/:id', requireAuth, async (req, res) => {
        req.params.id]);
     const insight = await queryOne(db, `${ENRICHED_SELECT} WHERE ins.id = ?`, [req.params.id]);
     res.json(insight);
+  } catch (e) { serverError(res, e); }
+});
+
+// POST /api/product/insights/:id/dismiss — triaged as not actionable. Kept
+// rather than deleted: a dismissed insight is still evidence of what somebody
+// asked for, and the inbox filters on dismissed_at rather than losing the row.
+router.post('/product/insights/:id/dismiss', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const existing = await queryOne(db, 'SELECT id FROM pb_insights WHERE id = ?', [req.params.id]);
+    if (!existing) return res.status(404).json({ error: 'Insight not found' });
+    await run(db, "UPDATE pb_insights SET dismissed_at = datetime('now') WHERE id = ?", [req.params.id]);
+    res.json({ ok: true });
   } catch (e) { serverError(res, e); }
 });
 
