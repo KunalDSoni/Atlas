@@ -19,6 +19,7 @@ const { v4: uuidv4 } = require('uuid');
 const { getDb, queryAll, queryOne, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
+const { demandForFeatures } = require('../utils/demand');
 const { projectStatuses } = require('./workflows');
 
 const router = express.Router();
@@ -66,9 +67,29 @@ function withRice(feature) {
   return { ...feature, rice };
 }
 
+// `demand` is additive: user_impact above keeps its tier-weighted meaning and
+// stays the features screen's default sort. Demand answers a different question
+// in real currency, and the two are shown side by side rather than merged.
+function attachDemand(feature, d) {
+  return {
+    ...withRice(feature),
+    demand: d.demand,
+    demand_breakdown: d.breakdown,
+    demand_unattributed: d.unattributed,
+  };
+}
+
 async function getEnrichedFeature(db, id) {
   const feature = await queryOne(db, `${ENRICHED_SELECT} WHERE f.id = ?`, [id]);
-  return feature ? withRice(feature) : null;
+  if (!feature) return null;
+  const map = await demandForFeatures(db, [id]);
+  return attachDemand(feature, map.get(id));
+}
+
+// One demand query for the whole list rather than one per feature.
+async function withDemand(db, features) {
+  const map = await demandForFeatures(db, features.map((f) => f.id));
+  return features.map((f) => attachDemand(f, map.get(f.id) || { demand: 0, breakdown: [], unattributed: 0 }));
 }
 
 // GET /api/product/features
@@ -82,7 +103,7 @@ router.get('/product/features', requireAuth, async (req, res) => {
     if (req.query.timeframe) { clauses.push('f.timeframe = ?'); params.push(req.query.timeframe); }
     const where = clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '';
     const features = await queryAll(db, `${ENRICHED_SELECT}${where} ORDER BY f.created_at DESC`, params);
-    res.json(features.map(withRice));
+    res.json(await withDemand(db, features));
   } catch (e) { serverError(res, e); }
 });
 
