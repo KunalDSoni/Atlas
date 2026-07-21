@@ -36,6 +36,40 @@ All demo accounts use password: `password123`
 | Priya Patel | priya@example.com | Client |
 | James Wilson | james@example.com | User |
 
+## Going Live (first run on a real deployment)
+
+With `SEED_DEMO_DATA=false` — which is what `render.yaml` sets, and what any real
+deployment should use — **none of the accounts above exist**. The database boots
+with exactly one user, built from these variables:
+
+| Variable | Purpose |
+|---|---|
+| `ADMIN_EMAIL` | the only account that exists on first boot — sign in with this |
+| `ADMIN_PASSWORD` | its password; change it after the first login |
+| `ADMIN_NAME` | display name |
+| `SESSION_SECRET` | signs sessions; must be set and must not be the dev default |
+| `DB_DRIVER` + `MYSQL_*` (or `DATABASE_URL`) | where the data lives |
+
+Sign in as `ADMIN_EMAIL` and you land on an empty dashboard with a **Create
+project** button, in the sidebar switcher and in the dashboard zero state. Create
+the first project there; every other screen stays empty until one exists. Project
+creation requires the `admin` or `board_admin` role, matching
+`requireBoardAdmin` on `POST /api/projects`.
+
+To verify this path before shipping, run `cd frontend && npm run test:e2e:empty` —
+it boots the real backend unseeded and drives the first-run flow in a browser.
+
+## Testing
+
+| Command | Scope |
+|---|---|
+| `cd backend && npm test` | jest — backend routes and frontend logic |
+| `cd frontend && npm run test:e2e` | Playwright against a **seeded** instance |
+| `cd frontend && npm run test:e2e:empty` | Playwright against a **fresh install** (zero projects) |
+| `cd frontend && npm run lint` | `tsc -b --noEmit` |
+
+All four run in CI on every push and PR to `main`.
+
 ## Project Structure
 
 ```
