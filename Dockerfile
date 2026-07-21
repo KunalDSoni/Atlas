@@ -43,6 +43,12 @@ RUN mkdir -p /app/data /app/backend/uploads && \
 # Remove test files from production image
 RUN rm -rf ./backend/tests ./backend/jest.config.* ./backend/.babelrc
 
+# AWS RDS root certificates — used to verify the TLS connection to MySQL when
+# MYSQL_SSL=true. Baked in at build time so the container needs no internet
+# access to fetch it at boot.
+ADD --chown=atlas:atlas https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /app/certs/rds-global-bundle.pem
+RUN chmod 0444 /app/certs/rds-global-bundle.pem
+
 ENV NODE_ENV=production
 ENV PORT=3001
 ENV DATA_DIR=/app/data
