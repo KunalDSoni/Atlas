@@ -262,3 +262,62 @@ describe('request types', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('comment visibility', () => {
+  let app, headers, clientHeaders, issueId;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+    headers = await adminHeaders();
+    const projects = await request(app).get('/api/projects').set(headers);
+    const projectId = projects.body.find((p) => p.key === 'ATL').id;
+    const issue = await request(app).post(`/api/projects/${projectId}/issues`).set(headers)
+      .send({ title: 'Visibility fixture', type: 'task' });
+    issueId = issue.body.id;
+
+    const created = await request(app).post('/api/users').set(headers)
+      .send({ name: 'Casey Client', email: 'casey@example.com', role: 'client' });
+    const login = await request(app).post('/api/auth/login')
+      .send({ email: 'casey@example.com', password: created.body.initial_password });
+    clientHeaders = { 'x-auth-token': login.body.token, 'Content-Type': 'application/json' };
+  });
+
+  test('a comment defaults to public', async () => {
+    const res = await request(app).post(`/api/issues/${issueId}/comments`).set(headers).send({ body: 'Hello' });
+    expect(res.status).toBe(201);
+    expect(res.body.visibility).toBe('public');
+  });
+
+  test('an agent can post an internal note', async () => {
+    const res = await request(app).post(`/api/issues/${issueId}/comments`).set(headers)
+      .send({ body: 'Internal only', visibility: 'internal' });
+    expect(res.status).toBe(201);
+    expect(res.body.visibility).toBe('internal');
+  });
+
+  test('an agent sees both public and internal comments', async () => {
+    const res = await request(app).get(`/api/issues/${issueId}/comments`).set(headers);
+    const visibilities = res.body.map((c) => c.visibility);
+    expect(visibilities).toContain('public');
+    expect(visibilities).toContain('internal');
+  });
+
+  test('a client never sees an internal comment', async () => {
+    const res = await request(app).get(`/api/issues/${issueId}/comments`).set(clientHeaders);
+    expect(res.status).toBe(200);
+    expect(res.body.every((c) => c.visibility === 'public')).toBe(true);
+    expect(res.body.some((c) => c.body === 'Internal only')).toBe(false);
+  });
+
+  test("a client's attempt to post an internal note is rejected, not downgraded", async () => {
+    const res = await request(app).post(`/api/issues/${issueId}/comments`).set(clientHeaders)
+      .send({ body: 'Sneaky', visibility: 'internal' });
+    expect(res.status).toBe(403);
+  });
+
+  test('an invalid visibility is rejected', async () => {
+    const res = await request(app).post(`/api/issues/${issueId}/comments`).set(headers)
+      .send({ body: 'Bad', visibility: 'secret' });
+    expect(res.status).toBe(400);
+  });
+});
