@@ -12,6 +12,7 @@ const { v4: uuidv4 } = require('uuid');
 const { getDb, queryAll, queryOne, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
+const { resolveOrigin } = require('../utils/insight-origin');
 
 const router = express.Router();
 
@@ -57,6 +58,44 @@ router.post('/product/insights', requireAuth, async (req, res) => {
     const id = uuidv4();
     await run(db, 'INSERT INTO pb_insights (id, title, content, source, customer_id, created_by) VALUES (?, ?, ?, ?, ?, ?)',
       [id, title.trim(), content || '', source || 'other', customer_id || null, req.userId]);
+    const insight = await queryOne(db, `${ENRICHED_SELECT} WHERE ins.id = ?`, [id]);
+    res.status(201).json(insight);
+  } catch (e) { serverError(res, e); }
+});
+
+// POST /api/product/insights/capture — turn text that already exists in Atlas
+// into a triageable insight. Declared before the '/:id' routes below, which
+// would otherwise match 'capture' as an id.
+//
+// The excerpt is snapshotted at capture time; origin_id is a backlink that may
+// dangle if the source is later deleted. resolveOrigin() is the security
+// boundary — it confirms the caller may see the source before anything is read
+// out of it.
+router.post('/product/insights/capture', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const { origin_kind, origin_id, title, customer_id } = req.body;
+
+    const origin = await resolveOrigin(db, origin_kind, origin_id, req.userId, req.userRole);
+    if (!origin.ok) return res.status(origin.status).json({ error: origin.error });
+
+    if (customer_id) {
+      const customer = await queryOne(db, 'SELECT id FROM pb_customers WHERE id = ?', [customer_id]);
+      if (!customer) return res.status(404).json({ error: 'Customer not found' });
+    }
+
+    // A request or comment is support feedback; a wiki capture is research
+    // somebody wrote up. Neither is 'other', which is the manual form's default.
+    const source = origin_kind === 'wiki' ? 'interview' : 'support';
+    const id = uuidv4();
+    await run(db,
+      `INSERT INTO pb_insights
+         (id, title, content, source, customer_id, created_by, origin_kind, origin_id, origin_excerpt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, (title || origin.title || 'Captured feedback').trim(), '', source,
+       customer_id || origin.customer_id || null, req.userId,
+       origin_kind, origin_id, origin.excerpt]);
+
     const insight = await queryOne(db, `${ENRICHED_SELECT} WHERE ins.id = ?`, [id]);
     res.status(201).json(insight);
   } catch (e) { serverError(res, e); }

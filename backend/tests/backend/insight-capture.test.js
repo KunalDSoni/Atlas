@@ -137,3 +137,68 @@ describe('origin resolution', () => {
     expect(out.excerpt.length).toBeLessThanOrEqual(MAX_EXCERPT);
   });
 });
+
+describe('capture endpoint', () => {
+  let commentId;
+
+  beforeAll(async () => {
+    const issueId = await anyIssueId();
+    const c = await request(app).post(`/api/issues/${issueId}/comments`).set(headers)
+      .send({ body: 'We need bulk CSV export before renewal.' });
+    commentId = c.body.id;
+  });
+
+  test('captures a comment into an unprocessed insight carrying its snapshot', async () => {
+    const res = await request(app).post('/api/product/insights/capture').set(headers)
+      .send({ origin_kind: 'comment', origin_id: commentId });
+
+    expect(res.status).toBe(201);
+    expect(res.body.origin_kind).toBe('comment');
+    expect(res.body.origin_id).toBe(commentId);
+    expect(res.body.origin_excerpt).toContain('bulk CSV export');
+    expect(res.body.processed).toBe(0);
+    expect(res.body.source).toBe('support');
+  });
+
+  test('the excerpt survives the source comment being deleted', async () => {
+    const issueId = await anyIssueId();
+    const c = await request(app).post(`/api/issues/${issueId}/comments`).set(headers)
+      .send({ body: 'Ephemeral but important.' });
+
+    const captured = await request(app).post('/api/product/insights/capture').set(headers)
+      .send({ origin_kind: 'comment', origin_id: c.body.id });
+    expect(captured.status).toBe(201);
+
+    const removed = await request(app).delete(`/api/comments/${c.body.id}`).set(headers);
+    expect(removed.status).toBe(200);
+
+    const after = await request(app).get(`/api/product/insights/${captured.body.id}`).set(headers);
+    expect(after.status).toBe(200);
+    expect(after.body.origin_excerpt).toContain('Ephemeral but important');
+  });
+
+  test('rejects an unknown origin kind with 400', async () => {
+    const res = await request(app).post('/api/product/insights/capture').set(headers)
+      .send({ origin_kind: 'telepathy', origin_id: commentId });
+    expect(res.status).toBe(400);
+  });
+
+  test('a missing source is a 404', async () => {
+    const res = await request(app).post('/api/product/insights/capture').set(headers)
+      .send({ origin_kind: 'comment', origin_id: 'no-such-comment' });
+    expect(res.status).toBe(404);
+  });
+
+  test('a client cannot reach the capture endpoint', async () => {
+    const res = await request(app).post('/api/product/insights/capture').set(clientHeaders)
+      .send({ origin_kind: 'comment', origin_id: commentId });
+    expect(res.status).toBe(403);
+  });
+
+  test('an explicit title overrides the one derived from the source', async () => {
+    const res = await request(app).post('/api/product/insights/capture').set(headers)
+      .send({ origin_kind: 'comment', origin_id: commentId, title: 'Bulk export blocks renewal' });
+    expect(res.status).toBe(201);
+    expect(res.body.title).toBe('Bulk export blocks renewal');
+  });
+});
