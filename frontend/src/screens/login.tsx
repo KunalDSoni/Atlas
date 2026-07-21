@@ -2,7 +2,6 @@ import { useState, type FormEvent } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/context/auth-provider';
@@ -112,19 +111,6 @@ export default function LoginScreen() {
               {submitting ? 'Signing in…' : 'Sign in'}
             </Button>
           </form>
-
-          <Card className="mt-6 border-dashed bg-surface shadow-none">
-            <CardContent className="px-4 py-3">
-              <p className="text-xs font-semibold text-muted-foreground">Demo accounts</p>
-              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                <span className="font-mono text-foreground">kunal@example.com</span> (admin) ·{' '}
-                <span className="font-mono text-foreground">sarah@example.com</span> (board admin) ·{' '}
-                <span className="font-mono text-foreground">priya@example.com</span> (client)
-                <br />
-                Password: <span className="font-mono text-foreground">password123</span>
-              </p>
-            </CardContent>
-          </Card>
         </div>
       </div>
     </div>
