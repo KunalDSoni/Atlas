@@ -96,6 +96,7 @@ async function createTestApp() {
   testApp.use('/api', require('../../routes/stream'));
   testApp.use('/api', require('../../routes/custom-fields'));
   testApp.use('/api', require('../../routes/request-types'));
+  testApp.use('/api', require('../../routes/help'));
 
   app = testApp;
   return testApp;

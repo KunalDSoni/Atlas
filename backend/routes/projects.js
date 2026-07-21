@@ -65,7 +65,7 @@ router.put('/:id', requireAuth, requireBoardAdmin, async (req, res) => {
     const project = await queryOne(db, 'SELECT * FROM projects WHERE id = ?', [req.params.id]);
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
-    const { name, key, description, lead_id, status, wip_limits } = req.body;
+    const { name, key, description, lead_id, status, wip_limits, is_service_desk } = req.body;
     const updates = [];
     const params = [];
     if (name !== undefined) { updates.push('name = ?'); params.push(name); }
@@ -76,6 +76,11 @@ router.put('/:id', requireAuth, requireBoardAdmin, async (req, res) => {
     if (wip_limits !== undefined) {
       updates.push('wip_limits = ?');
       params.push(typeof wip_limits === 'string' ? wip_limits : JSON.stringify(wip_limits || {}));
+    }
+    // Stored 0/1 on both drivers — SQLite has no boolean type.
+    if (is_service_desk !== undefined) {
+      updates.push('is_service_desk = ?');
+      params.push(is_service_desk ? 1 : 0);
     }
 
     if (updates.length > 0) {
