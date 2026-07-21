@@ -14,6 +14,7 @@ import type {
   WikiAttachment, ApiToken, Webhook, CustomField,
   WorkLog, WorkflowStatus,
   PbCompany, PbCustomer, PbInsight, PbFeature, PbObjective, PortalFeature,
+  PublicRequest, RequestType,
 } from './types';
 
 const TOKEN_KEY = 'atlas_token';
@@ -96,6 +97,27 @@ const put = <T>(p: string, body?: unknown) =>
 const del = <T>(p: string) => request<T>(p, { method: 'DELETE' });
 
 export const api = {
+  // Service desk — the customer surface. Every response here is the projected
+  // shape, never a raw issue.
+  help: {
+    requestTypes: () => get<RequestType[]>('/help/request-types'),
+    raise: (body: { request_type_id: string; summary: string; fields: Record<string, string> }) =>
+      post<PublicRequest>('/help/requests', body),
+    myRequests: () => get<PublicRequest[]>('/help/requests'),
+    getRequest: (key: string) => get<PublicRequest>(`/help/requests/${key}`),
+    reply: (key: string, body: string) =>
+      post<{ id: string; body: string; created_at: string }>(`/help/requests/${key}/comments`, { body }),
+    resolve: (key: string) => post<PublicRequest>(`/help/requests/${key}/resolve`),
+  },
+
+  requestTypes: {
+    list: (projectId: string) => get<RequestType[]>(`/projects/${projectId}/request-types`),
+    create: (projectId: string, body: Partial<RequestType>) =>
+      post<RequestType>(`/projects/${projectId}/request-types`, body),
+    update: (id: string, body: Partial<RequestType>) => put<RequestType>(`/request-types/${id}`, body),
+    remove: (id: string) => del<{ ok: boolean }>(`/request-types/${id}`),
+  },
+
   auth: {
     login: (email: string, password: string) => post<AuthUser>('/auth/login', { email, password }),
     logout: () => post<{ ok: boolean }>('/auth/logout'),
