@@ -126,14 +126,34 @@ changed**, and SQLite cannot alter a CHECK in place.
   recreate the indexes from `007_issue_lookup_indexes`, `PRAGMA foreign_keys=on`.
 - **MySQL:** `ALTER TABLE issues DROP CHECK <name>` then `ADD CONSTRAINT … CHECK`.
 
-Rebuilding a table that ten others reference by foreign key is the single
-highest-risk operation in this wave. Cover: the migration suite already runs
-against a real MySQL service in CI (epic 35), and the rebuild gets a dedicated
-test that seeds issues of every type, runs the migration, and asserts row count,
-every FK-referencing table's join integrity, and that indexes survive.
+Two facts lower this risk from how it first looks:
 
-If the rebuild proves unstable in review, the fallback is to drop the CHECK
-entirely and validate `type` in the route layer, where it is already validated.
+- **SQLite foreign keys are not enforced here.** `database.js` issues no
+  `PRAGMA foreign_keys=ON`, and sql.js defaults it off, so the `REFERENCES`
+  clauses on the ten tables pointing at `issues` are documentation. The rebuild
+  has no enforcement to suspend and no cascade behaviour to preserve.
+- Child tables reference `issues` **by name**, so dropping the old table and
+  renaming `issues_new` into its place leaves them resolving to the new table.
+
+The rebuild still gets a dedicated test that seeds issues of every type, runs
+the migration, and asserts row count, join integrity from every referencing
+table, and index survival. The migration suite already runs against a real
+MySQL service in CI (epic 35).
+
+**A correction to an earlier draft of this spec:** the stated fallback — "drop
+the CHECK and validate in the route layer" — is not a fallback at all. SQLite
+cannot drop a CHECK constraint in place either; that path needs the same table
+rebuild. The genuine alternative, if the rebuild is rejected, is to leave
+`issues.type` untouched and identify a request by `request_type_id IS NOT NULL`,
+rendering a "Request" badge in the UI. That avoids schema surgery entirely at
+the cost of requests reading as `task` in the database and in JQL.
+
+**Trap this creates for testing:** `backend/tests/backend/setup.js` builds every
+suite from a throwaway database, so tests get `'request'` from the schema in
+`database.js` whether or not the migration works. A broken migration would pass
+the entire suite and fail only on a real deployment. The migration test is the
+only thing standing between this change and that outcome, so it is not
+optional.
 
 ### 40.3 Request types API
 
