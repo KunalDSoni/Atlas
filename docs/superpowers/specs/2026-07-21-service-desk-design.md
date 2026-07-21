@@ -362,3 +362,85 @@ demo service desk project ("Help Desk", `is_service_desk=1`) seeds three request
 types, a handful of requests across states, one SLA breach, and one CSAT rating,
 so the screens have shape on a fresh database. Seeding stays behind
 `SEED_DEMO_DATA`, which real deployments set to `false`.
+
+---
+
+## Slice 2 — decisions taken, design paused
+
+**Status:** slice 1 (epics 39–41) is merged and green (`191c757`, 441 tests
+passing, 41 epics seeded). Slice 2 was brainstormed to the points below and then
+parked. Everything here is **decided**, except the restructure at the end, which
+was proposed and never approved.
+
+### Three decisions
+
+**1. Queue filters extend JQL rather than introducing a second filter language.**
+
+The spec above says a queue is "a stored JQL string evaluated through
+`parseJql`". The grammar in `utils/jql.js` supports only `=` and `!=` joined by
+`AND`, over seven fields (`project`, `status`, `type`, `priority`, `assignee`,
+`reporter`, `label`). Of the five canonical service desk queues, exactly one —
+"unassigned" — is expressible. "All open requests" needs status *category*;
+"breaching SLA" needs SLA fields that do not exist; "hardware requests" needs
+`request_type`, since `issues.type` is just `'request'` for every one of them;
+"waiting for customer" needs the `project_statuses.waiting_for_customer` flag.
+
+So JQL grows: `OR`, `IN`, `IS EMPTY`, grouping, and new fields. Global search,
+saved filters, and the `[jql:]` wiki macro inherit the additions.
+
+**2. SLA breach state is filterable via a stored absolute `due_at`, not a SQL
+predicate over the breach rule.**
+
+Decision 1 forces this. A queue is a *paginated* SQL query (epic 28), so
+`sla = breached` must be expressible in a `WHERE` clause — JS-side filtering
+after the fetch would break page counts and totals. But `utils/flow.js:45`
+establishes that this codebase computes derived time metrics in JavaScript, and
+`utils/sql.js` is 29 lines of trivial helpers with no dialect abstraction at all.
+
+Rather than write the breach rule a second time in dialect-specific SQL
+(`julianday` vs `TIMESTAMPDIFF`) and maintain two implementations that must
+agree forever, the JS helper stays the single authority: when a clock starts,
+pauses, or resumes it computes and stores `due_at`. SQL only ever compares a
+timestamp — identical in both dialects, indexes well, cannot drift from the
+badge. This extends the spec's existing instinct to persist `breached_at`,
+moving it from "written when observed" to "computed when the clock changes".
+
+The cost is a derived column that must be recomputed on every lifecycle
+transition, and it needs tests proving it.
+
+**3. Queue sidebar counts come from one `UNION ALL` of N count subqueries.**
+
+§Epic 42 above specifies "one grouped count query for the whole sidebar, not N
+queries". That is only possible when every queue filters the same shape of
+thing. Once each queue carries arbitrary JQL, the `WHERE` clauses differ and
+cannot be grouped into a single aggregate — the stated approach does not work.
+
+Instead: one statement per sidebar load, `SELECT 'q1', COUNT(*) … UNION ALL
+SELECT 'q2', COUNT(*) …`. One round trip, exact counts, nothing to cache or
+invalidate, bounded by a cap on queues per project.
+
+### Proposed restructure — NOT approved
+
+Slice 2 was proposed as three epics rather than two, resequenced:
+
+| # | Epic | Depends on |
+|---|---|---|
+| 42 | **JQL v2** — `OR`, `IN`, `IS EMPTY`, grouping; `category` and `request_type` fields; a `FIELDS` registry later epics extend rather than edit | — |
+| 43 | **SLAs** — goals, clocks, computed `due_at`, pause/resume lifecycle, `slaState()`, request-detail badges; registers the `sla` field into JQL | 42 |
+| 44 | **Agent queues** — `sd_queues`, sidebar counts, columns, bulk actions, CRUD | 42, 43 |
+
+Two reasons. JQL v2 is a cross-cutting change to a query language that four
+surfaces run through, so it should not hide inside a feature epic named after
+none of them. And queues-before-SLAs is circular: queues need `sla = breached`
+expressible, which needs SLA fields, which need the SLA tables. Inverting the
+order also lets queues launch complete rather than shipping a broken headline
+queue that a later epic repairs.
+
+Under this proposal deflection becomes epic 45 and CSAT epic 46, both deferred
+behind the Identity & Governance wave. Renumbering is free: 41 epics are seeded,
+so nothing above 41 exists yet.
+
+**Open question when this resumes:** is that restructure right? Also unresolved
+— a queue stores its JQL as text, so deleting a status via
+`DELETE /api/statuses/:id?migrate_to=` leaves every queue referencing the old
+key silently returning zero rows, with nothing detecting it.
