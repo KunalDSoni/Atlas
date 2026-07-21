@@ -1,0 +1,98 @@
+# Build a release image. Deploys nothing.
+#
+# Pushing a tag builds and publishes one immutable image. Putting it in front of
+# a customer is a separate, deliberate act - see release-deploy.yml.
+#
+# SECURITY: this repository is public, so anyone can open a pull request. This
+# workflow must never gain a `pull_request` trigger - the AWS role's trust policy
+# only accepts tags and named environments, but a second lock costs nothing.
+name: Release - build image
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  id-token: write # required to request the OIDC token; nothing else needs it
+
+env:
+  AWS_REGION: ap-south-1
+  ECR_REPOSITORY: 452456948941.dkr.ecr.ap-south-1.amazonaws.com/atlas
+
+jobs:
+  verify:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: backend
+      - name: Backend tests
+        run: npm test
+        working-directory: backend
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+      - name: Frontend build
+        run: npm run build
+        working-directory: frontend
+
+  build:
+    name: Build and push
+    needs: verify # no image exists unless the tests passed
+    # Native arm64 runner. Fargate runs these tasks on ARM64 (~20% cheaper), and
+    # building natively avoids QEMU emulation, under which `npm ci` is glacial.
+    #
+    # NOTE: arm64 hosted runners are free on public repos but consume Actions
+    # minutes on private ones, and may need a paid plan. If this runner is
+    # unavailable, switch to `ubuntu-latest` and uncomment the QEMU step below -
+    # the build still produces an arm64 image, just slower (15-25 min).
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      # Only needed when running on an x86_64 runner (see note above).
+      # - name: Set up QEMU for cross-architecture build
+      #   uses: docker/setup-qemu-action@v3
+      #   with:
+      #     platforms: arm64
+
+      - name: Configure AWS credentials (OIDC, no stored secrets)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::452456948941:role/atlasGitHubDeployRole
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          docker build --platform linux/arm64 -t "${ECR_REPOSITORY}:${TAG}" .
+          docker push "${ECR_REPOSITORY}:${TAG}"
+          echo "Pushed ${ECR_REPOSITORY}:${TAG}"
+
+      - name: Confirm the image is arm64
+        # A mismatch here fails at runtime with `exec format error`, which reads
+        # like a corrupt image rather than a wrong-architecture build.
+        run: |
+          set -euo pipefail
+          ARCH=$(docker inspect "${ECR_REPOSITORY}:${GITHUB_REF_NAME}" --format '{{.Architecture}}')
+          echo "architecture: ${ARCH}"
+          [ "$ARCH" = "arm64" ] || { echo "expected arm64"; exit 1; }
+
+      - name: Summary
+        run: |
+          {
+            echo "### Image published"
+            echo ""
+            echo "\`${ECR_REPOSITORY}:${GITHUB_REF_NAME}\`"
+            echo ""
+            echo "**Nothing has been deployed.** Run *Release - deploy one customer* to put this in front of a customer."
+          } >> "$GITHUB_STEP_SUMMARY"

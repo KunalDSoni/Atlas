@@ -1312,27 +1312,69 @@ revision keeps its copy forever**. `ADMIN_PASSWORD` is sitting in there.
 
 ---
 
-## 18. Phase 11 — Deploy customer 2 (diligence)
+## 18. Phase 11 — Adding another customer
 
-This repeats Phase 9 with different values. **Nothing shared is rebuilt** — no
-new certificate (the wildcard already covers it), no new load balancer, no new
-database server, no new bucket. Budget ~25 minutes.
+This repeats Phase 9 with different values, and is the section you return to for
+**every** customer after the first. **Nothing shared is rebuilt** — no new
+certificate (the wildcard covers every subdomain), no new load balancer, no new
+database server, no new bucket. Budget ~25 minutes each.
+
+### 18.0 The per-customer values
+
+Pick these before you start; everything below is mechanical once they are fixed.
+**Use the lowercase slug everywhere** — MySQL database names are case-sensitive
+on Linux, and mixed case causes mismatches that surface much later.
+
+| Thing | Pattern | `diligence` | `modernharvest` |
+| ----- | ------- | ----------- | --------------- |
+| Slug | lowercase, no spaces | `diligence` | `modernharvest` |
+| Hostname | `<slug>.open-atlas.xyz` | `diligence.open-atlas.xyz` | `modernharvest.open-atlas.xyz` |
+| Database + user | `<slug>` | `diligence` | `modernharvest` |
+| S3 prefix | `<slug>` | `diligence` | `modernharvest` |
+| Task role | `atlasTaskRole-<slug>` | `atlasTaskRole-diligence` | `atlasTaskRole-modernharvest` |
+| Task definition | `atlas-<slug>` | `atlas-diligence` | `atlas-modernharvest` |
+| Target group | `atlas-<slug>` | `atlas-diligence` | `atlas-modernharvest` |
+| ECS service | `<slug>` | `diligence` | `modernharvest` |
+| Log group | `/atlas/<slug>` | `/atlas/diligence` | `/atlas/modernharvest` |
+| Secrets | `atlas/<slug>/…` | `atlas/diligence/…` | `atlas/modernharvest/…` |
+| ALB rule priority | next unused | 2 | 3 |
+| Pre-existing email on the subdomain? | check first | **Yes** — see §18.1 | No — clean slate |
+
+**Check for existing DNS records before you start**, every time:
+
+```powershell
+aws route53 list-resource-record-sets --hosted-zone-id <ZONE_ID> --query "ResourceRecordSets[?contains(Name,'<slug>')].[Type,Name]" --output text
+```
+
+And find a free ALB priority:
+
+```powershell
+aws elbv2 describe-rules --listener-arn <HTTPS_LISTENER_ARN> --query "Rules[].Priority" --output text
+```
+
+### 18.1 The steps
 
 | Step | What changes |
 | ---- | ------------ |
-| **1. Database** (§16.1) | `CREATE DATABASE diligence …; CREATE USER 'diligence'@'%' …; GRANT ALL PRIVILEGES ON diligence.* TO 'diligence'@'%';` — a **freshly generated** password |
-| **2. Secrets** (§16.2) | `atlas/diligence/mysql-password`, `atlas/diligence/session-secret` — a **fresh** session secret, never reused between customers |
-| **3. Task role** (§16.3) | `atlasTaskRole-diligence`, scoped to `…/diligence/*` |
-| **4. Task definition** (§16.4) | `atlas-diligence`; swap every `accesspoint` → `diligence`; `APP_URL=https://diligence.open-atlas.xyz`; log group `/atlas/diligence`; the two new secret ARNs |
-| **5. Target group + rule** (§16.5) | Group `atlas-diligence`; host header `diligence.open-atlas.xyz`; **priority 2** |
-| **6. Service** (§16.6) | Service `diligence`, desired **1**, `atlas-app-sg`, Public IP ENABLED |
-| **7. DNS** (§16.7) | Route 53 A-record alias, name `diligence` → `atlas-alb`. **⚠ See the warning below — this one is not a clean slate** |
-| **8. Verify** (§17) | All checks against `diligence.open-atlas.xyz`, **including the isolation check in both directions** |
+| **1. Database** (§16.1) | `CREATE DATABASE <slug> …; CREATE USER '<slug>'@'%' …; GRANT ALL PRIVILEGES ON <slug>.* TO '<slug>'@'%';` — a **freshly generated** password |
+| **2. Secrets** (§16.2) | `atlas/<slug>/mysql-password` (the tenant user's password, **not** `atlas_admin`'s), `atlas/<slug>/session-secret` — a **fresh** session secret |
+| **3. Task role** (§16.3) | `atlasTaskRole-<slug>`, scoped to `…/<slug>/*` — must match `S3_PREFIX` exactly |
+| **4. Task definition** (§16.4) | `atlas-<slug>`; swap every `accesspoint` → `<slug>`; `APP_URL=https://<slug>.open-atlas.xyz`; log group `/atlas/<slug>`; the two new secret ARNs; **the current image tag** |
+| **5. Target group + rule** (§16.5) | Group `atlas-<slug>`; host header `<slug>.open-atlas.xyz`; next free priority |
+| **6. Service** (§16.6) | Service `<slug>`, desired **1**, `atlas-app-sg` only, Public IP ENABLED, **existing HTTPS:443 listener** |
+| **7. DNS** (§16.7) | Route 53 A-record **alias** → `atlas-alb`. Check §18.1 first |
+| **8. Verify** (§17) | All checks against the new hostname, **including the isolation check against every other customer's database** |
+| **9. Add them to the backup job** (§20.2b) | ⚠️ **Easy to forget, fails silently.** Register a new `atlas-backup` task-definition revision with the new database appended to `DATABASES`, point the schedule at it, run once by hand, and confirm the customer's prefix appears in the backups bucket. Until you do, **this customer has no backups** |
+| **10. Add their DOWN alarm** (§21.2b) | Create `atlas-<slug>-DOWN` on the new target group's `HealthyHostCount`. Until you do, this customer can be offline indefinitely without anyone being told |
 
-> **⚠ `diligence.open-atlas.xyz` already has working email.** Unlike `accesspoint`,
-> this subdomain carries `MX` (mx00/mx01.ionos.com), `SPF` (TXT), DKIM
-> (`s1-ionos`/`s2-ionos._domainkey`) and `autodiscover` records inherited from
-> IONOS.
+### 18.2 Subdomains that already have email
+
+> **⚠ Check this before creating the DNS record — every time, for every customer.**
+>
+> Some subdomains inherited mail configuration from IONOS. `diligence.open-atlas.xyz`
+> carries `MX` (mx00/mx01.ionos.com), `SPF` (TXT), DKIM
+> (`s1-ionos`/`s2-ionos._domainkey`) and `autodiscover` records. `accesspoint`
+> and `modernharvest` are clean slates with no records at all.
 >
 > **Add the A-alias alongside them. Do not replace the record set, and do not
 > "tidy up" the mail records** — you would silently kill email for that customer.
@@ -1494,6 +1536,85 @@ part of this dump. Note that this means a restore mixes an old database with
 current files — usually harmless (orphan rows referencing deleted files show as
 "not found"), but worth knowing before an incident rather than during one.
 
+### 20.2b The automated nightly job — as built
+
+§20.2's manual commands are the fallback. The scheduled version is **already
+deployed** and is what actually runs:
+
+```
+EventBridge Scheduler: atlas-nightly-backup
+   cron(30 20 * * ? *) UTC  =  02:00 IST
+   retries twice, max event age 1 hour
+        │
+        └──► ECS RunTask — Fargate, ARM64, one-off
+                 task definition: atlas-backup
+                 image:  <ACCOUNT>.dkr.ecr.<REGION>.amazonaws.com/atlas-backup
+                 role:   atlasBackupTaskRole  (s3:PutObject on the backups bucket only)
+                 secret: the RDS master password, from Secrets Manager
+                 │
+                 └──► s3://<backups-bucket>/<customer>/<customer>-<date>.sql.gz
+```
+
+The image is `mysql:8.0` (matching the RDS engine major version) plus AWS CLI v2,
+running a shell script that loops the databases listed in `DATABASES`.
+
+**Two `mysqldump` flags are mandatory on RDS and must not be removed:**
+
+| Flag | Why |
+| ---- | --- |
+| `--set-gtid-purged=OFF` | Without it `mysqldump` issues `FLUSH TABLES WITH READ LOCK` to record a GTID position. That needs the `RELOAD` privilege, which **RDS withholds from the master user** — the dump fails with `Access denied`, which misleadingly looks like a wrong password |
+| `--no-tablespaces` | Needs the `PROCESS` privilege, withheld for the same reason |
+
+The script also **refuses to upload a dump under 1KB** and exits non-zero if any
+database fails — a failed `mysqldump` otherwise produces a small file containing
+only an error message, which uploads perfectly happily and looks like a backup
+until the day you need it.
+
+`--databases` is deliberately **not** used, so the dumps contain no
+`CREATE DATABASE`/`USE` statements and can be restored into a scratch database
+(§20.3) rather than only over the live one.
+
+#### ⚠ Adding a customer requires updating this job
+
+`DATABASES` is a fixed space-separated list in the task definition. **A new
+customer is not backed up until you add them**, and nothing warns you:
+
+1. Register a new `atlas-backup` revision with the customer appended to `DATABASES`
+2. Point the schedule at the new revision (`aws scheduler update-schedule`, or
+   EventBridge console → Schedules → Edit)
+3. Run it once by hand and confirm the new prefix appears in S3
+
+Add this to the §18 customer checklist. It fails silently and in the direction of
+data loss, which is the worst combination.
+
+#### Changing the schedule
+
+```bash
+aws scheduler update-schedule --name atlas-nightly-backup --region <REGION> --schedule-expression "cron(30 2 * * ? *)" --schedule-expression-timezone "Asia/Kolkata" --flexible-time-window "Mode=OFF" --target file://sched-target.json
+```
+
+`update-schedule` replaces the whole definition, so the full `--target` block
+must be supplied — keep `sched-target.json`. Setting
+`--schedule-expression-timezone` to a real zone lets you write local times
+directly instead of converting to UTC.
+
+#### Running it on demand
+
+```bash
+aws ecs run-task --cluster atlas --task-definition atlas-backup --launch-type FARGATE --network-configuration "awsvpcConfiguration={subnets=[<SUBNETS>],securityGroups=[<APP_SG>],assignPublicIp=ENABLED}"
+```
+
+`assignPublicIp=ENABLED` is required — the task needs to reach ECR, S3 and
+Secrets Manager, and there is deliberately no NAT Gateway.
+
+#### Still missing
+
+- **No alert on failure.** A 2am failure is silent until you need a restore.
+  Fix with a CloudWatch alarm on the task's exit code → SNS (§21).
+- **No retention policy** on the backups bucket. Dumps accumulate indefinitely.
+  Cheap, but set a deliberate window — these contain personal data, and
+  "we keep it forever by accident" is not a defensible position.
+
 ### 20.3 Restore one customer — practise this now
 
 **A backup you have never restored is a hope, not a backup.** Do this once while
@@ -1574,6 +1695,94 @@ notification to* → `atlas-alerts`:
 
 Create the "customer is down" and "database storage" alarms **per target group /
 once respectively** at minimum. The rest are worth the ten minutes.
+
+### 21.2b What is actually deployed
+
+Nine alarms and one event rule, all publishing to the `atlas-alerts` SNS topic.
+
+| Alarm | Metric | Threshold | Catches |
+| ----- | ------ | --------- | ------- |
+| `atlas-<customer>-DOWN` (one per customer) | `HealthyHostCount` | `< 1` for 2 min | That customer's app is unreachable |
+| `atlas-rds-storage-low` | `FreeStorageSpace` | `< 2 GB` | A full disk — takes **every** customer down at once |
+| `atlas-rds-memory-low` | `FreeableMemory` | `< 100 MB` | Swapping on a 1 GB instance |
+| `atlas-rds-cpu-high` | `CPUUtilization` | `> 80%` for 15 min | Early warning |
+| `atlas-rds-connections-high` | `DatabaseConnections` | `> 40` | Approaching the instance limit |
+| `atlas-alb-5xx` | `HTTPCode_Target_5XX_Count` | `> 10` in 5 min | App is up but erroring |
+| `atlas-cert-expiring` | `DaysToExpiry` | `< 21 days` | ACM auto-renewal has failed — expiry takes all customers offline simultaneously |
+| `atlas-backup-failed` *(EventBridge rule, not an alarm)* | ECS Task State Change, non-zero exit | — | The nightly backup ran and failed |
+
+The `*-DOWN` alarms use `treat-missing-data breaching` deliberately: metrics
+ceasing entirely is itself a problem and should page, not sit quietly in
+`INSUFFICIENT_DATA`. All alarms also set `--ok-actions`, so a "resolved" email
+follows; drop those if it proves noisy.
+
+> **⚠ Setting an SNS topic policy replaces it wholesale — it does not merge.**
+> The topic policy must grant publish rights to **all three** of: the account
+> owner, `cloudwatch.amazonaws.com` (the alarms), and `events.amazonaws.com`
+> (the backup rule). Adding a statement for one by itself silently blocks the
+> others, and the symptom is alarms that change state correctly while no email
+> ever arrives.
+
+Three further alarms, each catching something the others cannot:
+
+| Alarm | Metric | Threshold | Why it earns its place |
+| ----- | ------ | --------- | ---------------------- |
+| `atlas-rds-cpu-credits-low` | `CPUCreditBalance` | `< 30` | `db.t4g.micro` is **burstable**. At zero credits the instance is throttled hard and the app becomes inexplicably slow **while CPU utilisation looks normal** — no other alarm sees this, and it is baffling without the metric |
+| `atlas-alb-elb-5xx` | `HTTPCode_ELB_5XX_Count` | `> 5` in 5 min | Errors from the load balancer itself, usually "no healthy targets". In a total outage `Target_5XX` stays silent, because nothing is there to return an error |
+| `atlas-alb-slow` | `TargetResponseTime` p95 | `> 3s` for 10 min | Slowness precedes outages — the one alarm that may let you act before customers notice |
+
+### 21.2c The dashboard
+
+`atlas-overview` — one page covering all customers:
+
+- Healthy containers per customer, with the failure threshold marked
+- Requests and errors, split into **app 5xx** vs **ALB 5xx** (different failures)
+- p95/p99 latency
+- The shared RDS row — CPU, burst credits, storage, memory, connections,
+  labelled as shared because a problem there hits **every** customer at once
+- Live alarm status
+- Two Logs Insights panels: recent errors across all customers, and the nightly
+  backup history so a glance confirms it ran
+
+```bash
+aws cloudwatch put-dashboard --dashboard-name atlas-overview --dashboard-body file://dashboard.json
+```
+
+Console: CloudWatch → Dashboards → `atlas-overview`.
+
+#### Deliberately not added
+
+- **ECS `RunningTaskCount`** — redundant with `HealthyHostCount`, which already
+  catches crashed *and* unhealthy. Duplicate coverage is how real alerts get
+  ignored.
+- **CloudWatch Synthetics canaries** — would log in and click through on a
+  schedule, catching "up but broken" (login failing while `/api/health/ready`
+  still returns 200, since it only proves the database is reachable). This is
+  the largest remaining blind spot. ~$5/month for three customers on a 5-minute
+  schedule — worth it once these are revenue-generating.
+- **RDS read/write latency** — meaningful at scale, noise at this size.
+
+#### A gap this does not cover
+
+`atlas-backup-failed` catches "the backup ran and failed." It does **not** catch
+"the backup never ran" — if the schedule is disabled or deleted, no task starts,
+no event fires, and nothing alerts. Silence is not success.
+
+Options for closing it are either unreliable (alarming on EventBridge Scheduler
+metrics) or billable (S3 request metrics), so the pragmatic mitigation is a
+monthly habit:
+
+```bash
+aws s3 ls s3://<backups-bucket>/ --recursive | tail -5
+```
+
+Confirm the dates are recent. Ten seconds, and it catches the one failure mode
+the automation cannot see.
+
+#### Adding a customer
+
+Create a `atlas-<customer>-DOWN` alarm for their target group — §18's checklist
+step. Without it, that customer can be down indefinitely with no alert.
 
 ### 21.3 Sanity-check that alerts actually arrive
 
@@ -1726,9 +1935,11 @@ revision number there is the truth, not the one you created.
 
 In the order the pain usually arrives:
 
-1. **Nightly backups (do this first).** EventBridge Scheduler → a one-off Fargate
-   task running `mysqldump` → S3. It must run **inside the VPC**; a scheduled
-   GitHub Actions job cannot, because its runners' IPs are dynamic.
+1. ~~**Nightly backups.**~~ **Done** — see §20.2b. EventBridge Scheduler → a
+   one-off Fargate task running `mysqldump` → S3, inside the VPC. (A scheduled
+   GitHub Actions job could not do this: its runners' IPs are dynamic, so it
+   would need the RDS security group opened far wider than is acceptable.)
+   What remains is alerting on failure and a retention policy.
 2. **A release pipeline.** GitHub Actions with **OIDC** — an IAM role GitHub can
    assume, so there are no long-lived AWS keys in your repository. Two workflows:
    *build image on tag*, and *deploy one customer on manual dispatch*. Your
