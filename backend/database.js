@@ -60,6 +60,7 @@ const SCHEMA_SQL = [
     key TEXT UNIQUE NOT NULL,
     description TEXT,
     wip_limits TEXT DEFAULT '{}',
+    is_service_desk INTEGER DEFAULT 0,
     lead_id TEXT REFERENCES users(id),
     created_at TEXT DEFAULT (datetime('now'))
   )`,
@@ -89,7 +90,7 @@ const SCHEMA_SQL = [
     issue_number INTEGER NOT NULL,
     title TEXT NOT NULL,
     description TEXT,
-    type TEXT DEFAULT 'task' CHECK(type IN ('story','task','bug','epic','subtask')),
+    type TEXT DEFAULT 'task' CHECK(type IN ('story','task','bug','epic','subtask','request')),
     status TEXT DEFAULT 'todo',
     priority TEXT DEFAULT 'medium' CHECK(priority IN ('highest','high','medium','low','lowest')),
     assignee_id TEXT REFERENCES users(id),
@@ -104,6 +105,8 @@ const SCHEMA_SQL = [
     epic_color TEXT DEFAULT 'purple' CHECK(epic_color IN ('purple','blue','teal','green','yellow','orange','red','pink')),
     fix_version_id TEXT REFERENCES versions(id),
     component_id TEXT REFERENCES components(id),
+    request_type_id TEXT REFERENCES sd_request_types(id),
+    sd_fields TEXT DEFAULT '{}',
     board_order INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
@@ -113,6 +116,7 @@ const SCHEMA_SQL = [
     issue_id TEXT NOT NULL REFERENCES issues(id),
     author_id TEXT NOT NULL REFERENCES users(id),
     body TEXT NOT NULL,
+    visibility TEXT DEFAULT 'public',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   )`,
@@ -295,7 +299,18 @@ const SCHEMA_SQL = [
     label TEXT NOT NULL,
     category TEXT DEFAULT 'in_progress' CHECK(category IN ('todo','in_progress','done')),
     position INTEGER DEFAULT 0,
+    waiting_for_customer INTEGER DEFAULT 0,
     UNIQUE(project_id, key)
+  )`,
+  `CREATE TABLE IF NOT EXISTS sd_request_types (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    icon TEXT DEFAULT 'help-circle',
+    fields TEXT NOT NULL DEFAULT '[]',
+    position INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
   )`,
   `CREATE TABLE IF NOT EXISTS wiki_page_restrictions (
     page_id TEXT NOT NULL REFERENCES wiki_pages(id),
@@ -517,6 +532,7 @@ const MYSQL_SCHEMA_SQL = [
     \`key\` VARCHAR(50) UNIQUE NOT NULL,
     description TEXT,
     wip_limits VARCHAR(2000),
+    is_service_desk TINYINT DEFAULT 0,
     lead_id VARCHAR(36),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   ) DEFAULT CHARSET=utf8mb4`,
@@ -546,7 +562,7 @@ const MYSQL_SCHEMA_SQL = [
     issue_number INT NOT NULL,
     title VARCHAR(512) NOT NULL,
     description TEXT,
-    type VARCHAR(20) DEFAULT 'task' CHECK(type IN ('story','task','bug','epic','subtask')),
+    type VARCHAR(20) DEFAULT 'task' CHECK(type IN ('story','task','bug','epic','subtask','request')),
     status VARCHAR(20) DEFAULT 'todo',
     priority VARCHAR(20) DEFAULT 'medium' CHECK(priority IN ('highest','high','medium','low','lowest')),
     assignee_id VARCHAR(36),
@@ -561,6 +577,8 @@ const MYSQL_SCHEMA_SQL = [
     epic_color VARCHAR(20) DEFAULT 'purple' CHECK(epic_color IN ('purple','blue','teal','green','yellow','orange','red','pink')),
     fix_version_id VARCHAR(36),
     component_id VARCHAR(36),
+    request_type_id VARCHAR(36) NULL,
+    sd_fields TEXT,
     board_order INT DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -570,6 +588,7 @@ const MYSQL_SCHEMA_SQL = [
     issue_id VARCHAR(36) NOT NULL,
     author_id VARCHAR(36) NOT NULL,
     body TEXT NOT NULL,
+    visibility VARCHAR(10) DEFAULT 'public',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   ) DEFAULT CHARSET=utf8mb4`,
@@ -752,7 +771,18 @@ const MYSQL_SCHEMA_SQL = [
     label VARCHAR(255) NOT NULL,
     category VARCHAR(20) DEFAULT 'in_progress' CHECK(category IN ('todo','in_progress','done')),
     position INT DEFAULT 0,
+    waiting_for_customer TINYINT DEFAULT 0,
     UNIQUE(project_id, \`key\`)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS sd_request_types (
+    id VARCHAR(36) PRIMARY KEY,
+    project_id VARCHAR(36) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    icon VARCHAR(50) DEFAULT 'help-circle',
+    fields TEXT NOT NULL,
+    position INT DEFAULT 0,
+    created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
   ) DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS wiki_page_restrictions (
     page_id VARCHAR(36) NOT NULL,
