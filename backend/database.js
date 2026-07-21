@@ -1709,6 +1709,31 @@ function seedDemoData() {
     });
   });
 
+  // ===== Wiki focus mode (epic 39) — shipped =====
+  // Shipped in commit 8000025 but never seeded; the roadmap under-reported by one.
+  {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(38);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, 38)`,
+      [eid, projId3, `ATLAS-${num}`, num, 'Wiki focus mode',
+       'Full-width distraction-free reading and editing: the page fills the window, both sidebars collapse, and the choice persists per user.',
+       userIds[0], 'blue', startDate, dueDate]);
+    [
+      { title: 'Focus mode toggle with full-width page layout', type: 'story' },
+      { title: 'Collapse both sidebars and restore on exit', type: 'task' },
+      { title: 'Persist the focus preference per user', type: 'task' },
+    ].forEach((c, ci) => {
+      const cnum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${cnum}`, cnum, c.title, c.type, userIds[0], userIds[0], eid, ci]);
+    });
+  }
+
   // ===== CONFLUENCE SEED DATA =====
   const spaceEng = uuid();
   const spaceProd = uuid();
