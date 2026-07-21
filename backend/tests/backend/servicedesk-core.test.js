@@ -178,3 +178,87 @@ describe('migration 011_service_desk_core', () => {
     expect(all(db, 'SELECT * FROM issues').length).toBe(5);
   });
 });
+
+const request = require('supertest');
+const { createTestApp, adminHeaders, userHeaders } = require('./setup');
+
+describe('request types', () => {
+  let app, headers, memberHeaders, projectId;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+    headers = await adminHeaders();
+    memberHeaders = await userHeaders();
+    const projects = await request(app).get('/api/projects').set(headers);
+    projectId = projects.body.find((p) => p.key === 'ATL').id;
+  });
+
+  test('creates a request type with a parsed fields array', async () => {
+    const res = await request(app).post(`/api/projects/${projectId}/request-types`).set(headers).send({
+      name: 'Report a bug',
+      description: 'Something is broken',
+      icon: 'bug',
+      fields: [{ key: 'steps', label: 'Steps to reproduce', type: 'textarea', required: true }],
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.name).toBe('Report a bug');
+    expect(Array.isArray(res.body.fields)).toBe(true);
+    expect(res.body.fields[0].key).toBe('steps');
+  });
+
+  test('rejects a request type with no name', async () => {
+    const res = await request(app).post(`/api/projects/${projectId}/request-types`).set(headers).send({ name: '  ' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/name/i);
+  });
+
+  test('rejects a field of an unknown type', async () => {
+    const res = await request(app).post(`/api/projects/${projectId}/request-types`).set(headers).send({
+      name: 'Bad form',
+      fields: [{ key: 'x', label: 'X', type: 'hologram' }],
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/type/i);
+  });
+
+  test('rejects a field with no key', async () => {
+    const res = await request(app).post(`/api/projects/${projectId}/request-types`).set(headers).send({
+      name: 'Bad form 2',
+      fields: [{ label: 'No key', type: 'text' }],
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/key/i);
+  });
+
+  test('a non-admin member cannot create a request type', async () => {
+    const res = await request(app).post(`/api/projects/${projectId}/request-types`).set(memberHeaders).send({ name: 'Nope' });
+    expect(res.status).toBe(403);
+  });
+
+  test('lists request types in position order', async () => {
+    const res = await request(app).get(`/api/projects/${projectId}/request-types`).set(headers);
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBeGreaterThan(0);
+    expect(Array.isArray(res.body[0].fields)).toBe(true);
+  });
+
+  test('updates a request type', async () => {
+    const created = await request(app).post(`/api/projects/${projectId}/request-types`).set(headers).send({ name: 'Rename me' });
+    const res = await request(app).put(`/api/request-types/${created.body.id}`).set(headers).send({ name: 'Renamed' });
+    expect(res.status).toBe(200);
+    expect(res.body.name).toBe('Renamed');
+  });
+
+  test('deletes a request type that has no requests', async () => {
+    const created = await request(app).post(`/api/projects/${projectId}/request-types`).set(headers).send({ name: 'Delete me' });
+    const res = await request(app).delete(`/api/request-types/${created.body.id}`).set(headers);
+    expect(res.status).toBe(200);
+    const after = await request(app).get(`/api/request-types/${created.body.id}`).set(headers);
+    expect(after.status).toBe(404);
+  });
+
+  test('404s on an unknown request type', async () => {
+    const res = await request(app).put('/api/request-types/does-not-exist').set(headers).send({ name: 'x' });
+    expect(res.status).toBe(404);
+  });
+});

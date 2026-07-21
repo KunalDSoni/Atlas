@@ -95,6 +95,7 @@ async function createTestApp() {
   testApp.use('/api', require('../../routes/webhooks'));
   testApp.use('/api', require('../../routes/stream'));
   testApp.use('/api', require('../../routes/custom-fields'));
+  testApp.use('/api', require('../../routes/request-types'));
 
   app = testApp;
   return testApp;

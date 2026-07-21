@@ -45,6 +45,7 @@ const tokensRoutes = require('./routes/tokens');
 const webhooksRoutes = require('./routes/webhooks');
 const streamRoutes = require('./routes/stream');
 const customFieldsRoutes = require('./routes/custom-fields');
+const requestTypesRoutes = require('./routes/request-types');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -197,6 +198,7 @@ app.use('/api', streamRoutes);
 
 // Per-project custom fields
 app.use('/api', customFieldsRoutes);
+app.use('/api', requestTypesRoutes);
 
 // SPA fallback (Express 5 compatible)
 app.get('/{*splat}', (req, res) => {
