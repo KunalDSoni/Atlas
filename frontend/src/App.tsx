@@ -35,6 +35,8 @@ const ProductRoadmap = lazy(() => import('@/screens/product-roadmap'));
 const ProductObjectives = lazy(() => import('@/screens/product-objectives'));
 const ProductCustomers = lazy(() => import('@/screens/product-customers'));
 const Portal = lazy(() => import('@/screens/portal'));
+const HelpCenter = lazy(() => import('@/screens/help-center'));
+const HelpRequests = lazy(() => import('@/screens/help-requests'));
 
 function FullPageSpinner() {
   return (
@@ -59,7 +61,37 @@ function RequireAdmin({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/**
+ * The help center, for service desk customers.
+ *
+ * Deliberately outside ProtectedLayout: a customer has no project, no board and
+ * no sidebar, so rendering AppShell around this would be chrome pointing at
+ * screens the server would 403 anyway.
+ */
+function HelpLayout() {
+  return (
+    <RequireAuth>
+      <Suspense fallback={<FullPageSpinner />}>
+        {/*
+          Paths are relative: the parent route "/help/*" has already consumed
+          "/help", so a descendant <Routes> matches only what remains.
+        */}
+        <Routes>
+          <Route path="" element={<HelpCenter />} />
+          <Route path="requests" element={<HelpRequests />} />
+          <Route path="requests/:key" element={<HelpRequests />} />
+          <Route path="*" element={<Navigate to="/help" replace />} />
+        </Routes>
+      </Suspense>
+    </RequireAuth>
+  );
+}
+
 function ProtectedLayout() {
+  const { user } = useAuth();
+  // The server refuses every internal endpoint for a client; without this the
+  // customer would land on a dashboard of failed requests.
+  if (user?.role === 'client') return <Navigate to="/help" replace />;
   return (
     <RequireAuth>
       <SettingsProvider>
@@ -111,6 +143,7 @@ export default function App() {
         <AuthProvider>
           <Routes>
             <Route path="/login" element={<LoginScreen />} />
+            <Route path="/help/*" element={<HelpLayout />} />
             <Route path="*" element={<ProtectedLayout />} />
           </Routes>
           <Toaster richColors closeButton position="bottom-right" />

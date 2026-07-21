@@ -1769,6 +1769,86 @@ function seedDemoData() {
     });
   }
 
+  // ===== Service desk wave (epics 40-41) — shipped =====
+  const serviceDeskEpics = [
+    { title: 'Service desk foundation', color: 'purple',
+      desc: 'Requests as first-class issues: service-desk projects, request types with a validated field schema, and public/internal comment visibility so an agent can take a note the customer never sees.',
+      children: [
+        { title: 'Migration 011: request types, request issue type, comment visibility', type: 'task' },
+        { title: 'Request types with a validated field schema', type: 'story' },
+        { title: 'Public and internal comment visibility', type: 'story' },
+      ] },
+    { title: 'Help center', color: 'teal',
+      desc: 'The customer-facing surface: browse request types, raise a request, track it, reply, and resolve it — behind a single allow-list projection so no internal field can reach a customer.',
+      children: [
+        { title: 'Customer projection and request access middleware', type: 'task' },
+        { title: 'Help center: raise, track, reply, resolve', type: 'story' },
+        { title: 'Confine client-role users to the help center', type: 'task' },
+        { title: 'Help center screens and client redirect', type: 'story' },
+      ] },
+  ];
+  serviceDeskEpics.forEach((epic, i) => {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(39 + i);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, ?)`,
+      [eid, projId3, `ATLAS-${num}`, num, epic.title, epic.desc, userIds[0], epic.color, startDate, dueDate, 39 + i]);
+    epic.children.forEach((c, ci) => {
+      const cnum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${cnum}`, cnum, c.title, c.type, userIds[0], userIds[0], eid, ci]);
+    });
+  });
+
+  // ===== DEMO SERVICE DESK =====
+  // Gives the help center shape on a fresh database. Dana (userIds[5]) is the
+  // only seeded client, so the requests must be hers — seeding them against a
+  // staff account would leave the customer's own view empty.
+  const projId4 = uuid();
+  db.run("INSERT INTO projects (id, name, key, description, lead_id, is_service_desk) VALUES (?, ?, ?, ?, ?, 1)",
+    [projId4, 'Help Desk', 'HD', 'Customer requests raised through the help center', userIds[0]]);
+  db.run("INSERT INTO project_members (id, project_id, user_id, role_in_project) VALUES (?, ?, ?, 'lead')",
+    [uuid(), projId4, userIds[0]]);
+
+  const requestTypes = [
+    { name: 'Hardware problem', icon: 'laptop', desc: 'A device is broken or missing',
+      fields: [
+        { key: 'model', label: 'Device model', type: 'text', required: true },
+        { key: 'urgency', label: 'Urgency', type: 'select', required: true, options: ['Low', 'Medium', 'High'] },
+      ] },
+    { name: 'Access request', icon: 'key', desc: 'Ask for access to a system',
+      fields: [
+        { key: 'system', label: 'System', type: 'text', required: true },
+        { key: 'reason', label: 'Why do you need access?', type: 'textarea', required: true },
+      ] },
+    { name: 'Something else', icon: 'help-circle', desc: 'Anything that does not fit the other forms',
+      fields: [{ key: 'details', label: 'Tell us more', type: 'textarea', required: false }] },
+  ];
+  const requestTypeIds = [];
+  requestTypes.forEach((t, i) => {
+    const rtId = uuid();
+    requestTypeIds.push(rtId);
+    db.run("INSERT INTO sd_request_types (id, project_id, name, description, icon, fields, position) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [rtId, projId4, t.name, t.desc, t.icon, JSON.stringify(t.fields), i]);
+  });
+
+  const demoRequests = [
+    { type: 0, title: 'Laptop will not power on', status: 'todo', fields: { model: 'ThinkPad X1', urgency: 'High' } },
+    { type: 1, title: 'Access to the analytics dashboard', status: 'in_progress', fields: { system: 'Analytics', reason: 'Reporting for Q3' } },
+    { type: 2, title: 'Meeting room display keeps disconnecting', status: 'done', fields: { details: 'Room 4B, every morning' } },
+  ];
+  demoRequests.forEach((r, i) => {
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, request_type_id, sd_fields, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'request', ?, 'medium', ?, ?, ?, ?)`,
+      [uuid(), projId4, `HD-${i + 1}`, i + 1, r.title,
+        Object.entries(r.fields).map(([k, v]) => `**${k}**\n${v}`).join('\n\n'),
+        r.status, userIds[5], requestTypeIds[r.type], JSON.stringify(r.fields), i]);
+  });
+
   // ===== CONFLUENCE SEED DATA =====
   const spaceEng = uuid();
   const spaceProd = uuid();
