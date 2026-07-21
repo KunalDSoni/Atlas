@@ -26,17 +26,25 @@ value/effort matrix, insights with evidence quotes, objectives, customers and
 companies with ARR, votes, and a public idea portal. The data model is sound.
 The *loop it describes is not closed*, in four specific places:
 
-1. **Nothing flows in.** `pb_insights.source` enumerates `portal`, `email`,
-   `support`, `sales`, `interview` — but every insight is typed by hand into a
-   form. There is no path from a support conversation to an insight. This got
-   sharper with the service desk: epics 39–41 shipped a help center where
-   customers describe problems in their own words, and none of it can reach the
-   product module.
-2. **Money is recorded and ignored.** `pb_companies.arr` and `.tier` are stored,
-   and `pb_insight_links.importance` grades each piece of evidence 1–3. Nothing
-   multiplies them. Prioritization runs on RICE, where `reach` is a number
-   somebody guessed, while the actual answer — which companies asked, worth how
-   much — is sitting in the database unqueried.
+1. **Only one source flows in.** `POST /api/portal/ideas` already creates an
+   insight with `source='portal'`, attributed to a customer matched by email
+   (`routes/portal.js:35`). That path works. Every *other* value in the
+   `pb_insights.source` enum — `support`, `sales`, `email`, `interview` — is a
+   label somebody picks on a hand-typed form. The gap got sharper with the
+   service desk: epics 39–41 shipped a help center where customers describe
+   problems in their own words, and none of it can reach the product module.
+2. **Demand is measured with a three-point proxy for revenue.**
+   `USER_IMPACT_SQL` (`routes/product-features.js:32`) already computes
+   `SUM(importance × tier_weight)` with `strategic → 3, growth → 2, else 1`,
+   exposes it as `user_impact`, and it is the **default sort** on the features
+   screen as well as appearing on the roadmap and in the feature detail sheet.
+   Tier-weighted demand exists and is in daily use.
+
+   What is unused is `pb_companies.arr` — the actual revenue figure, editable in
+   the customers screen and read by nothing that ranks anything. A $2M strategic
+   account and a $60k strategic account both count as exactly 3. And there is no
+   way to see *which* companies produced a given score, so the number cannot be
+   argued with or audited.
 3. **Volume has no structure.** `pb_insights.processed` is a boolean. Two
    hundred insights is two hundred rows; there is no notion of "these fourteen
    are the same request."
@@ -128,12 +136,17 @@ renders as "source removed" rather than an error.
 
 ### 47.2 Capture points
 
-| Source | Where | Who |
-|---|---|---|
-| Service desk request | Request detail, agent view | agent, `board_admin` |
-| Issue comment | Comment action menu | any internal user |
-| Wiki selection | Existing comment-on-selection affordance (epic 31) | any internal user |
-| Portal idea | Automatic on `POST /api/portal/ideas` | — |
+| Source | Where | Who | Status |
+|---|---|---|---|
+| Service desk request | Request detail, agent view | agent, `board_admin` | new |
+| Issue comment | Comment action menu | any internal user | new |
+| Wiki selection | Existing comment-on-selection affordance (epic 31) | any internal user | new |
+| Portal idea | `POST /api/portal/ideas` | — | **already works** |
+
+The portal path already creates insights with `source='portal'` and matches the
+submitter to a customer by email. This epic leaves that route's behaviour alone
+and only backfills `origin_kind='portal'` and `origin_id` onto the insights it
+creates, so the inbox can render a consistent source chip.
 
 `POST /api/product/insights/capture` takes `{origin_kind, origin_id, excerpt,
 customer_id?, title}` and creates the insight unprocessed. The excerpt is
@@ -163,6 +176,19 @@ fast rather than complete.
 ## Epic 48: Revenue-weighted demand
 
 No migration. Everything below reads rows that already exist.
+
+### 48.0 What already exists, and why this is additive
+
+`user_impact` already ships the tier-weighted form of this idea, and it is the
+features screen's default sort. This epic **does not change it**. Silently
+altering the formula behind a number people already sort by — and that appears
+in three places — would move every ranking with no explanation attached.
+
+Instead `demand` arrives as a second, separate figure in real currency, and the
+two sit side by side. `user_impact` answers "how much weighted enthusiasm";
+`demand` answers "how much revenue". Where they disagree — a feature with many
+excited small accounts versus one quiet large one — the disagreement is the
+finding, and collapsing it into a single number would destroy it.
 
 ### 48.1 The demand score
 
