@@ -1,11 +1,14 @@
 import { defineConfig, devices } from '@playwright/test';
+import os from 'node:os';
+import path from 'node:path';
 
 // First-run E2E: the same real backend, but seeded with NOTHING — only the
 // bootstrap admin from ADMIN_EMAIL/ADMIN_PASSWORD. This is what a fresh
 // deployment actually looks like, and the seeded suite (playwright.config.ts)
 // can never catch a zero-project regression because it always has projects.
 const PORT = 3124;
-const DB = `/private/tmp/atlas-e2e-empty-${process.pid}.db`;
+// See playwright.config.ts — /private/tmp exists only on macOS.
+const DB = path.join(os.tmpdir(), `atlas-e2e-empty-${process.pid}.db`);
 
 export default defineConfig({
   testDir: './e2e-empty',

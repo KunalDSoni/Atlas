@@ -1,10 +1,14 @@
 import { defineConfig, devices } from '@playwright/test';
+import os from 'node:os';
+import path from 'node:path';
 
 // E2E drives the REAL app: the backend serves the built SPA, so we boot
 // `backend/server.js` against a throwaway SQLite DB with demo data, then run
 // Chromium against it. This is the verification layer the app was missing.
 const PORT = 3123;
-const DB = `/private/tmp/atlas-e2e-${process.pid}.db`;
+// os.tmpdir(), not a hardcoded /private/tmp: that path is macOS-only and the
+// server dies with ENOENT on the Linux CI runner.
+const DB = path.join(os.tmpdir(), `atlas-e2e-${process.pid}.db`);
 
 export default defineConfig({
   testDir: './e2e',
