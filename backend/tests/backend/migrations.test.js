@@ -24,7 +24,13 @@ describe('Migration definitions', () => {
   test('every step names both a sqlite and a mysql form', () => {
     for (const m of MIGRATIONS) {
       for (const step of m.steps) {
-        if (step.addColumn) {
+        if (step.run) {
+          // A run step inspects the database before deciding what to execute,
+          // so it cannot declare its SQL up front. The invariant still holds —
+          // the function itself must branch on adapter.driver — but only its
+          // shape can be checked here.
+          expect(typeof step.run).toBe('function');
+        } else if (step.addColumn) {
           expect(step.addColumn.table).toBeTruthy();
           expect(step.addColumn.column).toBeTruthy();
           expect(step.addColumn.sqlite).toBeTruthy();
@@ -32,6 +38,16 @@ describe('Migration definitions', () => {
         } else {
           expect(step.sql.sqlite).toBeTruthy();
           expect(step.sql.mysql).toBeTruthy();
+        }
+      }
+    }
+  });
+
+  test('every run step branches on the driver rather than assuming one', () => {
+    for (const m of MIGRATIONS) {
+      for (const step of m.steps) {
+        if (step.run) {
+          expect(step.run.toString()).toMatch(/adapter\.driver/);
         }
       }
     }

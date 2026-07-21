@@ -249,6 +249,153 @@ const MIGRATIONS = [
       },
     ],
   },
+  {
+    id: '011_service_desk_core',
+    description: 'Service desk foundation: request types, request issue type, comment visibility',
+    steps: [
+      {
+        addColumn: {
+          table: 'projects', column: 'is_service_desk',
+          sqlite: 'ALTER TABLE projects ADD COLUMN is_service_desk INTEGER DEFAULT 0',
+          mysql: 'ALTER TABLE projects ADD COLUMN is_service_desk TINYINT DEFAULT 0',
+        },
+      },
+      {
+        addColumn: {
+          table: 'comments', column: 'visibility',
+          sqlite: "ALTER TABLE comments ADD COLUMN visibility TEXT DEFAULT 'public'",
+          mysql: "ALTER TABLE comments ADD COLUMN visibility VARCHAR(10) DEFAULT 'public'",
+        },
+      },
+      {
+        addColumn: {
+          table: 'project_statuses', column: 'waiting_for_customer',
+          sqlite: 'ALTER TABLE project_statuses ADD COLUMN waiting_for_customer INTEGER DEFAULT 0',
+          mysql: 'ALTER TABLE project_statuses ADD COLUMN waiting_for_customer TINYINT DEFAULT 0',
+        },
+      },
+      {
+        sql: {
+          sqlite: `CREATE TABLE IF NOT EXISTS sd_request_types (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id),
+            name TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            icon TEXT DEFAULT 'help-circle',
+            fields TEXT NOT NULL DEFAULT '[]',
+            position INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now'))
+          )`,
+          mysql: `CREATE TABLE IF NOT EXISTS sd_request_types (
+            id VARCHAR(36) PRIMARY KEY,
+            project_id VARCHAR(36) NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            description TEXT,
+            icon VARCHAR(50) DEFAULT 'help-circle',
+            fields TEXT NOT NULL,
+            position INT DEFAULT 0,
+            created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
+          ) DEFAULT CHARSET=utf8mb4`,
+        },
+      },
+      {
+        addColumn: {
+          table: 'issues', column: 'request_type_id',
+          sqlite: 'ALTER TABLE issues ADD COLUMN request_type_id TEXT REFERENCES sd_request_types(id)',
+          mysql: 'ALTER TABLE issues ADD COLUMN request_type_id VARCHAR(36) NULL',
+        },
+      },
+      {
+        addColumn: {
+          table: 'issues', column: 'sd_fields',
+          sqlite: "ALTER TABLE issues ADD COLUMN sd_fields TEXT DEFAULT '{}'",
+          mysql: 'ALTER TABLE issues ADD COLUMN sd_fields TEXT',
+        },
+      },
+      // ---- The type CHECK rebuild.
+      //
+      // SQLite cannot alter a CHECK constraint in place, so `issues` is rebuilt.
+      // The new table's DDL is DERIVED FROM THE EXISTING ONE rather than written
+      // out here: the column set differs across deployments depending on which
+      // migrations a database has seen, and a hardcoded shape silently drops
+      // whichever columns it forgets. Deriving it means every column, default,
+      // and constraint survives by construction, and `SELECT *` is a safe copy
+      // because the two tables are identical but for the one CHECK.
+      //
+      // Foreign keys are not enforced here (database.js issues no
+      // PRAGMA foreign_keys=ON and sql.js defaults it off) and child tables
+      // reference `issues` by name, so the rename leaves them resolving to the
+      // new table.
+      {
+        run: async (adapter) => {
+          if (adapter.driver !== 'sqlite') return;
+
+          const rows = await adapter.all(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='issues'");
+          const ddl = rows[0] && rows[0].sql;
+          // No table yet (fresh install builds it from database.js), or the
+          // CHECK already permits 'request' — nothing to rebuild. This is also
+          // what makes the step idempotent.
+          if (!ddl || /'request'/.test(ddl)) return;
+
+          const rebuilt = ddl
+            .replace(/CREATE\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?["'`[]?issues["'`\]]?/i,
+              'CREATE TABLE issues_rebuild_011')
+            .replace(/CHECK\s*\(\s*type\s+IN\s*\(([^)]*)\)\s*\)/i,
+              (_m, list) => `CHECK(type IN (${list.trim()},'request'))`);
+
+          if (!/issues_rebuild_011/.test(rebuilt) || !/'request'/.test(rebuilt)) {
+            throw new Error('011: could not derive the rebuilt issues DDL from ' + ddl);
+          }
+
+          // Indexes live on the table and die with it, so replay their exact DDL.
+          const indexes = await adapter.all(
+            "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='issues' AND sql IS NOT NULL");
+
+          await adapter.exec('DROP TABLE IF EXISTS issues_rebuild_011');
+          await adapter.exec(rebuilt);
+          await adapter.exec('INSERT INTO issues_rebuild_011 SELECT * FROM issues');
+          await adapter.exec('DROP TABLE issues');
+          await adapter.exec('ALTER TABLE issues_rebuild_011 RENAME TO issues');
+          for (const i of indexes) {
+            await adapter.exec(i.sql);
+          }
+        },
+      },
+      // MySQL's equivalent of the rebuild above.
+      //
+      // `ALTER TABLE ... MODIFY COLUMN` does NOT drop an inline CHECK — the
+      // constraint outlives the column definition under its auto-generated name
+      // (issues_chk_1). An earlier draft used MODIFY and left existing MySQL
+      // deployments rejecting every type='request' insert with ERROR 3819,
+      // while every test still passed because fresh test schemas already carry
+      // the extended CHECK. The constraint must be dropped by name and re-added.
+      {
+        run: async (adapter) => {
+          if (adapter.driver !== 'mysql') return;
+
+          const rows = await adapter.all(
+            `SELECT cc.CONSTRAINT_NAME AS name, cc.CHECK_CLAUSE AS clause
+               FROM information_schema.CHECK_CONSTRAINTS cc
+               JOIN information_schema.TABLE_CONSTRAINTS tc
+                 ON tc.CONSTRAINT_SCHEMA = cc.CONSTRAINT_SCHEMA
+                AND tc.CONSTRAINT_NAME = cc.CONSTRAINT_NAME
+              WHERE cc.CONSTRAINT_SCHEMA = DATABASE()
+                AND tc.TABLE_NAME = 'issues'`);
+
+          for (const row of rows) {
+            const clause = String(row.clause || '');
+            // The type CHECK, and only if it predates this migration.
+            if (!/subtask/i.test(clause) || /request/i.test(clause)) continue;
+            await adapter.exec(`ALTER TABLE issues DROP CHECK \`${row.name}\``);
+            await adapter.exec(
+              `ALTER TABLE issues ADD CONSTRAINT \`${row.name}\` ` +
+              "CHECK (type IN ('story','task','bug','epic','subtask','request'))");
+          }
+        },
+      },
+    ],
+  },
 ];
 
 const LEDGER_SQL = {
@@ -306,6 +453,14 @@ function mysqlAdapter(pool) {
 // ===== Runner =====
 
 async function applyStep(adapter, step) {
+  // A step that needs to inspect the database before deciding what SQL to run
+  // (e.g. rebuilding a table whose exact column set varies by migration history)
+  // supplies a function instead of a SQL string. It receives the adapter and is
+  // responsible for its own idempotency.
+  if (step.run) {
+    await step.run(adapter);
+    return;
+  }
   if (step.addColumn) {
     const { table, column } = step.addColumn;
     if (await adapter.hasColumn(table, column)) return;

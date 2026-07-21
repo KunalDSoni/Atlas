@@ -104,4 +104,97 @@ describeMysql('migration runner against real MySQL', () => {
     const [t] = await pool.query("SHOW TABLES LIKE 'wiki_page_issues'");
     expect(t.length).toBe(1);
   }, 30_000);
+
+  test('service desk columns and tables exist in MySQL', async () => {
+    const hasColumn = async (table, column) => {
+      const [r] = await pool.query(
+        'SELECT COUNT(*) c FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?',
+        [table, column]);
+      return Number(r[0].c) > 0;
+    };
+    expect(await hasColumn('issues', 'request_type_id')).toBe(true);
+    expect(await hasColumn('issues', 'sd_fields')).toBe(true);
+    expect(await hasColumn('projects', 'is_service_desk')).toBe(true);
+    expect(await hasColumn('comments', 'visibility')).toBe(true);
+    expect(await hasColumn('project_statuses', 'waiting_for_customer')).toBe(true);
+
+    const [t] = await pool.query("SHOW TABLES LIKE 'sd_request_types'");
+    expect(t.length).toBe(1);
+  }, 30_000);
+
+  // The MySQL-only trap that makes this whole suite worth having.
+  //
+  // `ALTER TABLE ... MODIFY COLUMN` does not drop an inline CHECK: the
+  // constraint survives under its auto-generated name and keeps rejecting the
+  // new value. Every other test here builds its schema from MYSQL_SCHEMA_SQL,
+  // which already carries the extended CHECK, so none of them can catch it.
+  // This one starts from the OLD constraint on purpose.
+  test("migration 011 lets an EXISTING MySQL database accept type='request'", async () => {
+    const legacy = `${DATABASE}_legacy_check`;
+    const mysql = require('mysql2/promise');
+    const bootstrap = await mysql.createConnection({
+      host: HOST, port: PORT, user: USER, password: PASSWORD, charset: 'utf8mb4',
+    });
+    await bootstrap.query(`DROP DATABASE IF EXISTS \`${legacy}\``);
+    await bootstrap.query(`CREATE DATABASE \`${legacy}\` CHARACTER SET utf8mb4`);
+    await bootstrap.end();
+
+    const legacyPool = mysql.createPool({
+      host: HOST, port: PORT, user: USER, password: PASSWORD, database: legacy,
+      charset: 'utf8mb4', dateStrings: true,
+    });
+
+    try {
+      // The pre-011 issues table: the type CHECK without 'request'.
+      await legacyPool.query(`CREATE TABLE issues (
+        id VARCHAR(36) PRIMARY KEY,
+        project_id VARCHAR(36) NOT NULL,
+        issue_key VARCHAR(50) NOT NULL,
+        issue_number INT NOT NULL,
+        title VARCHAR(512) NOT NULL,
+        type VARCHAR(20) DEFAULT 'task' CHECK(type IN ('story','task','bug','epic','subtask')),
+        status VARCHAR(20) DEFAULT 'todo'
+      ) DEFAULT CHARSET=utf8mb4`);
+      await legacyPool.query(`CREATE TABLE projects (
+        id VARCHAR(36) PRIMARY KEY, name VARCHAR(255), \`key\` VARCHAR(50)
+      ) DEFAULT CHARSET=utf8mb4`);
+      await legacyPool.query(`CREATE TABLE comments (
+        id VARCHAR(36) PRIMARY KEY, issue_id VARCHAR(36), author_id VARCHAR(36), body TEXT
+      ) DEFAULT CHARSET=utf8mb4`);
+      await legacyPool.query(`CREATE TABLE project_statuses (
+        id VARCHAR(36) PRIMARY KEY, project_id VARCHAR(36), \`key\` VARCHAR(50),
+        label VARCHAR(255), category VARCHAR(20), position INT
+      ) DEFAULT CHARSET=utf8mb4`);
+
+      // Rejected before the migration.
+      await expect(legacyPool.query(
+        "INSERT INTO issues (id,project_id,issue_key,issue_number,title,type) VALUES ('a','p','K-1',1,'t','request')",
+      )).rejects.toThrow();
+
+      // Only 011 is outstanding; the rest are irrelevant to this table.
+      const legacyAdapter = mysqlAdapter(legacyPool);
+      await legacyAdapter.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+        id VARCHAR(120) PRIMARY KEY, applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      ) DEFAULT CHARSET=utf8mb4`);
+      for (const m of MIGRATIONS) {
+        if (m.id !== '011_service_desk_core') {
+          await legacyAdapter.exec('INSERT INTO schema_migrations (id) VALUES (?)', [m.id]);
+        }
+      }
+      await runMigrations(legacyAdapter);
+
+      // Accepted after it.
+      await legacyPool.query(
+        "INSERT INTO issues (id,project_id,issue_key,issue_number,title,type) VALUES ('b','p','K-2',2,'t','request')");
+      const [rows] = await legacyPool.query("SELECT type FROM issues WHERE id='b'");
+      expect(rows[0].type).toBe('request');
+
+      // And the constraint still rejects nonsense — it was replaced, not removed.
+      await expect(legacyPool.query(
+        "INSERT INTO issues (id,project_id,issue_key,issue_number,title,type) VALUES ('c','p','K-3',3,'t','banana')",
+      )).rejects.toThrow();
+    } finally {
+      await legacyPool.end();
+    }
+  }, 60_000);
 });

@@ -63,9 +63,13 @@ async function createTestApp() {
   testApp.use(requestLogger);
 
   testApp.use('/api/auth', require('../../routes/auth'));
-  testApp.use('/api/users', require('../../routes/users'));
+  // Mirrors server.js: profile, settings and the help center stay open to
+  // clients; everything mounted after blockClients is staff-only.
   testApp.use('/api/profile', require('../../routes/profile'));
   testApp.use('/api/settings', require('../../routes/settings'));
+  testApp.use('/api', require('../../routes/help'));
+  testApp.use('/api', require('../../middleware/servicedesk').blockClients);
+  testApp.use('/api/users', require('../../routes/users'));
   testApp.use('/api/projects', require('../../routes/projects'));
   testApp.use('/api', require('../../routes/sprints'));
   testApp.use('/api', require('../../routes/issues'));
@@ -95,6 +99,7 @@ async function createTestApp() {
   testApp.use('/api', require('../../routes/webhooks'));
   testApp.use('/api', require('../../routes/stream'));
   testApp.use('/api', require('../../routes/custom-fields'));
+  testApp.use('/api', require('../../routes/request-types'));
 
   app = testApp;
   return testApp;

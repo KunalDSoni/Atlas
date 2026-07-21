@@ -780,3 +780,46 @@ export interface PortalFeature {
   vote_count: number;
   has_voted: boolean;
 }
+
+// ===== SERVICE DESK =====
+
+export type RequestFieldType = 'text' | 'textarea' | 'select' | 'date';
+
+export interface RequestField {
+  key: string;
+  label: string;
+  type: RequestFieldType;
+  required: boolean;
+  options?: string[];
+}
+
+export interface RequestType {
+  id: string;
+  project_id?: string;
+  name: string;
+  description: string;
+  icon: string;
+  fields: RequestField[];
+  position?: number;
+}
+
+export interface PublicRequestComment {
+  id: string;
+  body: string;
+  author_name: string;
+  created_at: string;
+}
+
+/** What a customer is allowed to see of a request — mirrors toPublicRequest(). */
+export interface PublicRequest {
+  key: string;
+  summary: string;
+  description: string;
+  fields: Record<string, string>;
+  request_type: { name: string; icon: string } | null;
+  status: string;
+  status_category: 'todo' | 'in_progress' | 'done' | null;
+  created_at: string;
+  updated_at: string;
+  comments: PublicRequestComment[];
+}

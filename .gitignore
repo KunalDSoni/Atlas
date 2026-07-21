@@ -49,3 +49,6 @@ nginx/ssl/*.crt
 
 # Local-only notes (infrastructure IDs, endpoints) — never commit to a public repo
 *.local.md
+
+# Claude Code worktrees (isolated workspaces, never committed)
+.claude/worktrees/

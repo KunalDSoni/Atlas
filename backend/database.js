@@ -60,6 +60,7 @@ const SCHEMA_SQL = [
     key TEXT UNIQUE NOT NULL,
     description TEXT,
     wip_limits TEXT DEFAULT '{}',
+    is_service_desk INTEGER DEFAULT 0,
     lead_id TEXT REFERENCES users(id),
     created_at TEXT DEFAULT (datetime('now'))
   )`,
@@ -89,7 +90,7 @@ const SCHEMA_SQL = [
     issue_number INTEGER NOT NULL,
     title TEXT NOT NULL,
     description TEXT,
-    type TEXT DEFAULT 'task' CHECK(type IN ('story','task','bug','epic','subtask')),
+    type TEXT DEFAULT 'task' CHECK(type IN ('story','task','bug','epic','subtask','request')),
     status TEXT DEFAULT 'todo',
     priority TEXT DEFAULT 'medium' CHECK(priority IN ('highest','high','medium','low','lowest')),
     assignee_id TEXT REFERENCES users(id),
@@ -104,6 +105,8 @@ const SCHEMA_SQL = [
     epic_color TEXT DEFAULT 'purple' CHECK(epic_color IN ('purple','blue','teal','green','yellow','orange','red','pink')),
     fix_version_id TEXT REFERENCES versions(id),
     component_id TEXT REFERENCES components(id),
+    request_type_id TEXT REFERENCES sd_request_types(id),
+    sd_fields TEXT DEFAULT '{}',
     board_order INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
@@ -113,6 +116,7 @@ const SCHEMA_SQL = [
     issue_id TEXT NOT NULL REFERENCES issues(id),
     author_id TEXT NOT NULL REFERENCES users(id),
     body TEXT NOT NULL,
+    visibility TEXT DEFAULT 'public',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   )`,
@@ -295,7 +299,18 @@ const SCHEMA_SQL = [
     label TEXT NOT NULL,
     category TEXT DEFAULT 'in_progress' CHECK(category IN ('todo','in_progress','done')),
     position INTEGER DEFAULT 0,
+    waiting_for_customer INTEGER DEFAULT 0,
     UNIQUE(project_id, key)
+  )`,
+  `CREATE TABLE IF NOT EXISTS sd_request_types (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    icon TEXT DEFAULT 'help-circle',
+    fields TEXT NOT NULL DEFAULT '[]',
+    position INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
   )`,
   `CREATE TABLE IF NOT EXISTS wiki_page_restrictions (
     page_id TEXT NOT NULL REFERENCES wiki_pages(id),
@@ -517,6 +532,7 @@ const MYSQL_SCHEMA_SQL = [
     \`key\` VARCHAR(50) UNIQUE NOT NULL,
     description TEXT,
     wip_limits VARCHAR(2000),
+    is_service_desk TINYINT DEFAULT 0,
     lead_id VARCHAR(36),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   ) DEFAULT CHARSET=utf8mb4`,
@@ -546,7 +562,7 @@ const MYSQL_SCHEMA_SQL = [
     issue_number INT NOT NULL,
     title VARCHAR(512) NOT NULL,
     description TEXT,
-    type VARCHAR(20) DEFAULT 'task' CHECK(type IN ('story','task','bug','epic','subtask')),
+    type VARCHAR(20) DEFAULT 'task' CHECK(type IN ('story','task','bug','epic','subtask','request')),
     status VARCHAR(20) DEFAULT 'todo',
     priority VARCHAR(20) DEFAULT 'medium' CHECK(priority IN ('highest','high','medium','low','lowest')),
     assignee_id VARCHAR(36),
@@ -561,6 +577,8 @@ const MYSQL_SCHEMA_SQL = [
     epic_color VARCHAR(20) DEFAULT 'purple' CHECK(epic_color IN ('purple','blue','teal','green','yellow','orange','red','pink')),
     fix_version_id VARCHAR(36),
     component_id VARCHAR(36),
+    request_type_id VARCHAR(36) NULL,
+    sd_fields TEXT,
     board_order INT DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -570,6 +588,7 @@ const MYSQL_SCHEMA_SQL = [
     issue_id VARCHAR(36) NOT NULL,
     author_id VARCHAR(36) NOT NULL,
     body TEXT NOT NULL,
+    visibility VARCHAR(10) DEFAULT 'public',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   ) DEFAULT CHARSET=utf8mb4`,
@@ -752,7 +771,18 @@ const MYSQL_SCHEMA_SQL = [
     label VARCHAR(255) NOT NULL,
     category VARCHAR(20) DEFAULT 'in_progress' CHECK(category IN ('todo','in_progress','done')),
     position INT DEFAULT 0,
+    waiting_for_customer TINYINT DEFAULT 0,
     UNIQUE(project_id, \`key\`)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS sd_request_types (
+    id VARCHAR(36) PRIMARY KEY,
+    project_id VARCHAR(36) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    icon VARCHAR(50) DEFAULT 'help-circle',
+    fields TEXT NOT NULL,
+    position INT DEFAULT 0,
+    created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
   ) DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS wiki_page_restrictions (
     page_id VARCHAR(36) NOT NULL,
@@ -1102,23 +1132,28 @@ function seedDemoData() {
   const { v4: uuid } = require('uuid');
 
   // Seed users with different roles
-  const userIds = [uuid(), uuid(), uuid(), uuid(), uuid()];
-  const colors = ['#6366f1', '#ec4899', '#14b8a6', '#f59e0b', '#ef4444'];
-  const names = ['Kunal Soni', 'Sarah Chen', 'Alex Rivera', 'Priya Patel', 'James Wilson'];
-  const emails = ['kunal@example.com', 'sarah@example.com', 'alex@example.com', 'priya@example.com', 'james@example.com'];
-  const roles = ['admin', 'board_admin', 'user', 'client', 'user'];
+  // Priya was seeded as 'client' while that role was inert. The service desk
+  // gives it teeth — a client is confined to the help center — and the test
+  // harness's userHeaders() logs in as her to mean "an ordinary non-admin
+  // user". She is staff; Dana below is the actual customer.
+  const userIds = [uuid(), uuid(), uuid(), uuid(), uuid(), uuid()];
+  const colors = ['#6366f1', '#ec4899', '#14b8a6', '#f59e0b', '#ef4444', '#8b5cf6'];
+  const names = ['Kunal Soni', 'Sarah Chen', 'Alex Rivera', 'Priya Patel', 'James Wilson', 'Dana Okafor'];
+  const emails = ['kunal@example.com', 'sarah@example.com', 'alex@example.com', 'priya@example.com', 'james@example.com', 'dana@customer.example.com'];
+  const roles = ['admin', 'board_admin', 'user', 'user', 'user', 'client'];
 
-  const depts = ['Engineering', 'Engineering', 'Engineering', 'Product', 'Engineering'];
-  const titles = ['CTO', 'Senior Engineer', 'Full Stack Dev', 'Product Manager', 'Junior Dev'];
-  const phones = ['+1-555-0101', '+1-555-0102', '+1-555-0103', '+1-555-0104', '+1-555-0105'];
+  const depts = ['Engineering', 'Engineering', 'Engineering', 'Product', 'Engineering', 'Customer'];
+  const titles = ['CTO', 'Senior Engineer', 'Full Stack Dev', 'Product Manager', 'Junior Dev', 'IT Manager, Northwind'];
+  const phones = ['+1-555-0101', '+1-555-0102', '+1-555-0103', '+1-555-0104', '+1-555-0105', '+1-555-0106'];
   const bios = [
     'Leading the tech team. Passionate about scalable systems.',
     'Backend specialist with 8+ years experience in distributed systems.',
     'Full-stack developer who loves React and Node.js.',
     'Product-focused professional bridging business and technology.',
-    'Junior developer eager to learn and grow.'
+    'Junior developer eager to learn and grow.',
+    'Customer contact at Northwind, raises hardware and access requests.'
   ];
-  const tzs = ['Asia/Dubai', 'America/Los_Angeles', 'America/New_York', 'Asia/Kolkata', 'Europe/London'];
+  const tzs = ['Asia/Dubai', 'America/Los_Angeles', 'America/New_York', 'Asia/Kolkata', 'Europe/London', 'Europe/Berlin'];
 
   // Demo accounts share the documented "password123" credential — stored hashed.
   const demoPassword = hashPasswordSync('password123');
@@ -1707,6 +1742,111 @@ function seedDemoData() {
         VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
         [uuid(), projId3, `ATLAS-${cnum}`, cnum, c.title, c.type, userIds[0], userIds[0], eid, ci]);
     });
+  });
+
+  // ===== Wiki focus mode (epic 39) — shipped =====
+  // Shipped in commit 8000025 but never seeded; the roadmap under-reported by one.
+  {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(38);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, 38)`,
+      [eid, projId3, `ATLAS-${num}`, num, 'Wiki focus mode',
+       'Full-width distraction-free reading and editing: the page fills the window, both sidebars collapse, and the choice persists per user.',
+       userIds[0], 'blue', startDate, dueDate]);
+    [
+      { title: 'Focus mode toggle with full-width page layout', type: 'story' },
+      { title: 'Collapse both sidebars and restore on exit', type: 'task' },
+      { title: 'Persist the focus preference per user', type: 'task' },
+    ].forEach((c, ci) => {
+      const cnum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${cnum}`, cnum, c.title, c.type, userIds[0], userIds[0], eid, ci]);
+    });
+  }
+
+  // ===== Service desk wave (epics 40-41) — shipped =====
+  const serviceDeskEpics = [
+    { title: 'Service desk foundation', color: 'purple',
+      desc: 'Requests as first-class issues: service-desk projects, request types with a validated field schema, and public/internal comment visibility so an agent can take a note the customer never sees.',
+      children: [
+        { title: 'Migration 011: request types, request issue type, comment visibility', type: 'task' },
+        { title: 'Request types with a validated field schema', type: 'story' },
+        { title: 'Public and internal comment visibility', type: 'story' },
+      ] },
+    { title: 'Help center', color: 'teal',
+      desc: 'The customer-facing surface: browse request types, raise a request, track it, reply, and resolve it — behind a single allow-list projection so no internal field can reach a customer.',
+      children: [
+        { title: 'Customer projection and request access middleware', type: 'task' },
+        { title: 'Help center: raise, track, reply, resolve', type: 'story' },
+        { title: 'Confine client-role users to the help center', type: 'task' },
+        { title: 'Help center screens and client redirect', type: 'story' },
+      ] },
+  ];
+  serviceDeskEpics.forEach((epic, i) => {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(39 + i);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, ?)`,
+      [eid, projId3, `ATLAS-${num}`, num, epic.title, epic.desc, userIds[0], epic.color, startDate, dueDate, 39 + i]);
+    epic.children.forEach((c, ci) => {
+      const cnum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${cnum}`, cnum, c.title, c.type, userIds[0], userIds[0], eid, ci]);
+    });
+  });
+
+  // ===== DEMO SERVICE DESK =====
+  // Gives the help center shape on a fresh database. Dana (userIds[5]) is the
+  // only seeded client, so the requests must be hers — seeding them against a
+  // staff account would leave the customer's own view empty.
+  const projId4 = uuid();
+  db.run("INSERT INTO projects (id, name, key, description, lead_id, is_service_desk) VALUES (?, ?, ?, ?, ?, 1)",
+    [projId4, 'Help Desk', 'HD', 'Customer requests raised through the help center', userIds[0]]);
+  db.run("INSERT INTO project_members (id, project_id, user_id, role_in_project) VALUES (?, ?, ?, 'lead')",
+    [uuid(), projId4, userIds[0]]);
+
+  const requestTypes = [
+    { name: 'Hardware problem', icon: 'laptop', desc: 'A device is broken or missing',
+      fields: [
+        { key: 'model', label: 'Device model', type: 'text', required: true },
+        { key: 'urgency', label: 'Urgency', type: 'select', required: true, options: ['Low', 'Medium', 'High'] },
+      ] },
+    { name: 'Access request', icon: 'key', desc: 'Ask for access to a system',
+      fields: [
+        { key: 'system', label: 'System', type: 'text', required: true },
+        { key: 'reason', label: 'Why do you need access?', type: 'textarea', required: true },
+      ] },
+    { name: 'Something else', icon: 'help-circle', desc: 'Anything that does not fit the other forms',
+      fields: [{ key: 'details', label: 'Tell us more', type: 'textarea', required: false }] },
+  ];
+  const requestTypeIds = [];
+  requestTypes.forEach((t, i) => {
+    const rtId = uuid();
+    requestTypeIds.push(rtId);
+    db.run("INSERT INTO sd_request_types (id, project_id, name, description, icon, fields, position) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [rtId, projId4, t.name, t.desc, t.icon, JSON.stringify(t.fields), i]);
+  });
+
+  const demoRequests = [
+    { type: 0, title: 'Laptop will not power on', status: 'todo', fields: { model: 'ThinkPad X1', urgency: 'High' } },
+    { type: 1, title: 'Access to the analytics dashboard', status: 'in_progress', fields: { system: 'Analytics', reason: 'Reporting for Q3' } },
+    { type: 2, title: 'Meeting room display keeps disconnecting', status: 'done', fields: { details: 'Room 4B, every morning' } },
+  ];
+  demoRequests.forEach((r, i) => {
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, request_type_id, sd_fields, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'request', ?, 'medium', ?, ?, ?, ?)`,
+      [uuid(), projId4, `HD-${i + 1}`, i + 1, r.title,
+        Object.entries(r.fields).map(([k, v]) => `**${k}**\n${v}`).join('\n\n'),
+        r.status, userIds[5], requestTypeIds[r.type], JSON.stringify(r.fields), i]);
   });
 
   // ===== CONFLUENCE SEED DATA =====

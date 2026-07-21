@@ -9,6 +9,7 @@ const path = require('path');
 const { initDb, getDb, queryOne } = require('./database');
 const { authMiddleware } = require('./middleware/auth');
 const { requestLogger } = require('./middleware/logger');
+const { blockClients } = require('./middleware/servicedesk');
 const { apiRateLimit } = require('./middleware/ratelimit');
 
 // Route modules
@@ -45,6 +46,8 @@ const tokensRoutes = require('./routes/tokens');
 const webhooksRoutes = require('./routes/webhooks');
 const streamRoutes = require('./routes/stream');
 const customFieldsRoutes = require('./routes/custom-fields');
+const requestTypesRoutes = require('./routes/request-types');
+const helpRoutes = require('./routes/help');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -105,14 +108,25 @@ app.use('/api', apiRateLimit);
 
 app.use('/api/auth', authRoutes);
 
-// Users Module — CRUD for user management (admin)
-app.use('/api/users', usersRoutes);
+// ===== The service desk boundary =====
+// Order matters. A client-role user may reach exactly three things: their own
+// profile, their own settings, and the help center. Everything registered
+// AFTER blockClients is staff-only, enforced once here rather than by each
+// route remembering to check.
 
 // Profile Module — current user's profile
 app.use('/api/profile', profileRoutes);
 
 // Settings Module — current user's preferences
 app.use('/api/settings', settingsRoutes);
+
+// Service desk help center (customer-facing)
+app.use('/api', helpRoutes);
+
+app.use('/api', blockClients);
+
+// Users Module — CRUD for user management (admin)
+app.use('/api/users', usersRoutes);
 
 // Projects Module — CRUD for projects + members + stats
 app.use('/api/projects', projectsRoutes);
@@ -197,6 +211,7 @@ app.use('/api', streamRoutes);
 
 // Per-project custom fields
 app.use('/api', customFieldsRoutes);
+app.use('/api', requestTypesRoutes);
 
 // SPA fallback (Express 5 compatible)
 app.get('/{*splat}', (req, res) => {

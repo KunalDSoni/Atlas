@@ -22,11 +22,18 @@ async function enrichComment(db, comment) {
   };
 }
 
+// Service desk customers only ever see the public half of a conversation.
+const VISIBILITIES = ['public', 'internal'];
+
 // GET /api/issues/:issueId/comments
 router.get('/issues/:issueId/comments', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const comments = await queryAll(db, 'SELECT * FROM comments WHERE issue_id = ? ORDER BY created_at', [req.params.issueId]);
+    const comments = await queryAll(db,
+      req.userRole === 'client'
+        ? "SELECT * FROM comments WHERE issue_id = ? AND visibility = 'public' ORDER BY created_at"
+        : 'SELECT * FROM comments WHERE issue_id = ? ORDER BY created_at',
+      [req.params.issueId]);
     res.json(await Promise.all(comments.map(c => enrichComment(db, c))));
   } catch (e) { serverError(res, e); }
 });
@@ -37,11 +44,21 @@ router.post('/issues/:issueId/comments', requireAuth, async (req, res) => {
     const { body: commentBody, author_id } = req.body;
     if (!commentBody) return res.status(400).json({ error: 'Comment body required' });
 
+    const visibility = req.body.visibility || 'public';
+    if (!VISIBILITIES.includes(visibility)) {
+      return res.status(400).json({ error: 'visibility must be public or internal' });
+    }
+    // A customer may only ever speak publicly. Rejected outright rather than
+    // silently downgraded, so a broken client surfaces instead of hiding.
+    if (visibility === 'internal' && req.userRole === 'client') {
+      return res.status(403).json({ error: 'Clients cannot post internal notes' });
+    }
+
     const db = await getDb();
     const id = uuidv4();
     const authorId = author_id || req.userId;
-    await run(db, 'INSERT INTO comments (id, issue_id, author_id, body) VALUES (?, ?, ?, ?)',
-      [id, req.params.issueId, authorId, commentBody]);
+    await run(db, 'INSERT INTO comments (id, issue_id, author_id, body, visibility) VALUES (?, ?, ?, ?, ?)',
+      [id, req.params.issueId, authorId, commentBody, visibility]);
 
     // Fan out: @mentions first (stronger signal), then issue watchers.
     const issue = await queryOne(db, 'SELECT id, issue_key FROM issues WHERE id = ?', [req.params.issueId]);
