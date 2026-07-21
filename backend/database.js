@@ -974,12 +974,29 @@ async function initMysql() {
   const mysql = require('mysql2/promise');
   const { url, host, port, user, password, database } = config.db.mysql;
 
+  // TLS to the database. Off by default (a local MySQL on the same host needs
+  // none); required in production, where the connection crosses a network.
+  // The CA bundle is baked into the image at /app/certs — see the Dockerfile.
+  // We read it explicitly rather than using mysql2's bundled 'Amazon RDS'
+  // profile, which predates AWS's CA rotation and fails opaquely when stale.
+  const ssl = (process.env.MYSQL_SSL || '').toLowerCase() === 'true'
+    ? {
+        ca: require('fs').readFileSync(process.env.MYSQL_SSL_CA || '/app/certs/rds-global-bundle.pem'),
+        minVersion: 'TLSv1.2',
+      }
+    : undefined;
+
+  // mysql2 defaults to 10 connections per pool; a db.t4g.micro allows ~60-70
+  // in total. Bounding this now means tenant number eight cannot exhaust the
+  // server and take every other tenant down with it.
+  const connectionLimit = parseInt(process.env.MYSQL_POOL_SIZE, 10) || 5;
+
   // Ensure the target database exists, then connect to it.
   // dateStrings: return DATETIME as 'YYYY-MM-DD HH:MM:SS' strings (not JS Date),
   // matching SQLite's TEXT dates so route code that does string ops on dates
   // (e.g. updated_at.split('T')) works identically on both drivers.
   if (url) {
-    const pool = mysql.createPool({ uri: url, charset: 'utf8mb4', dateStrings: true, multipleStatements: false });
+    const pool = mysql.createPool({ uri: url, charset: 'utf8mb4', dateStrings: true, multipleStatements: false, ssl, connectionLimit });
     await initMysqlSchema(pool);
     db = createMysqlWrapper(pool);
     return db;
@@ -990,7 +1007,7 @@ async function initMysql() {
   // against a pre-provisioned DB, as in docker-compose) — the schema step below
   // still runs against the existing database.
   try {
-    const bootstrap = await mysql.createConnection({ host, port, user, password, charset: 'utf8mb4' });
+    const bootstrap = await mysql.createConnection({ host, port, user, password, charset: 'utf8mb4', ssl });
     await bootstrap.query(
       `CREATE DATABASE IF NOT EXISTS \`${database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
     );
@@ -999,7 +1016,7 @@ async function initMysql() {
     console.warn(`  ⚠ Could not auto-create database "${database}" (${e.code || e.message}). Assuming it already exists.`);
   }
 
-  const pool = mysql.createPool({ host, port, user, password, database, charset: 'utf8mb4', dateStrings: true, multipleStatements: false });
+  const pool = mysql.createPool({ host, port, user, password, database, charset: 'utf8mb4', dateStrings: true, multipleStatements: false, ssl, connectionLimit });
   await initMysqlSchema(pool);
   db = createMysqlWrapper(pool);
   return db;

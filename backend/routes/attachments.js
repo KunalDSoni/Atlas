@@ -8,17 +8,13 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
 const { signedFileUrl, verifyFileSig } = require('../utils/signing');
+const { putFile, getFileStream, deleteFile, pipeToResponse } = require('../utils/storage');
 
 const router = express.Router();
-
-// Ensure uploads directory exists
-const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
-if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 // Attach short-lived signed URLs so the browser can load files without a header.
 function withFileUrls(att) {
@@ -30,14 +26,9 @@ function withFileUrls(att) {
   };
 }
 
-// Multer config
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, UPLOADS_DIR),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, uuidv4() + ext);
-  }
-});
+// Multer config. Files are held in memory just long enough to hand them to the
+// storage layer (utils/storage.js) — the 50MB cap below bounds how much that is.
+const storage = multer.memoryStorage();
 
 const upload = multer({
   storage,
@@ -72,8 +63,13 @@ router.post('/issues/:issueId/attachments', requireAuth, upload.array('files', 1
     const results = [];
     for (const file of (req.files || [])) {
       const id = uuidv4();
+      // memoryStorage gives us file.buffer but no file.filename — generate the
+      // stored name here, then persist it as the pointer into storage.
+      const filename = uuidv4() + path.extname(file.originalname);
+      await putFile(filename, file.buffer, file.mimetype);
+
       await run(db, `INSERT INTO attachments (id, issue_id, filename, original_name, mime_type, size, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [id, req.params.issueId, file.filename, file.originalname, file.mimetype, file.size, req.userId]);
+        [id, req.params.issueId, filename, file.originalname, file.mimetype, file.size, req.userId]);
 
       const att = await queryOne(db, `SELECT a.*, u.name as uploader_name, u.avatar_color as uploader_color FROM attachments a LEFT JOIN users u ON a.uploaded_by = u.id WHERE a.id = ?`, [id]);
       results.push(withFileUrls(att));
@@ -123,12 +119,12 @@ router.get('/attachments/:id/download', requireAuthOrSignature, async (req, res)
     const att = await queryOne(db, 'SELECT * FROM attachments WHERE id = ?', [req.params.id]);
     if (!att) return res.status(404).json({ error: 'Attachment not found' });
 
-    const filePath = path.join(UPLOADS_DIR, att.filename);
-    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found on disk' });
+    const stream = await getFileStream(att.filename);
+    if (!stream) return res.status(404).json({ error: 'File not found' });
 
     res.setHeader('Content-Disposition', `attachment; filename="${safeFilename(att.original_name)}"`);
     res.setHeader('Content-Type', att.mime_type);
-    res.sendFile(filePath);
+    pipeToResponse(stream, res);
   } catch (e) { serverError(res, e); }
 });
 
@@ -139,8 +135,8 @@ router.get('/attachments/:id/preview', requireAuthOrSignature, async (req, res) 
     const att = await queryOne(db, 'SELECT * FROM attachments WHERE id = ?', [req.params.id]);
     if (!att) return res.status(404).json({ error: 'Attachment not found' });
 
-    const filePath = path.join(UPLOADS_DIR, att.filename);
-    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found on disk' });
+    const stream = await getFileStream(att.filename);
+    if (!stream) return res.status(404).json({ error: 'File not found' });
 
     if (!INLINE_SAFE.has(att.mime_type)) {
       // e.g. SVG: rendering it inline would execute its script on our origin.
@@ -150,7 +146,7 @@ router.get('/attachments/:id/preview', requireAuthOrSignature, async (req, res) 
     }
     res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
     res.setHeader('Content-Type', att.mime_type);
-    res.sendFile(filePath);
+    pipeToResponse(stream, res);
   } catch (e) { serverError(res, e); }
 });
 
@@ -161,9 +157,8 @@ router.delete('/attachments/:id', requireAuth, async (req, res) => {
     const att = await queryOne(db, 'SELECT * FROM attachments WHERE id = ?', [req.params.id]);
     if (!att) return res.status(404).json({ error: 'Attachment not found' });
 
-    // Delete file from disk
-    const filePath = path.join(UPLOADS_DIR, att.filename);
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    // Delete the stored file, then the row
+    await deleteFile(att.filename);
 
     // Delete from DB
     await run(db, 'DELETE FROM attachments WHERE id = ?', [req.params.id]);

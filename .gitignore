@@ -46,3 +46,6 @@ nginx/ssl/*.crt
 
 # Ignore build artifacts but keep frontend/build (pre-built SPA)
 !frontend/build/
+
+# Local-only notes (infrastructure IDs, endpoints) — never commit to a public repo
+*.local.md
