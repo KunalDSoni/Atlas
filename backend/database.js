@@ -1132,23 +1132,28 @@ function seedDemoData() {
   const { v4: uuid } = require('uuid');
 
   // Seed users with different roles
-  const userIds = [uuid(), uuid(), uuid(), uuid(), uuid()];
-  const colors = ['#6366f1', '#ec4899', '#14b8a6', '#f59e0b', '#ef4444'];
-  const names = ['Kunal Soni', 'Sarah Chen', 'Alex Rivera', 'Priya Patel', 'James Wilson'];
-  const emails = ['kunal@example.com', 'sarah@example.com', 'alex@example.com', 'priya@example.com', 'james@example.com'];
-  const roles = ['admin', 'board_admin', 'user', 'client', 'user'];
+  // Priya was seeded as 'client' while that role was inert. The service desk
+  // gives it teeth — a client is confined to the help center — and the test
+  // harness's userHeaders() logs in as her to mean "an ordinary non-admin
+  // user". She is staff; Dana below is the actual customer.
+  const userIds = [uuid(), uuid(), uuid(), uuid(), uuid(), uuid()];
+  const colors = ['#6366f1', '#ec4899', '#14b8a6', '#f59e0b', '#ef4444', '#8b5cf6'];
+  const names = ['Kunal Soni', 'Sarah Chen', 'Alex Rivera', 'Priya Patel', 'James Wilson', 'Dana Okafor'];
+  const emails = ['kunal@example.com', 'sarah@example.com', 'alex@example.com', 'priya@example.com', 'james@example.com', 'dana@customer.example.com'];
+  const roles = ['admin', 'board_admin', 'user', 'user', 'user', 'client'];
 
-  const depts = ['Engineering', 'Engineering', 'Engineering', 'Product', 'Engineering'];
-  const titles = ['CTO', 'Senior Engineer', 'Full Stack Dev', 'Product Manager', 'Junior Dev'];
-  const phones = ['+1-555-0101', '+1-555-0102', '+1-555-0103', '+1-555-0104', '+1-555-0105'];
+  const depts = ['Engineering', 'Engineering', 'Engineering', 'Product', 'Engineering', 'Customer'];
+  const titles = ['CTO', 'Senior Engineer', 'Full Stack Dev', 'Product Manager', 'Junior Dev', 'IT Manager, Northwind'];
+  const phones = ['+1-555-0101', '+1-555-0102', '+1-555-0103', '+1-555-0104', '+1-555-0105', '+1-555-0106'];
   const bios = [
     'Leading the tech team. Passionate about scalable systems.',
     'Backend specialist with 8+ years experience in distributed systems.',
     'Full-stack developer who loves React and Node.js.',
     'Product-focused professional bridging business and technology.',
-    'Junior developer eager to learn and grow.'
+    'Junior developer eager to learn and grow.',
+    'Customer contact at Northwind, raises hardware and access requests.'
   ];
-  const tzs = ['Asia/Dubai', 'America/Los_Angeles', 'America/New_York', 'Asia/Kolkata', 'Europe/London'];
+  const tzs = ['Asia/Dubai', 'America/Los_Angeles', 'America/New_York', 'Asia/Kolkata', 'Europe/London', 'Europe/Berlin'];
 
   // Demo accounts share the documented "password123" credential — stored hashed.
   const demoPassword = hashPasswordSync('password123');

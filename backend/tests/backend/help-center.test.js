@@ -176,3 +176,42 @@ describe('help center lifecycle', () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe('client lockdown', () => {
+  let app, headers, clientHeaders, projectId;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+    headers = await adminHeaders();
+    const projects = await request(app).get('/api/projects').set(headers);
+    projectId = projects.body.find((p) => p.key === 'ATL').id;
+    const u = await request(app).post('/api/users').set(headers)
+      .send({ name: 'Locked Out', email: 'locked@example.com', role: 'client' });
+    const login = await request(app).post('/api/auth/login')
+      .send({ email: 'locked@example.com', password: u.body.initial_password });
+    clientHeaders = { 'x-auth-token': login.body.token, 'Content-Type': 'application/json' };
+  });
+
+  test.each([
+    ['issues', () => `/api/projects/${projectId}/issues`],
+    ['sprints', () => `/api/projects/${projectId}/sprints`],
+    ['epics', () => `/api/projects/${projectId}/epics`],
+    ['wiki spaces', () => '/api/wiki/spaces'],
+    ['users', () => '/api/users'],
+    ['admin stats', () => '/api/admin/stats'],
+    ['search', () => '/api/search?q=test'],
+  ])('a client cannot reach %s', async (_label, url) => {
+    const res = await request(app).get(url()).set(clientHeaders);
+    expect(res.status).toBe(403);
+  });
+
+  test('a client can still reach the help center', async () => {
+    const res = await request(app).get('/api/help/requests').set(clientHeaders);
+    expect(res.status).toBe(200);
+  });
+
+  test('a client can still reach their own profile', async () => {
+    const res = await request(app).get('/api/profile').set(clientHeaders);
+    expect(res.status).toBe(200);
+  });
+});

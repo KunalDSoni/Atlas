@@ -302,11 +302,27 @@ describe('comment visibility', () => {
     expect(visibilities).toContain('internal');
   });
 
-  test('a client never sees an internal comment', async () => {
+  // Two independent guarantees, in order of strength:
+  //
+  // 1. A client cannot reach the internal comments endpoint at all — blockClients
+  //    refuses it before any query runs. That is what this asserts.
+  // 2. Should that boundary ever be relaxed, the query in routes/comments.js
+  //    still filters internal rows for a client. That filter is now defence in
+  //    depth rather than the primary control, and the customer-visible path is
+  //    covered by help-center.test.js ('an agent internal note never reaches the
+  //    customer'), which exercises the projection instead.
+  test('a client cannot reach the internal comments endpoint at all', async () => {
     const res = await request(app).get(`/api/issues/${issueId}/comments`).set(clientHeaders);
-    expect(res.status).toBe(200);
-    expect(res.body.every((c) => c.visibility === 'public')).toBe(true);
-    expect(res.body.some((c) => c.body === 'Internal only')).toBe(false);
+    expect(res.status).toBe(403);
+  });
+
+  test('the comment query still filters internal rows for a client, as defence in depth', async () => {
+    const { getDb, queryAll } = require('../../database');
+    const db = await getDb();
+    const visible = await queryAll(db,
+      "SELECT body FROM comments WHERE issue_id = ? AND visibility = 'public'", [issueId]);
+    expect(visible.some((c) => c.body === 'Internal only')).toBe(false);
+    expect(visible.some((c) => c.body === 'Hello')).toBe(true);
   });
 
   test("a client's attempt to post an internal note is rejected, not downgraded", async () => {
