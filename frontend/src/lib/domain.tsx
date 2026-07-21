@@ -107,6 +107,10 @@ export const SPRINT_TONE: Record<SprintStatus, string> = {
 export function canManageSprints(role?: Role) {
   return role === 'admin' || role === 'board_admin';
 }
+/** Mirrors `requireBoardAdmin` on POST /api/projects. */
+export function canCreateProjects(role?: Role) {
+  return role === 'admin' || role === 'board_admin';
+}
 export function canCreateIssues(role?: Role) {
   return role === 'admin' || role === 'board_admin' || role === 'user';
 }

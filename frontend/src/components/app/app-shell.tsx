@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Bell, CalendarRange, ChevronsUpDown, Columns3, FileClock, Gauge, LayoutDashboard, ListTodo, LogOut, Menu, Package,
   Rocket, Search, Settings as SettingsIcon, Shield, User as UserIcon, Users, BookOpen, Zap,
-  Inbox, Lightbulb, Target, Map as MapIcon, Building2, MessagesSquare,
+  Inbox, Lightbulb, Target, Map as MapIcon, Building2, MessagesSquare, Plus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,11 +16,12 @@ import { Separator } from '@/components/ui/separator';
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
 import { useProjects } from '@/hooks/use-projects';
-import { isAdmin } from '@/lib/domain';
+import { canCreateProjects, isAdmin } from '@/lib/domain';
 import type { AppNotification } from '@/lib/types';
 import { timeAgo } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { useFocusMode } from '@/context/focus-mode';
+import { CreateProjectDialog } from './create-project-dialog';
 import { UserAvatar } from './primitives';
 import { CommandPalette } from './command-palette';
 import { useLiveEvents } from '@/hooks/use-live-events';
@@ -92,10 +93,14 @@ function NavSection({ title, items, onNavigate }: { title: string; items: NavIte
 }
 
 function ProjectSwitcher() {
-  const { projects, currentProject, setCurrentProjectId, loading } = useProjects();
+  const { projects, currentProject, setCurrentProjectId, loading, reload } = useProjects();
+  const { user } = useAuth();
+  const [createOpen, setCreateOpen] = useState(false);
 
+  // Never hide the switcher on an empty project list. A fresh deployment has
+  // zero projects, and every project screen short-circuits to "No project
+  // selected" — so hiding it here left the app with no way in at all.
   if (loading) return <div className="mx-3 h-9 animate-pulse rounded-md bg-muted" />;
-  if (!projects.length) return null;
 
   return (
     <div className="px-3">
@@ -123,6 +128,11 @@ function ProjectSwitcher() {
         <DropdownMenuContent align="start" className="w-60">
           <DropdownMenuLabel>Projects</DropdownMenuLabel>
           <DropdownMenuSeparator />
+          {projects.length === 0 && (
+            <DropdownMenuItem disabled className="text-xs text-muted-foreground">
+              No projects yet
+            </DropdownMenuItem>
+          )}
           {projects.map((p) => (
             <DropdownMenuItem key={p.id} onSelect={() => setCurrentProjectId(p.id)} className="gap-2">
               <span className="grid size-6 shrink-0 place-items-center rounded bg-primary/10 text-[10px] font-bold text-primary">
@@ -132,8 +142,26 @@ function ProjectSwitcher() {
               {p.id === currentProject?.id && <span className="text-xs text-primary">current</span>}
             </DropdownMenuItem>
           ))}
+          {canCreateProjects(user?.role) && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => setCreateOpen(true)} className="gap-2">
+                <Plus className="size-4" />
+                Create project
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <CreateProjectDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={async (project) => {
+          await reload();
+          setCurrentProjectId(project.id);
+        }}
+      />
     </div>
   );
 }

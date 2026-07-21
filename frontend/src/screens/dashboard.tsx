@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertCircle, CheckCircle2, CircleDot, Columns3, ListTodo } from 'lucide-react';
+import { AlertCircle, CheckCircle2, CircleDot, Columns3, ListTodo, Plus } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { api } from '@/lib/api';
 import { useProjects } from '@/hooks/use-projects';
-import { STATUS_LABEL, STATUSES, TYPE_LABEL } from '@/lib/domain';
+import { useAuth } from '@/context/auth-provider';
+import { canCreateProjects, STATUS_LABEL, STATUSES, TYPE_LABEL } from '@/lib/domain';
 import type { Issue, ProjectStats, Sprint } from '@/lib/types';
 import {
   CardsSkeleton, EmptyState, ErrorState, PageHeader, PriorityIcon, StatusPill, TypeIcon, UserAvatar,
 } from '@/components/app/primitives';
+import { CreateProjectDialog } from '@/components/app/create-project-dialog';
 import { timeAgo } from '@/lib/format';
 
 function StatTile({
@@ -40,7 +42,9 @@ function StatTile({
 }
 
 export default function DashboardScreen() {
-  const { currentProject, currentProjectId, loading: projectsLoading } = useProjects();
+  const { currentProject, currentProjectId, loading: projectsLoading, reload: reloadProjects, setCurrentProjectId } = useProjects();
+  const { user } = useAuth();
+  const [createOpen, setCreateOpen] = useState(false);
   const [stats, setStats] = useState<ProjectStats | null>(null);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
@@ -89,7 +93,30 @@ export default function DashboardScreen() {
     return (
       <>
         <PageHeader title="Dashboard" />
-        <EmptyState icon={Columns3} title="No project selected" description="Create a project to get started." />
+        <EmptyState
+          icon={Columns3}
+          title="No project selected"
+          description={
+            canCreateProjects(user?.role)
+              ? 'Create a project to get started.'
+              : 'Ask an administrator to add you to a project.'
+          }
+          action={
+            canCreateProjects(user?.role) && (
+              <Button size="sm" onClick={() => setCreateOpen(true)}>
+                <Plus className="size-4" /> Create project
+              </Button>
+            )
+          }
+        />
+        <CreateProjectDialog
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          onCreated={async (project) => {
+            await reloadProjects();
+            setCurrentProjectId(project.id);
+          }}
+        />
       </>
     );
   }
