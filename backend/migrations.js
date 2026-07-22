@@ -658,6 +658,61 @@ const MIGRATIONS = [
       },
     }],
   },
+  {
+    id: '018_sprint_release_slugs',
+    description: 'Stable URL slugs for sprints and releases',
+    steps: [
+      {
+        addColumn: {
+          table: 'sprints', column: 'slug',
+          sqlite: 'ALTER TABLE sprints ADD COLUMN slug TEXT',
+          mysql: 'ALTER TABLE sprints ADD COLUMN slug VARCHAR(255) NULL',
+        },
+      },
+      {
+        addColumn: {
+          table: 'versions', column: 'slug',
+          sqlite: 'ALTER TABLE versions ADD COLUMN slug TEXT',
+          mysql: 'ALTER TABLE versions ADD COLUMN slug VARCHAR(255) NULL',
+        },
+      },
+      {
+        run: async (adapter) => {
+          if (!['sqlite', 'mysql'].includes(adapter.driver)) {
+            throw new Error(`018: unsupported driver ${adapter.driver}`);
+          }
+          const { slugify, uniqueSlug } = require('./utils/slug');
+          for (const table of ['sprints', 'versions']) {
+            const rows = await adapter.all(
+              `SELECT id, project_id, name, slug FROM ${table} ORDER BY created_at, id`);
+            const seen = {};
+            for (const row of rows) {
+              seen[row.project_id] = seen[row.project_id] || [];
+              if (row.slug) {
+                seen[row.project_id].push(row.slug);
+                continue;
+              }
+              const slug = uniqueSlug(slugify(row.name), seen[row.project_id]);
+              seen[row.project_id].push(slug);
+              await adapter.exec(`UPDATE ${table} SET slug = ? WHERE id = ?`, [slug, row.id]);
+            }
+          }
+        },
+      },
+      {
+        sql: {
+          sqlite: 'CREATE UNIQUE INDEX IF NOT EXISTS idx_sprints_project_slug ON sprints(project_id, slug)',
+          mysql: 'CREATE UNIQUE INDEX idx_sprints_project_slug ON sprints(project_id, slug)',
+        },
+      },
+      {
+        sql: {
+          sqlite: 'CREATE UNIQUE INDEX IF NOT EXISTS idx_versions_project_slug ON versions(project_id, slug)',
+          mysql: 'CREATE UNIQUE INDEX idx_versions_project_slug ON versions(project_id, slug)',
+        },
+      },
+    ],
+  },
 ];
 
 const LEDGER_SQL = {

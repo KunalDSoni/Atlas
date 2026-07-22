@@ -76,11 +76,13 @@ const SCHEMA_SQL = [
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL REFERENCES projects(id),
     name TEXT NOT NULL,
+    slug TEXT,
     goal TEXT,
     status TEXT DEFAULT 'planning' CHECK(status IN ('planning','active','completed')),
     start_date TEXT,
     end_date TEXT,
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(project_id, slug)
   )`,
   `CREATE TABLE IF NOT EXISTS issues (
     id TEXT PRIMARY KEY,
@@ -385,10 +387,12 @@ const SCHEMA_SQL = [
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL REFERENCES projects(id),
     name TEXT NOT NULL,
+    slug TEXT,
     description TEXT,
     status TEXT DEFAULT 'unreleased' CHECK(status IN ('unreleased','released')),
     release_date TEXT,
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(project_id, slug)
   )`,
   `CREATE TABLE IF NOT EXISTS components (
     id TEXT PRIMARY KEY,
@@ -618,11 +622,13 @@ const MYSQL_SCHEMA_SQL = [
     id VARCHAR(36) PRIMARY KEY,
     project_id VARCHAR(36) NOT NULL,
     name VARCHAR(255) NOT NULL,
+    slug VARCHAR(255),
     goal TEXT,
     status VARCHAR(20) DEFAULT 'planning' CHECK(status IN ('planning','active','completed')),
     start_date DATETIME NULL,
     end_date DATETIME NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_sprints_project_slug (project_id, slug)
   ) DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS issues (
     id VARCHAR(36) PRIMARY KEY,
@@ -927,10 +933,12 @@ const MYSQL_SCHEMA_SQL = [
     id VARCHAR(36) PRIMARY KEY,
     project_id VARCHAR(36) NOT NULL,
     name VARCHAR(255) NOT NULL,
+    slug VARCHAR(255),
     description TEXT,
     status VARCHAR(20) DEFAULT 'unreleased' CHECK(status IN ('unreleased','released')),
     release_date DATETIME NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_versions_project_slug (project_id, slug)
   ) DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS components (
     id VARCHAR(36) PRIMARY KEY,
@@ -1326,11 +1334,11 @@ function seedDemoData() {
 
   // Seed sprints
   const sprintId = uuid();
-  db.run("INSERT INTO sprints (id, project_id, name, goal, status, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    [sprintId, projId1, 'Sprint 12', 'Complete auth module and API refactor', 'active', '2026-04-06', '2026-04-20']);
+  db.run("INSERT INTO sprints (id, project_id, name, slug, goal, status, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    [sprintId, projId1, 'Sprint 12', 'sprint-12', 'Complete auth module and API refactor', 'active', '2026-04-06', '2026-04-20']);
   const sprintId2 = uuid();
-  db.run("INSERT INTO sprints (id, project_id, name, goal, status, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    [sprintId2, projId2, 'Sprint 5', 'Push notification system', 'active', '2026-04-06', '2026-04-20']);
+  db.run("INSERT INTO sprints (id, project_id, name, slug, goal, status, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    [sprintId2, projId2, 'Sprint 5', 'sprint-5', 'Push notification system', 'active', '2026-04-06', '2026-04-20']);
 
   // Seed issues for Atlas Platform
   const issueData = [

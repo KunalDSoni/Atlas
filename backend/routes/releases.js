@@ -13,6 +13,7 @@ const { v4: uuidv4 } = require('uuid');
 const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
+const { slugify, uniqueSlug } = require('../utils/slug');
 
 const requireBoardAdmin = requireRole('admin', 'board_admin');
 const router = express.Router();
@@ -37,8 +38,12 @@ router.post('/projects/:projectId/versions', requireAuth, requireBoardAdmin, asy
     if (!name || !name.trim()) return res.status(400).json({ error: 'Version name required' });
     const db = await getDb();
     const id = uuidv4();
-    await run(db, 'INSERT INTO versions (id, project_id, name, description, release_date) VALUES (?, ?, ?, ?, ?)',
-      [id, req.params.projectId, name.trim(), description || null, release_date || null]);
+    const cleanName = name.trim();
+    const taken = (await queryAll(db, 'SELECT slug FROM versions WHERE project_id = ?', [req.params.projectId]))
+      .map((row) => row.slug).filter(Boolean);
+    const slug = uniqueSlug(slugify(cleanName), taken);
+    await run(db, 'INSERT INTO versions (id, project_id, name, slug, description, release_date) VALUES (?, ?, ?, ?, ?, ?)',
+      [id, req.params.projectId, cleanName, slug, description || null, release_date || null]);
     const version = await queryOne(db, 'SELECT * FROM versions WHERE id = ?', [id]);
     res.status(201).json({ ...version, issue_count: 0, done_count: 0 });
   } catch (e) { serverError(res, e); }

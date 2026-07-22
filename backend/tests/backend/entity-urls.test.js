@@ -124,3 +124,32 @@ describe('project keys are immutable', () => {
     expect(after.key).toBe(before.key);
   });
 });
+
+describe('sprint and release slugs', () => {
+  test('slugify makes a URL-safe segment', () => {
+    const { slugify } = require('../../utils/slug');
+    expect(slugify('Sprint 1')).toBe('sprint-1');
+    expect(slugify('v1.2')).toBe('v1-2');
+    expect(slugify('  Q3 — Hardening  ')).toBe('q3-hardening');
+  });
+
+  test('every seeded sprint has a slug', async () => {
+    const res = await request(app).get(`/api/projects/${projectId}/sprints`).set(headers);
+    expect(res.status).toBe(200);
+    for (const sprint of res.body) expect(sprint.slug).toMatch(/^[a-z0-9-]+$/);
+  });
+
+  test('sprint slugs are unique within a project', async () => {
+    const a = await request(app).post(`/api/projects/${projectId}/sprints`).set(headers).send({ name: 'Dupe' });
+    const b = await request(app).post(`/api/projects/${projectId}/sprints`).set(headers).send({ name: 'Dupe' });
+    expect(a.body.slug).toBe('dupe');
+    expect(b.body.slug).toBe('dupe-2');
+  });
+
+  test('release slugs are unique within a project', async () => {
+    const a = await request(app).post(`/api/projects/${projectId}/versions`).set(headers).send({ name: 'v1.2' });
+    const b = await request(app).post(`/api/projects/${projectId}/versions`).set(headers).send({ name: 'v1.2' });
+    expect(a.body.slug).toBe('v1-2');
+    expect(b.body.slug).toBe('v1-2-2');
+  });
+});
