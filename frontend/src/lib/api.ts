@@ -231,6 +231,8 @@ export const api = {
       get<Issue[]>(`/projects/${projectId}/issues${sprintId ? `?sprint_id=${encodeURIComponent(sprintId)}` : ''}`),
     create: (projectId: string, body: Partial<Issue>) => post<Issue>(`/projects/${projectId}/issues`, body),
     get: (id: string) => get<Issue>(`/issues/${id}`),
+    /** Boot an issue straight from its URL — /atlas/ATLAS-3 has a key, not an id. */
+    getByKey: (key: string) => get<Issue>(`/issues/by-key/${encodeURIComponent(key)}`),
     update: (id: string, body: Partial<Issue>) => put<Issue>(`/issues/${id}`, body),
     remove: (id: string) => del<{ ok: boolean }>(`/issues/${id}`),
     move: (id: string, body: { status: string; board_order?: number; sprint_id?: string | null }) =>
