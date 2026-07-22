@@ -14,6 +14,7 @@ const TYPE_TOGGLE = {
   mention: 'notify_mentions',
   comment: 'notify_comments',
   status_changed: 'notify_status_changes',
+  portal_status_changed: 'notify_status_changes',
 };
 
 const outbox = [];

@@ -24,12 +24,18 @@ const { buildSpecBody } = require('../utils/spec-draft');
 const { complete, aiEnabled, MODELS } = require('./ai');
 const { projectStatuses } = require('./workflows');
 const { outcomeDetailsForFeature, sqlTimestamp } = require('../utils/product-outcomes');
+const { notify } = require('../utils/notify');
 
 const router = express.Router();
 
 const FEATURE_STATUSES = ['idea', 'discovery', 'planned', 'in_progress', 'launched', 'archived'];
 const TIMEFRAMES = ['now', 'next', 'later'];
 const PORTAL_STATUSES = ['under_consideration', 'planned', 'launched'];
+const PORTAL_STATUS_LABELS = {
+  under_consideration: 'Under consideration',
+  planned: 'Planned',
+  launched: 'Launched',
+};
 
 // Tier-weighted sum of linked insight importance. ELSE 1 covers both 'standard'
 // and insights with no customer/company attached.
@@ -196,6 +202,26 @@ router.put('/product/features/:id', requireAuth, async (req, res) => {
       ? sqlTimestamp() : existing.launched_at;
     await run(db, `UPDATE pb_features SET project_id = ?, name = ?, description = ?, status = ?, timeframe = ?, portal_status = ?, owner_id = ?, effort = ?, value = ?, reach = ?, impact = ?, confidence = ?, release_id = ?, launched_at = ?, updated_at = datetime('now') WHERE id = ?`,
       [...fields.map(fld => updated[fld]), launchedAt, req.params.id]);
+
+    // A follower asked to hear when the public promise changes. Fan out only
+    // after the update succeeds, and use the existing notify helper so in-app,
+    // SSE, email, and user email preferences stay on one delivery path.
+    if (body.portal_status !== undefined && updated.portal_status !== existing.portal_status) {
+      const followers = await queryAll(db,
+        'SELECT user_id FROM pb_portal_followers WHERE feature_id = ?', [req.params.id]);
+      const statusText = updated.portal_status
+        ? `is now ${PORTAL_STATUS_LABELS[updated.portal_status]}`
+        : 'is no longer on the public roadmap';
+      for (const follower of followers) {
+        await notify(db, {
+          userId: follower.user_id,
+          actorId: req.userId,
+          type: 'portal_status_changed',
+          message: `${updated.name} ${statusText}`,
+          link: updated.portal_status ? `/portal/features/${req.params.id}` : '/portal',
+        });
+      }
+    }
     res.json(await getFeatureWithOutcome(db, req.params.id));
   } catch (e) { serverError(res, e); }
 });
@@ -208,6 +234,7 @@ router.delete('/product/features/:id', requireAuth, async (req, res) => {
     await run(db, 'DELETE FROM pb_feature_issues WHERE feature_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM pb_feature_objectives WHERE feature_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM pb_votes WHERE feature_id = ?', [req.params.id]);
+    await run(db, 'DELETE FROM pb_portal_followers WHERE feature_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM pb_feature_outcomes WHERE feature_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM pb_features WHERE id = ?', [req.params.id]);
     res.json({ ok: true });

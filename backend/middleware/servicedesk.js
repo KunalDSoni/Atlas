@@ -36,8 +36,9 @@ async function requireClientSafe(req, res, next) {
   } catch (e) { serverError(res, e); }
 }
 
-// A client's entire world is the help center and their own profile. Everything
-// else is refused here, once, rather than by each route remembering to check.
+// Customer-facing modules are mounted before this boundary. Everything after
+// it is internal and refused once, rather than by every route remembering to
+// check the client role independently.
 function blockClients(req, res, next) {
   if (req.userRole === 'client') {
     return res.status(403).json({ error: 'Not available to service desk customers' });

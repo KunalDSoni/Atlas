@@ -900,7 +900,24 @@ export interface PortalFeature {
   description: string | null;
   portal_status: PortalStatus;
   vote_count: number;
+  follower_count: number;
   has_voted: boolean;
+  is_following: boolean;
+}
+
+export type PortalSubmissionStatus = 'submitted' | 'reviewed' | 'closed';
+
+export interface PortalSubmission {
+  id: string;
+  title: string;
+  content: string;
+  status: PortalSubmissionStatus;
+  submitted_at: string;
+}
+
+export interface PortalMe {
+  submissions: PortalSubmission[];
+  follows: PortalFeature[];
 }
 
 // ===== SERVICE DESK =====

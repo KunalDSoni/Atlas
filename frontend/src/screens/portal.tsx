@@ -1,30 +1,36 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Lightbulb, MessagesSquare, Plus, ThumbsUp } from 'lucide-react';
+import { Bell, Lightbulb, MessagesSquare, Plus, ThumbsUp } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { api } from '@/lib/api';
 import type { PortalFeature, PortalStatus } from '@/lib/types';
 import { EmptyState, ErrorState, PageHeader, RowsSkeleton } from '@/components/app/primitives';
 import { PORTAL_STATUS_LABELS } from '@/lib/product';
+import { useAuth } from '@/context/auth-provider';
 import { cn } from '@/lib/utils';
 
-const COLUMNS: { key: PortalStatus; accent: string }[] = [
-  { key: 'under_consideration', accent: 'border-t-slate-400' },
-  { key: 'planned', accent: 'border-t-blue-500' },
-  { key: 'launched', accent: 'border-t-emerald-500' },
+const COLUMNS: { key: PortalStatus; accent: string; description: string }[] = [
+  { key: 'under_consideration', accent: 'border-t-slate-400', description: 'Ideas we are learning about' },
+  { key: 'planned', accent: 'border-t-blue-500', description: 'Committed and coming up' },
+  { key: 'launched', accent: 'border-t-emerald-500', description: 'Available now' },
 ];
 
 export default function PortalScreen() {
+  const { user } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [features, setFeatures] = useState<PortalFeature[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [ideaOpen, setIdeaOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [idea, setIdea] = useState({ title: '', content: '' });
 
   const load = useCallback(async () => {
@@ -41,12 +47,22 @@ export default function PortalScreen() {
 
   useEffect(() => { void load(); }, [load]);
 
-  async function vote(f: PortalFeature) {
-    // optimistic toggle
-    setFeatures((prev) => prev.map((x) => x.id === f.id
-      ? { ...x, has_voted: !x.has_voted, vote_count: x.vote_count + (x.has_voted ? -1 : 1) } : x));
+  function requireIdentity(action: () => void) {
+    if (user) action();
+    else navigate(`/login?next=${encodeURIComponent(location.pathname)}`);
+  }
+
+  async function vote(feature: PortalFeature) {
+    if (!user) {
+      requireIdentity(() => undefined);
+      return;
+    }
+    setFeatures((current) => current.map((item) => item.id === feature.id
+      ? { ...item, has_voted: !item.has_voted, vote_count: item.vote_count + (item.has_voted ? -1 : 1) }
+      : item));
     try {
-      await api.portal.vote(f.id);
+      const saved = await api.portal.vote(feature.id);
+      setFeatures((current) => current.map((item) => item.id === saved.id ? saved : item));
     } catch (e) {
       toast.error('Vote failed', { description: e instanceof Error ? e.message : undefined });
       void load();
@@ -55,59 +71,85 @@ export default function PortalScreen() {
 
   async function submitIdea() {
     if (!idea.title.trim()) return;
+    setSubmitting(true);
     try {
       await api.portal.submitIdea({ title: idea.title.trim(), content: idea.content.trim() || undefined });
       setIdeaOpen(false);
       setIdea({ title: '', content: '' });
       toast.success('Thanks! Your idea was submitted.');
+      navigate('/portal/mine');
     } catch (e) {
       toast.error('Submit failed', { description: e instanceof Error ? e.message : undefined });
+    } finally {
+      setSubmitting(false);
     }
   }
 
-  if (loading) return (<><PageHeader title="Ideas portal" description="What we're considering" /><RowsSkeleton /></>);
+  if (loading) return (<><PageHeader title="Ideas portal" description="See what we are considering, planning, and launching" /><RowsSkeleton /></>);
   if (error) return (<><PageHeader title="Ideas portal" /><ErrorState message={error} onRetry={() => void load()} /></>);
 
   return (
     <>
       <PageHeader
         title="Ideas portal"
-        description="Vote on what matters to you, or suggest something new"
-        actions={<Button onClick={() => setIdeaOpen(true)}><Plus className="size-4" /> Submit an idea</Button>}
+        description="Explore the public roadmap, vote on what matters, and follow ideas for updates"
+        actions={(
+          <Button onClick={() => requireIdentity(() => setIdeaOpen(true))}>
+            <Plus className="size-4" /> Submit an idea
+          </Button>
+        )}
       />
 
       {features.length === 0 ? (
-        <EmptyState icon={MessagesSquare} title="Nothing public yet" description="Published features will show up here for customers to vote on." />
+        <EmptyState icon={MessagesSquare} title="Nothing public yet" description="Published ideas will show up here." />
       ) : (
         <div className="grid gap-4 md:grid-cols-3">
-          {COLUMNS.map((col) => {
-            const items = features.filter((f) => f.portal_status === col.key);
+          {COLUMNS.map((column) => {
+            const items = features.filter((feature) => feature.portal_status === column.key);
             return (
-              <div key={col.key} className={cn('rounded-lg border border-t-2 border-border bg-muted/20 p-3', col.accent)}>
-                <div className="mb-3 flex items-baseline justify-between">
-                  <h2 className="font-semibold">{PORTAL_STATUS_LABELS[col.key]}</h2>
-                  <span className="text-xs text-muted-foreground">{items.length}</span>
+              <section key={column.key} className={cn('rounded-xl border border-t-2 border-border bg-muted/20 p-3', column.accent)}>
+                <div className="mb-3">
+                  <div className="flex items-baseline justify-between">
+                    <h2 className="font-semibold">{PORTAL_STATUS_LABELS[column.key]}</h2>
+                    <span className="text-xs text-muted-foreground">{items.length}</span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{column.description}</p>
                 </div>
                 <div className="space-y-2">
-                  {items.map((f) => (
-                    <Card key={f.id} className="p-3">
+                  {items.map((feature) => (
+                    <Card key={feature.id} className="gap-3 p-3 transition-shadow hover:shadow-sm">
                       <div className="flex items-start gap-3">
-                        <button onClick={() => void vote(f)}
-                          className={cn('flex shrink-0 flex-col items-center rounded-md border px-2 py-1 text-xs transition',
-                            f.has_voted ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/40')}>
+                        <button
+                          type="button"
+                          aria-label={`${feature.has_voted ? 'Remove vote from' : 'Vote for'} ${feature.name}`}
+                          onClick={() => void vote(feature)}
+                          className={cn(
+                            'flex shrink-0 flex-col items-center rounded-md border px-2 py-1 text-xs transition',
+                            feature.has_voted
+                              ? 'border-primary bg-primary/10 text-primary'
+                              : 'border-border text-muted-foreground hover:border-primary/40',
+                          )}
+                        >
                           <ThumbsUp className="size-3.5" />
-                          <span className="mt-0.5 font-semibold tabular-nums">{f.vote_count}</span>
+                          <span className="mt-0.5 font-semibold tabular-nums">{feature.vote_count}</span>
                         </button>
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium leading-snug">{f.name}</p>
-                          {f.description && <p className="mt-1 line-clamp-3 text-xs text-muted-foreground">{f.description}</p>}
-                        </div>
+                        <Link to={`/portal/features/${feature.id}`} className="min-w-0 flex-1 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                          <h3 className="text-sm font-medium leading-snug hover:text-primary">{feature.name}</h3>
+                          {feature.description && <p className="mt-1 line-clamp-3 text-xs text-muted-foreground">{feature.description}</p>}
+                        </Link>
+                      </div>
+                      <div className="flex items-center justify-end gap-1 text-[11px] text-muted-foreground">
+                        <Bell className="size-3" /> {feature.follower_count} following
                       </div>
                     </Card>
                   ))}
-                  {items.length === 0 && <p className="rounded-md border border-dashed border-border py-6 text-center text-xs text-muted-foreground">Nothing here yet</p>}
+                  {items.length === 0 && (
+                    <p className="rounded-md border border-dashed border-border py-6 text-center text-xs text-muted-foreground">
+                      Nothing here yet
+                    </p>
+                  )}
                 </div>
-              </div>
+              </section>
             );
           })}
         </div>
@@ -115,14 +157,21 @@ export default function PortalScreen() {
 
       <Dialog open={ideaOpen} onOpenChange={setIdeaOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle className="flex items-center gap-2"><Lightbulb className="size-4" /> Submit an idea</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Lightbulb className="size-4" /> Submit an idea</DialogTitle>
+            <DialogDescription>We will show it under My ideas, so you can see when the product team reviews it.</DialogDescription>
+          </DialogHeader>
           <div className="space-y-3">
-            <Input placeholder="What would you like to see?" value={idea.title} onChange={(e) => setIdea({ ...idea, title: e.target.value })} />
-            <Textarea placeholder="Tell us more (optional)" value={idea.content} onChange={(e) => setIdea({ ...idea, content: e.target.value })} rows={4} />
+            <Input aria-label="Idea title" placeholder="What would you like to see?" value={idea.title}
+              onChange={(event) => setIdea({ ...idea, title: event.target.value })} />
+            <Textarea aria-label="Idea details" placeholder="Tell us more (optional)" value={idea.content}
+              onChange={(event) => setIdea({ ...idea, content: event.target.value })} rows={4} />
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setIdeaOpen(false)}>Cancel</Button>
-            <Button onClick={() => void submitIdea()} disabled={!idea.title.trim()}>Submit</Button>
+            <Button onClick={() => void submitIdea()} disabled={submitting || !idea.title.trim()}>
+              {submitting ? 'Submitting…' : 'Submit'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

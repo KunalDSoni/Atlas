@@ -14,7 +14,7 @@ import type {
   WikiAttachment, ApiToken, Webhook, CustomField,
   WorkLog, WorkflowStatus,
   PbCompany, PbCustomer, PbInsight, PbFeature, PbFeatureOutcome, PbObjective,
-  PbOutcomesResponse, PbTheme, PbThemeSuggestion, PortalFeature,
+  PbOutcomesResponse, PbTheme, PbThemeSuggestion, PortalFeature, PortalMe, PortalSubmission,
   PublicRequest, RequestType, Queue, QueueIssue, SlaGoal, SlaState,
   ArticleSuggestion, CuratedArticle, ServiceDeskReport,
 } from './types';
@@ -522,8 +522,13 @@ export const api = {
 
   portal: {
     features: () => get<PortalFeature[]>('/portal/features'),
-    submitIdea: (body: { title: string; content?: string }) => post<{ ok: boolean; id: string }>('/portal/ideas', body),
-    vote: (featureId: string) => post<{ voted: boolean; vote_count: number }>(`/product/features/${featureId}/vote`),
+    feature: (featureId: string) => get<PortalFeature>(`/portal/features/${featureId}`),
+    submitIdea: (body: { title: string; content?: string }) =>
+      post<PortalSubmission & { ok: true }>('/portal/ideas', body),
+    vote: (featureId: string) => post<PortalFeature>(`/portal/features/${featureId}/vote`),
+    follow: (featureId: string) => post<PortalFeature>(`/portal/features/${featureId}/follow`),
+    unfollow: (featureId: string) => del<PortalFeature>(`/portal/features/${featureId}/follow`),
+    mine: () => get<PortalMe>('/portal/me'),
   },
 
   customFields: {

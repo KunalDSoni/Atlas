@@ -204,15 +204,11 @@ describe('capture endpoint', () => {
 });
 
 describe('inbox triage', () => {
-  // Submitted by a STAFF user, not a client. Since epic 41 mounted blockClients
-  // ahead of the portal routes (server.js:126 before :197, mirrored in
-  // setup.js), role='client' receives 403 from /api/portal/ideas — the
-  // "customer-facing" idea portal currently excludes the one role that
-  // represents customers. That is a real gap, but it belongs to epic 52
-  // (portal v2), which rebuilds this surface; capture must not quietly change
-  // the portal's access rules on its way past.
+  // Portal v2 mounts its deliberately narrow routes before the service-desk
+  // client boundary, so a real customer can submit while /api/product/* stays
+  // staff-only.
   test('a portal idea is stamped with its origin so the inbox can chip it', async () => {
-    const res = await request(app).post('/api/portal/ideas').set(staffHeaders)
+    const res = await request(app).post('/api/portal/ideas').set(clientHeaders)
       .send({ title: 'Dark mode please', content: 'The dashboard is blinding at night.' });
     expect(res.status).toBe(201);
 

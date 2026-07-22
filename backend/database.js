@@ -517,6 +517,12 @@ const SCHEMA_SQL = [
     created_at TEXT DEFAULT (datetime('now')),
     UNIQUE(feature_id, user_id)
   )`,
+  `CREATE TABLE IF NOT EXISTS pb_portal_followers (
+    feature_id TEXT NOT NULL REFERENCES pb_features(id),
+    user_id TEXT NOT NULL REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (feature_id, user_id)
+  )`,
   `CREATE TABLE IF NOT EXISTS wiki_attachments (
     id TEXT PRIMARY KEY,
     page_id TEXT NOT NULL REFERENCES wiki_pages(id),
@@ -1075,6 +1081,12 @@ const MYSQL_SCHEMA_SQL = [
     user_id VARCHAR(36) NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_feature_vote (feature_id, user_id)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS pb_portal_followers (
+    feature_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(36) NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (feature_id, user_id)
   ) DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS wiki_attachments (
     id VARCHAR(36) PRIMARY KEY,
@@ -2108,6 +2120,32 @@ function seedDemoData() {
     });
   }
 
+  // ===== Product discovery slice 4 (epic 52) — shipped =====
+  {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(51);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, 51)`,
+      [eid, projId3, `ATLAS-${num}`, num, 'Product: Portal v2',
+       'Close the customer feedback loop with an anonymous public roadmap, safe feature detail, follows, a personal submissions view, and status-change notifications through the existing in-app and email delivery path.',
+       userIds[0], 'teal', startDate, dueDate]);
+    [
+      { title: 'Migration 020: portal followers', type: 'task' },
+      { title: 'Single allow-list projection for every public feature response', type: 'task' },
+      { title: 'Follow, vote, idea detail, and My ideas APIs', type: 'story' },
+      { title: 'Public Portal v2 screens and follower status notifications', type: 'story' },
+    ].forEach((child, ci) => {
+      const childNum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${childNum}`, childNum, child.title, child.type,
+         userIds[0], userIds[0], eid, ci]);
+    });
+  }
+
   // ===== DEMO SERVICE DESK =====
   // Gives the help center shape on a fresh database. Dana (userIds[5]) is the
   // only seeded client, so the requests must be hers — seeding them against a
@@ -2488,6 +2526,9 @@ function seedProductDemoData() {
       db.run("INSERT OR IGNORE INTO pb_votes (id, feature_id, user_id) VALUES (?, ?, ?)", [uuid(), fid, uid]));
   });
   db.run("INSERT OR IGNORE INTO pb_votes (id, feature_id, user_id) VALUES (?, ?, ?)", [uuid(), fDark, clientId]);
+  // The seeded customer follows SSO so My ideas is useful on first login and a
+  // future status change has a real notification recipient.
+  db.run('INSERT INTO pb_portal_followers (feature_id, user_id) VALUES (?, ?)', [fSso, clientId]);
 
   saveDb();
   console.log('  ✓ Product module demo data seeded');

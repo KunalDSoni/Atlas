@@ -114,10 +114,10 @@ app.use('/api', apiRateLimit);
 app.use('/api/auth', authRoutes);
 
 // ===== The service desk boundary =====
-// Order matters. A client-role user may reach exactly three things: their own
-// profile, their own settings, and the help center. Everything registered
-// AFTER blockClients is staff-only, enforced once here rather than by each
-// route remembering to check.
+// Order matters. A client-role user may reach their own profile/settings, the
+// help center, and the deliberately narrow idea-portal routes. Everything
+// registered AFTER blockClients is staff-only, enforced once here rather than
+// by each internal route remembering to check.
 
 // Profile Module — current user's profile
 app.use('/api/profile', profileRoutes);
@@ -127,6 +127,10 @@ app.use('/api/settings', settingsRoutes);
 
 // Service desk help center (customer-facing)
 app.use('/api', helpRoutes);
+
+// The idea portal is a second customer-facing boundary. Public reads are
+// anonymous; its identity-dependent routes enforce requireAuth themselves.
+app.use('/api', portalRoutes);
 
 app.use('/api', blockClients);
 
@@ -201,7 +205,6 @@ app.use('/api', productFeaturesRoutes);
 app.use('/api', productOutcomesRoutes);
 app.use('/api', productObjectivesRoutes);
 app.use('/api', productThemesRoutes);
-app.use('/api', portalRoutes);
 
 // AI assistant (Rovo-style): summarize, write, ask-your-wiki
 app.use('/api', aiRoutes);

@@ -156,6 +156,13 @@ describe('015_insight_origins', () => {
     expect(await queryOne(db, 'SELECT id FROM schema_migrations WHERE id = ?', ['019_feature_outcomes'])).toBeTruthy();
   });
 
+  test('020 creates the portal followers table', async () => {
+    const db = await getDb();
+    const columns = (await queryAll(db, 'PRAGMA table_info(pb_portal_followers)')).map((c) => c.name);
+    expect(columns).toEqual(expect.arrayContaining(['feature_id', 'user_id', 'created_at']));
+    expect(await queryOne(db, 'SELECT id FROM schema_migrations WHERE id = ?', ['020_portal_followers'])).toBeTruthy();
+  });
+
   test('existing insights survive with null origins rather than being rewritten', async () => {
     // The columns are additive: a pre-existing insight keeps its row and simply
     // has no origin, which the inbox renders as a manual capture.

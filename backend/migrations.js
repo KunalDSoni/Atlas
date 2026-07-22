@@ -773,6 +773,28 @@ const MIGRATIONS = [
       },
     ],
   },
+  {
+    // Portal v2 was numbered 019 in its design. Outcome tracking now owns 019,
+    // so this follows it without changing append-only migration history.
+    id: '020_portal_followers',
+    description: 'Customer follows for public product features',
+    steps: [{
+      sql: {
+        sqlite: `CREATE TABLE IF NOT EXISTS pb_portal_followers (
+          feature_id TEXT NOT NULL REFERENCES pb_features(id),
+          user_id TEXT NOT NULL REFERENCES users(id),
+          created_at TEXT DEFAULT (datetime('now')),
+          PRIMARY KEY (feature_id, user_id)
+        )`,
+        mysql: `CREATE TABLE IF NOT EXISTS pb_portal_followers (
+          feature_id VARCHAR(36) NOT NULL,
+          user_id VARCHAR(36) NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (feature_id, user_id)
+        ) DEFAULT CHARSET=utf8mb4`,
+      },
+    }],
+  },
 ];
 
 const LEDGER_SQL = {
