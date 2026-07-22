@@ -136,4 +136,49 @@ router.delete('/product/themes/:id/insights/:insightId', requireAuth, async (req
   } catch (e) { serverError(res, e); }
 });
 
+// POST /api/product/themes/:id/promote — turn a theme into a feature, carrying
+// its evidence across.
+//
+// The theme is left intact. It is the record of HOW the feature was arrived at
+// — which pieces of feedback were judged to be the same ask — and consuming it
+// on promotion would destroy that just when the decision starts mattering.
+router.post('/product/themes/:id/promote', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const theme = await queryOne(db, 'SELECT * FROM pb_themes WHERE id = ?', [req.params.id]);
+    if (!theme) return res.status(404).json({ error: 'Theme not found' });
+
+    const members = await queryAll(db,
+      'SELECT insight_id FROM pb_insight_themes WHERE theme_id = ?', [req.params.id]);
+    if (members.length === 0) {
+      return res.status(400).json({ error: 'Theme has no insights to promote' });
+    }
+
+    const { project_id } = req.body;
+    if (!project_id) return res.status(400).json({ error: 'project_id required' });
+    const project = await queryOne(db, 'SELECT id FROM projects WHERE id = ?', [project_id]);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const featureId = uuidv4();
+    await run(db,
+      `INSERT INTO pb_features (id, project_id, name, description, status, created_by)
+       VALUES (?, ?, ?, ?, 'idea', ?)`,
+      [featureId, project_id, theme.name, theme.summary || '', req.userId]);
+
+    // Importance 1 across the board: the grouping asserts these are the same
+    // ask, not how loudly each was made. Grading individual evidence is a
+    // judgement a PM makes afterwards, and inventing a number here would put
+    // fabricated weight into the demand calculation.
+    for (const m of members) {
+      await run(db,
+        `INSERT INTO pb_insight_links (id, insight_id, feature_id, importance, created_by)
+         VALUES (?, ?, ?, 1, ?)`,
+        [uuidv4(), m.insight_id, featureId, req.userId]);
+      await run(db, 'UPDATE pb_insights SET processed = 1 WHERE id = ?', [m.insight_id]);
+    }
+
+    res.status(201).json({ id: featureId, name: theme.name, insight_count: members.length });
+  } catch (e) { serverError(res, e); }
+});
+
 module.exports = router;

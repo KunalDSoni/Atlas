@@ -119,3 +119,68 @@ describe('theme CRUD', () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe('promotion to a feature', () => {
+  async function projectId() {
+    const projects = await request(app).get('/api/projects').set(headers);
+    return projects.body[0].id;
+  }
+
+  test('creates a feature linked to every insight in the theme', async () => {
+    const a = await newInsight('Wants SSO');
+    const b = await newInsight('Blocked without SSO');
+    const theme = await request(app).post('/api/product/themes').set(headers)
+      .send({ name: 'Single sign-on', summary: 'Enterprise auth', insight_ids: [a, b] });
+
+    const promoted = await request(app).post(`/api/product/themes/${theme.body.id}/promote`).set(headers)
+      .send({ project_id: await projectId() });
+
+    expect(promoted.status).toBe(201);
+    expect(promoted.body.name).toBe('Single sign-on');
+
+    const feature = await request(app).get(`/api/product/features/${promoted.body.id}`).set(headers);
+    expect(feature.status).toBe(200);
+    expect(feature.body.insight_count).toBe(2);
+    expect(feature.body.description).toBe('Enterprise auth');
+  });
+
+  test('the theme survives promotion — it records how the feature was arrived at', async () => {
+    const a = await newInsight('Keeps the receipt');
+    const theme = await request(app).post('/api/product/themes').set(headers)
+      .send({ name: 'Receipts', insight_ids: [a] });
+
+    await request(app).post(`/api/product/themes/${theme.body.id}/promote`).set(headers)
+      .send({ project_id: await projectId() });
+
+    const still = await request(app).get(`/api/product/themes/${theme.body.id}`).set(headers);
+    expect(still.status).toBe(200);
+    expect(still.body.insights).toHaveLength(1);
+  });
+
+  test('promotion marks the member insights processed', async () => {
+    const a = await newInsight('Triaged by promotion');
+    const theme = await request(app).post('/api/product/themes').set(headers)
+      .send({ name: 'Triage me', insight_ids: [a] });
+
+    await request(app).post(`/api/product/themes/${theme.body.id}/promote`).set(headers)
+      .send({ project_id: await projectId() });
+
+    const insight = await request(app).get(`/api/product/insights/${a}`).set(headers);
+    expect(insight.body.processed).toBe(1);
+  });
+
+  test('promoting an empty theme is a 400 rather than an orphan feature', async () => {
+    const theme = await request(app).post('/api/product/themes').set(headers).send({ name: 'Empty' });
+    const res = await request(app).post(`/api/product/themes/${theme.body.id}/promote`).set(headers)
+      .send({ project_id: await projectId() });
+    expect(res.status).toBe(400);
+  });
+
+  test('requires a project', async () => {
+    const a = await newInsight('Needs a home');
+    const theme = await request(app).post('/api/product/themes').set(headers)
+      .send({ name: 'Homeless', insight_ids: [a] });
+    const res = await request(app).post(`/api/product/themes/${theme.body.id}/promote`).set(headers).send({});
+    expect(res.status).toBe(400);
+  });
+});
