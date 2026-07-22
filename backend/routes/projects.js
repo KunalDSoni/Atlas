@@ -106,6 +106,7 @@ router.delete('/:id', requireAuth, requireBoardAdmin, async (req, res) => {
     await run(db, 'DELETE FROM issues WHERE project_id = ?', [pid]);
     await run(db, 'DELETE FROM sprints WHERE project_id = ?', [pid]);
     await run(db, 'DELETE FROM project_members WHERE project_id = ?', [pid]);
+    await run(db, 'DELETE FROM dashboard_layouts WHERE project_id = ?', [pid]);
     const proj = await queryOne(db, 'SELECT name, key FROM projects WHERE id = ?', [pid]);
     await run(db, 'DELETE FROM projects WHERE id = ?', [pid]);
     auditLog({ userId: req.userId, action: 'Deleted project', category: 'projects', entityType: 'project', entityId: pid, entityName: proj ? `${proj.key} - ${proj.name}` : pid });

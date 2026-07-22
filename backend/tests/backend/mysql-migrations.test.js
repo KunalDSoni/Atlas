@@ -103,6 +103,8 @@ describeMysql('migration runner against real MySQL', () => {
 
     const [t] = await pool.query("SHOW TABLES LIKE 'wiki_page_issues'");
     expect(t.length).toBe(1);
+    const [dashboard] = await pool.query("SHOW TABLES LIKE 'dashboard_layouts'");
+    expect(dashboard.length).toBe(1);
   }, 30_000);
 
   test('service desk columns and tables exist in MySQL', async () => {

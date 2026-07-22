@@ -1,90 +1,185 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertCircle, CheckCircle2, CircleDot, Columns3, ListTodo, Plus } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { LayoutDashboard, Plus, RotateCcw, Save, Settings2, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
+import {
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
 import { api } from '@/lib/api';
 import { useProjects } from '@/hooks/use-projects';
 import { useAuth } from '@/context/auth-provider';
-import { canCreateProjects, STATUS_LABEL, STATUSES, TYPE_LABEL } from '@/lib/domain';
-import type { Issue, ProjectStats, Sprint } from '@/lib/types';
-import {
-  CardsSkeleton, EmptyState, ErrorState, PageHeader, PriorityIcon, StatusPill, TypeIcon, UserAvatar,
-} from '@/components/app/primitives';
+import { canCreateProjects } from '@/lib/domain';
+import { projectUrl } from '@/lib/urls';
+import type { DashboardGadget, DashboardGadgetKey, Issue, ProjectStats, Sprint } from '@/lib/types';
+import { CardsSkeleton, EmptyState, ErrorState, PageHeader } from '@/components/app/primitives';
 import { CreateProjectDialog } from '@/components/app/create-project-dialog';
-import { timeAgo } from '@/lib/format';
+import {
+  DashboardGadgetCard, DEFAULT_DASHBOARD_LAYOUT, GADGET_CATALOG,
+} from '@/components/dashboard/dashboard-gadgets';
 
-function StatTile({
-  label,
-  value,
-  icon: Icon,
-  tone,
+function copyLayout(gadgets: DashboardGadget[]): DashboardGadget[] {
+  return gadgets.map((gadget) => ({ ...gadget }));
+}
+
+function AddGadgetDialog({
+  open,
+  onOpenChange,
+  used,
+  onAdd,
 }: {
-  label: string;
-  value: number | string;
-  icon: React.ComponentType<{ className?: string }>;
-  tone: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  used: Set<DashboardGadgetKey>;
+  onAdd: (key: DashboardGadgetKey) => void;
 }) {
+  const available = (Object.entries(GADGET_CATALOG) as [DashboardGadgetKey, (typeof GADGET_CATALOG)[DashboardGadgetKey]][])
+    .filter(([key]) => !used.has(key));
   return (
-    <Card>
-      <CardContent className="flex items-center gap-3 px-4 py-3.5">
-        <span className={`grid size-9 shrink-0 place-items-center rounded-md ${tone}`}>
-          <Icon className="size-4.5" />
-        </span>
-        <span className="min-w-0">
-          <span className="block text-2xl font-semibold leading-none tabular-nums">{value}</span>
-          <span className="mt-1 block truncate text-xs text-muted-foreground">{label}</span>
-        </span>
-      </CardContent>
-    </Card>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add a gadget</DialogTitle>
+          <DialogDescription>Choose another view of this project's work.</DialogDescription>
+        </DialogHeader>
+        {available.length ? (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {available.map(([key, definition]) => {
+              const Icon = definition.icon;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  aria-label={`Add ${definition.title} gadget`}
+                  onClick={() => {
+                    onAdd(key);
+                    onOpenChange(false);
+                  }}
+                  className="flex items-start gap-3 rounded-lg border border-border p-3 text-left transition-colors hover:border-primary/40 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <span className="grid size-9 shrink-0 place-items-center rounded-md bg-primary-muted text-accent-foreground">
+                    <Icon className="size-4" />
+                  </span>
+                  <span>
+                    <span className="block text-sm font-medium">{definition.title}</span>
+                    <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
+                      {definition.description}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="py-8 text-center text-sm text-muted-foreground">Every gadget is already on this dashboard.</p>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
 export default function DashboardScreen() {
-  const { currentProject, currentProjectId, loading: projectsLoading, reload: reloadProjects, setCurrentProjectId } = useProjects();
+  const {
+    currentProject, currentProjectId, loading: projectsLoading,
+    reload: reloadProjects, setCurrentProjectId,
+  } = useProjects();
   const { user } = useAuth();
   const [createOpen, setCreateOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   const [stats, setStats] = useState<ProjectStats | null>(null);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
+  const [layout, setLayout] = useState<DashboardGadget[]>(copyLayout(DEFAULT_DASHBOARD_LAYOUT));
+  const [draftLayout, setDraftLayout] = useState<DashboardGadget[]>(copyLayout(DEFAULT_DASHBOARD_LAYOUT));
+  const [customizing, setCustomizing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!currentProjectId) return;
     let cancelled = false;
+    setCustomizing(false);
+    setAddOpen(false);
 
     (async () => {
       setLoading(true);
       setError(null);
       try {
-        const [s, i, sp] = await Promise.all([
+        const [dashboardLayout, projectStats, projectIssues, projectSprints] = await Promise.all([
+          api.dashboard.layout(currentProjectId),
           api.projects.stats(currentProjectId),
           api.issues.list(currentProjectId),
           api.sprints.list(currentProjectId),
         ]);
         if (cancelled) return;
-        setStats(s);
-        setIssues(i);
-        setSprints(sp);
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load dashboard');
+        setLayout(copyLayout(dashboardLayout.gadgets));
+        setDraftLayout(copyLayout(dashboardLayout.gadgets));
+        setStats(projectStats);
+        setIssues(projectIssues);
+        setSprints(projectSprints);
+      } catch (caught) {
+        if (!cancelled) setError(caught instanceof Error ? caught.message : 'Failed to load dashboard');
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [currentProjectId]);
+
+  function beginCustomizing() {
+    setDraftLayout(copyLayout(layout));
+    setCustomizing(true);
+  }
+
+  function cancelCustomizing() {
+    setDraftLayout(copyLayout(layout));
+    setCustomizing(false);
+    setAddOpen(false);
+  }
+
+  function moveGadget(index: number, direction: -1 | 1) {
+    setDraftLayout((current) => {
+      const target = index + direction;
+      if (target < 0 || target >= current.length) return current;
+      const next = copyLayout(current);
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+
+  function addGadget(key: DashboardGadgetKey) {
+    if (draftLayout.some((gadget) => gadget.key === key)) return;
+    setDraftLayout((current) => [
+      ...current,
+      { key, span: GADGET_CATALOG[key].defaultSpan },
+    ]);
+  }
+
+  async function saveLayout() {
+    if (!currentProjectId) return;
+    setSaving(true);
+    try {
+      const saved = await api.dashboard.saveLayout(currentProjectId, draftLayout);
+      setLayout(copyLayout(saved.gadgets));
+      setDraftLayout(copyLayout(saved.gadgets));
+      setCustomizing(false);
+      toast.success('Dashboard layout saved');
+    } catch (caught) {
+      toast.error('Could not save dashboard', {
+        description: caught instanceof Error ? caught.message : undefined,
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
 
   if (projectsLoading || (loading && currentProjectId)) {
     return (
       <>
         <PageHeader title="Dashboard" />
-        <CardsSkeleton count={4} />
+        <CardsSkeleton count={6} />
       </>
     );
   }
@@ -94,20 +189,16 @@ export default function DashboardScreen() {
       <>
         <PageHeader title="Dashboard" />
         <EmptyState
-          icon={Columns3}
+          icon={LayoutDashboard}
           title="No project selected"
-          description={
-            canCreateProjects(user?.role)
-              ? 'Create a project to get started.'
-              : 'Ask an administrator to add you to a project.'
-          }
-          action={
-            canCreateProjects(user?.role) && (
-              <Button size="sm" onClick={() => setCreateOpen(true)}>
-                <Plus className="size-4" /> Create project
-              </Button>
-            )
-          }
+          description={canCreateProjects(user?.role)
+            ? 'Create a project to get started.'
+            : 'Ask an administrator to add you to a project.'}
+          action={canCreateProjects(user?.role) && (
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
+              <Plus className="size-4" /> Create project
+            </Button>
+          )}
         />
         <CreateProjectDialog
           open={createOpen}
@@ -121,158 +212,103 @@ export default function DashboardScreen() {
     );
   }
 
-  if (error) {
+  if (error || !stats || !currentProject) {
     return (
       <>
         <PageHeader title="Dashboard" />
-        <ErrorState message={error} />
+        <ErrorState message={error || 'Dashboard data is unavailable'} />
       </>
     );
   }
 
-  const count = (status: string) => stats?.byStatus.find((s) => s.status === status)?.count ?? 0;
-  const total = stats?.total ?? 0;
-  const done = count('done');
-  const donePct = total ? Math.round((done / total) * 100) : 0;
-  const activeSprint = sprints.find((s) => s.status === 'active');
-  const recent = [...issues]
-    .sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))
-    .slice(0, 6);
+  const visibleLayout = customizing ? draftLayout : layout;
+  const used = new Set(draftLayout.map((gadget) => gadget.key));
+  const allGadgetsUsed = used.size === Object.keys(GADGET_CATALOG).length;
 
   return (
     <>
       <PageHeader
         title="Dashboard"
-        description={currentProject ? `${currentProject.name} · ${currentProject.key}` : undefined}
-        actions={
-          <Button asChild variant="outline" size="sm">
-            <Link to="/board">Open board</Link>
-          </Button>
-        }
+        description={`${currentProject.name} · ${currentProject.key}`}
+        actions={customizing ? (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={allGadgetsUsed}
+              onClick={() => setAddOpen(true)}
+            >
+              <Plus /> Add gadget
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setDraftLayout(copyLayout(DEFAULT_DASHBOARD_LAYOUT))}
+            >
+              <RotateCcw /> Reset
+            </Button>
+            <Button variant="ghost" size="sm" onClick={cancelCustomizing}>
+              <X /> Cancel
+            </Button>
+            <Button size="sm" disabled={saving} onClick={() => void saveLayout()}>
+              <Save /> {saving ? 'Saving…' : 'Save layout'}
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button variant="outline" size="sm" onClick={beginCustomizing}>
+              <Settings2 /> Customize
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link to={projectUrl(currentProject.key, 'board')}>Open board</Link>
+            </Button>
+          </>
+        )}
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatTile label="Total issues" value={total} icon={ListTodo} tone="bg-primary-muted text-accent-foreground" />
-        <StatTile label="In progress" value={count('in_progress')} icon={CircleDot} tone="bg-info-muted text-info" />
-        <StatTile label="In review" value={count('in_review')} icon={AlertCircle} tone="bg-warning-muted text-warning" />
-        <StatTile label="Done" value={done} icon={CheckCircle2} tone="bg-success-muted text-success" />
-      </div>
-
-      <div className="mt-4 grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-sm font-semibold">Progress by status</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3.5">
-            <div>
-              <div className="mb-1.5 flex items-baseline justify-between text-sm">
-                <span className="font-medium">Overall completion</span>
-                <span className="tabular-nums text-muted-foreground">
-                  {done}/{total} · {donePct}%
-                </span>
-              </div>
-              <Progress value={donePct} className="h-2" />
+      {visibleLayout.length ? (
+        <div className="grid gap-4 lg:grid-cols-2" aria-label="Dashboard gadgets">
+          {visibleLayout.map((gadget, index) => (
+            <div key={gadget.key} className={gadget.span === 2 ? 'lg:col-span-2' : 'lg:col-span-1'}>
+              <DashboardGadgetCard
+                gadget={gadget}
+                index={index}
+                total={visibleLayout.length}
+                editing={customizing}
+                stats={stats}
+                issues={issues}
+                sprints={sprints}
+                projectKey={currentProject.key}
+                onMove={(direction) => moveGadget(index, direction)}
+                onRemove={() => setDraftLayout((current) => current.filter((item) => item.key !== gadget.key))}
+                onToggleSpan={() => setDraftLayout((current) => current.map((item) => (
+                  item.key === gadget.key ? { ...item, span: item.span === 1 ? 2 : 1 } : item
+                )))}
+              />
             </div>
-
-            <div className="space-y-2.5 pt-1">
-              {STATUSES.map((s) => {
-                const c = count(s);
-                const pct = total ? Math.round((c / total) * 100) : 0;
-                return (
-                  <div key={s} className="flex items-center gap-3">
-                    <StatusPill status={s} className="w-24 justify-center" />
-                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-                      <div className="h-full rounded-full bg-primary/70 transition-all" style={{ width: `${pct}%` }} />
-                    </div>
-                    <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">{c}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-semibold">Active sprint</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {activeSprint ? (
-              <div className="space-y-3">
-                <div>
-                  <p className="font-medium">{activeSprint.name}</p>
-                  {activeSprint.goal && (
-                    <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">{activeSprint.goal}</p>
-                  )}
-                </div>
-                <div>
-                  <div className="mb-1.5 flex items-baseline justify-between text-xs text-muted-foreground">
-                    <span>Issues completed</span>
-                    <span className="tabular-nums">
-                      {activeSprint.done_count}/{activeSprint.issue_count}
-                    </span>
-                  </div>
-                  <Progress
-                    value={activeSprint.issue_count ? (activeSprint.done_count / activeSprint.issue_count) * 100 : 0}
-                    className="h-2"
-                  />
-                </div>
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>Story points</span>
-                  <span className="tabular-nums">
-                    {activeSprint.done_points}/{activeSprint.total_points}
-                  </span>
-                </div>
-                <Button asChild variant="outline" size="sm" className="w-full">
-                  <Link to="/sprints">View sprints</Link>
-                </Button>
-              </div>
-            ) : (
-              <p className="py-4 text-center text-sm text-muted-foreground">No active sprint.</p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card className="mt-4">
-        <CardHeader>
-          <CardTitle className="text-sm font-semibold">Recently updated</CardTitle>
-        </CardHeader>
-        <CardContent className="px-0">
-          {recent.length === 0 ? (
-            <p className="px-6 py-4 text-sm text-muted-foreground">No issues yet.</p>
+          ))}
+        </div>
+      ) : (
+        <EmptyState
+          icon={LayoutDashboard}
+          title="Your dashboard is empty"
+          description={customizing
+            ? 'Add the views that help you run this project.'
+            : 'Customize this dashboard to add a gadget.'}
+          action={customizing ? (
+            <Button size="sm" onClick={() => setAddOpen(true)}><Plus /> Add gadget</Button>
           ) : (
-            <ul className="divide-y divide-border-light">
-              {recent.map((issue) => (
-                <li key={issue.id} className="flex items-center gap-3 px-6 py-2.5 hover:bg-muted/50">
-                  <TypeIcon type={issue.type} />
-                  <span className="w-16 shrink-0 font-mono text-xs text-muted-foreground">{issue.issue_key}</span>
-                  <span className="min-w-0 flex-1 truncate text-sm">{issue.title}</span>
-                  <span className="hidden shrink-0 sm:block">
-                    <PriorityIcon priority={issue.priority} />
-                  </span>
-                  <span className="hidden w-24 shrink-0 text-xs text-muted-foreground sm:block">
-                    {TYPE_LABEL[issue.type]}
-                  </span>
-                  <StatusPill status={issue.status} className="hidden shrink-0 md:inline-flex" />
-                  <span className="hidden w-20 shrink-0 text-right text-xs text-muted-foreground lg:block">
-                    {timeAgo(issue.updated_at)}
-                  </span>
-                  {issue.assignee_name ? (
-                    <UserAvatar name={issue.assignee_name} color={issue.assignee_color} />
-                  ) : (
-                    <span className="size-6 shrink-0 rounded-full border border-dashed border-border" />
-                  )}
-                </li>
-              ))}
-            </ul>
+            <Button size="sm" onClick={beginCustomizing}><Settings2 /> Customize</Button>
           )}
-        </CardContent>
-      </Card>
+        />
+      )}
 
-      <p className="sr-only">
-        {STATUSES.map((s) => `${STATUS_LABEL[s]}: ${count(s)}`).join(', ')}
-      </p>
+      <AddGadgetDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        used={used}
+        onAdd={addGadget}
+      />
     </>
   );
 }

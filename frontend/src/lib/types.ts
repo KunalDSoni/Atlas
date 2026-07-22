@@ -367,7 +367,28 @@ export interface ProjectStats {
   total: number;
   byStatus: { status: IssueStatus; count: number }[];
   byType: { type: IssueType; count: number }[];
-  byAssignee: { assignee_id: string | null; name: string | null; count: number }[];
+  byAssignee: { name: string; avatar_color: string | null; count: number }[];
+}
+
+export type DashboardGadgetKey =
+  | 'summary'
+  | 'status'
+  | 'active_sprint'
+  | 'recent_activity'
+  | 'priority_breakdown'
+  | 'type_breakdown'
+  | 'team_workload';
+
+export interface DashboardGadget {
+  key: DashboardGadgetKey;
+  /** One or both columns of the desktop dashboard grid. */
+  span: 1 | 2;
+}
+
+export interface DashboardLayout {
+  gadgets: DashboardGadget[];
+  customized: boolean;
+  updated_at: string | null;
 }
 
 export interface AdminStats {

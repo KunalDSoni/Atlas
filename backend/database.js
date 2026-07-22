@@ -269,6 +269,14 @@ const SCHEMA_SQL = [
     params TEXT NOT NULL DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now'))
   )`,
+  `CREATE TABLE IF NOT EXISTS dashboard_layouts (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    gadgets TEXT NOT NULL DEFAULT '[]',
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(user_id, project_id)
+  )`,
   `CREATE TABLE IF NOT EXISTS notifications (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id),
@@ -836,6 +844,14 @@ const MYSQL_SCHEMA_SQL = [
     name VARCHAR(255) NOT NULL,
     params TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS dashboard_layouts (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL,
+    project_id VARCHAR(36) NOT NULL,
+    gadgets TEXT NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_dashboard_layout_user_project (user_id, project_id)
   ) DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS notifications (
     id VARCHAR(36) PRIMARY KEY,
@@ -2172,6 +2188,34 @@ function seedDemoData() {
       { title: 'SLA, request type, category and waiting JQL fields', type: 'story' },
       { title: 'Queue editor inline validation and field help', type: 'story' },
       { title: 'Needs-attention queue with live count parity', type: 'task' },
+    ].forEach((child, ci) => {
+      const childNum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${childNum}`, childNum, child.title, child.type,
+         userIds[0], userIds[0], eid, ci]);
+    });
+  }
+
+  // ===== Customizable dashboard gadgets (epic 54) — shipped =====
+  {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(53);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, 53)`,
+      [eid, projId3, `ATLAS-${num}`, num, 'Customizable dashboard gadgets',
+       'Personal, project-specific dashboards with an ordered gadget catalogue, responsive widths, useful delivery views and an atomic server-validated layout contract.',
+       userIds[0], 'purple', startDate, dueDate]);
+    [
+      { title: 'Migration 022: personal project dashboard layouts', type: 'task' },
+      { title: 'Validated atomic layout API with user and project isolation', type: 'story' },
+      { title: 'Seven-gadget catalogue backed by existing project data', type: 'story' },
+      { title: 'Add, remove, reorder, resize and reset dashboard editor', type: 'story' },
+      { title: 'Responsive dashboard grid with accessible gadget controls', type: 'story' },
+      { title: 'Layout persistence and browser regression coverage', type: 'task' },
     ].forEach((child, ci) => {
       const childNum = atlasIssueNumber;
       atlasIssueNumber += 1;

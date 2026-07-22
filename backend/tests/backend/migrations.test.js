@@ -171,6 +171,16 @@ describe('015_insight_origins', () => {
       ['021_sla_query_boundaries'])).toBeTruthy();
   });
 
+  test('022 creates personal dashboard layouts', async () => {
+    const db = await getDb();
+    const columns = (await queryAll(db, 'PRAGMA table_info(dashboard_layouts)')).map((c) => c.name);
+    expect(columns).toEqual(expect.arrayContaining([
+      'id', 'user_id', 'project_id', 'gadgets', 'updated_at',
+    ]));
+    expect(await queryOne(db, 'SELECT id FROM schema_migrations WHERE id = ?',
+      ['022_dashboard_layouts'])).toBeTruthy();
+  });
+
   test('existing insights survive with null origins rather than being rewritten', async () => {
     // The columns are additive: a pre-existing insight keeps its row and simply
     // has no origin, which the inbox renders as a manual capture.

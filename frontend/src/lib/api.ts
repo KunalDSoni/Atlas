@@ -6,6 +6,7 @@
 import type {
   ActivityEntry, AdminStats, AppNotification, Attachment, AuditLogPage, AuthUser,
   AutomationAction, AutomationCondition, AutomationRule, AutomationTrigger, Comment, Issue, EpicSummary,
+  DashboardGadget, DashboardLayout,
   ProfileResponse, Project, ProjectComponent, ProjectMember, ProjectStats, SavedFilter, SearchResults, Settings, Sprint, User, Version,
   IssueLink, LinkType, LinkedIssueSummary, MentioningPage, JqlSearchIssue,
   CycleTimeResponse, TimeInStatusResponse, CumulativeFlowResponse,
@@ -217,6 +218,12 @@ export const api = {
     addMember: (id: string, user_id: string, role_in_project?: string) =>
       post<ProjectMember>(`/projects/${id}/members`, { user_id, role_in_project }),
     removeMember: (id: string, userId: string) => del<{ ok: boolean }>(`/projects/${id}/members/${userId}`),
+  },
+
+  dashboard: {
+    layout: (projectId: string) => get<DashboardLayout>(`/projects/${projectId}/dashboard-layout`),
+    saveLayout: (projectId: string, gadgets: DashboardGadget[]) =>
+      put<DashboardLayout>(`/projects/${projectId}/dashboard-layout`, { gadgets }),
   },
 
   sprints: {

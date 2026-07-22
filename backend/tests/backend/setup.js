@@ -78,6 +78,7 @@ async function createTestApp() {
   testApp.use('/api/admin', require('../../routes/admin'));
   testApp.use('/api/admin', require('../../routes/auditlog'));
   testApp.use('/api', require('../../routes/reports'));
+  testApp.use('/api', require('../../routes/dashboard'));
   testApp.use('/api', require('../../routes/wiki'));
   testApp.use('/api', require('../../routes/activity'));
   testApp.use('/api', require('../../routes/watchers'));

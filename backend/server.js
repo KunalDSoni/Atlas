@@ -53,6 +53,7 @@ const queuesRoutes = require('./routes/queues');
 const slaRoutes = require('./routes/sla');
 const deflectionRoutes = require('./routes/deflection');
 const helpRoutes = require('./routes/help');
+const dashboardRoutes = require('./routes/dashboard');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -163,6 +164,9 @@ app.use('/api/admin', auditLogRoutes);
 
 // Reports Module — project reports, charts, CSV export
 app.use('/api', reportsRoutes);
+
+// Per-user dashboard gadget layouts
+app.use('/api', dashboardRoutes);
 
 // Wiki (Confluence) Module — spaces, pages, comments, search
 app.use('/api', wikiRoutes);

@@ -849,6 +849,30 @@ const MIGRATIONS = [
       },
     ],
   },
+  {
+    id: '022_dashboard_layouts',
+    description: 'Per-user, per-project dashboard gadget layouts',
+    steps: [{
+      sql: {
+        sqlite: `CREATE TABLE IF NOT EXISTS dashboard_layouts (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL REFERENCES users(id),
+          project_id TEXT NOT NULL REFERENCES projects(id),
+          gadgets TEXT NOT NULL DEFAULT '[]',
+          updated_at TEXT DEFAULT (datetime('now')),
+          UNIQUE(user_id, project_id)
+        )`,
+        mysql: `CREATE TABLE IF NOT EXISTS dashboard_layouts (
+          id VARCHAR(36) PRIMARY KEY,
+          user_id VARCHAR(36) NOT NULL,
+          project_id VARCHAR(36) NOT NULL,
+          gadgets TEXT NOT NULL,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE KEY uniq_dashboard_layout_user_project (user_id, project_id)
+        ) DEFAULT CHARSET=utf8mb4`,
+      },
+    }],
+  },
 ];
 
 const LEDGER_SQL = {
