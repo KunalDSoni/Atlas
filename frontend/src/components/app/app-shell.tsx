@@ -191,7 +191,10 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       <ProjectSwitcher />
       <Separator className="my-2" />
 
-      <ScrollArea className="flex-1">
+      {/* min-h-0: without it the flex item's `min-height: auto` floor sizes the
+          scroll container to its CONTENT, so the nav runs past the bottom of the
+          sticky column and never overflows anything it could scroll. */}
+      <ScrollArea className="min-h-0 flex-1">
         <NavSection title="Project" items={PROJECT_NAV} onNavigate={onNavigate} />
         {currentProject?.is_service_desk ? (
           <>
