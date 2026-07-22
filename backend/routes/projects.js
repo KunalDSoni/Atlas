@@ -65,11 +65,14 @@ router.put('/:id', requireAuth, requireBoardAdmin, async (req, res) => {
     const project = await queryOne(db, 'SELECT * FROM projects WHERE id = ?', [req.params.id]);
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
-    const { name, key, description, lead_id, status, wip_limits, is_service_desk } = req.body;
+    // `key` is deliberately absent: it is an identity, not a label. It is baked
+    // into every issue_key (ATLAS-3) and into every shared URL (/atlas/ATLAS-3),
+    // so renaming it would strand both — issue_key is denormalised and would not
+    // follow. Create a new project instead.
+    const { name, description, lead_id, status, wip_limits, is_service_desk } = req.body;
     const updates = [];
     const params = [];
     if (name !== undefined) { updates.push('name = ?'); params.push(name); }
-    if (key !== undefined) { updates.push('key = ?'); params.push(key.toUpperCase()); }
     if (description !== undefined) { updates.push('description = ?'); params.push(description); }
     if (lead_id !== undefined) { updates.push('lead_id = ?'); params.push(lead_id); }
     if (status !== undefined) { updates.push('status = ?'); params.push(status); }

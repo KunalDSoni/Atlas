@@ -90,3 +90,37 @@ describe('notification links', () => {
     expect(hit.link).not.toContain('?issue=');
   });
 });
+
+describe('project keys are immutable', () => {
+  // There is no GET /api/projects/:id — the list is the only read path.
+  const fetchProject = async () => {
+    const res = await request(app).get('/api/projects').set(headers);
+    return res.body.find((p) => p.id === projectId);
+  };
+
+  test('PUT ignores an attempt to change the key', async () => {
+    const before = await fetchProject();
+    expect(before.key).toBeTruthy();
+
+    const res = await request(app)
+      .put(`/api/projects/${projectId}`)
+      .set(headers)
+      .send({ key: 'RENAMED' });
+
+    expect(res.status).toBe(200);
+    expect((await fetchProject()).key).toBe(before.key);
+  });
+
+  test('the name is still editable alongside a rejected key', async () => {
+    const before = await fetchProject();
+    const res = await request(app)
+      .put(`/api/projects/${projectId}`)
+      .set(headers)
+      .send({ key: 'RENAMED', name: 'Renamed Project' });
+
+    expect(res.status).toBe(200);
+    const after = await fetchProject();
+    expect(after.name).toBe('Renamed Project');
+    expect(after.key).toBe(before.key);
+  });
+});
