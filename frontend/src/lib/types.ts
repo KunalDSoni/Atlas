@@ -674,6 +674,25 @@ export interface PbDemandRow {
   contribution: number;
 }
 
+export interface PbTheme {
+  id: string;
+  name: string;
+  summary: string | null;
+  created_by: string | null;
+  created_by_name?: string | null;
+  created_at: string;
+  insight_count: number;
+  insights?: Pick<PbInsight, 'id' | 'title' | 'origin_kind' | 'origin_excerpt' | 'source' | 'created_at'>[];
+}
+
+/** A proposed grouping. Nothing is stored until a human confirms it through
+ *  the ordinary create-theme endpoint. */
+export interface PbThemeSuggestion {
+  name: string;
+  summary: string;
+  insight_ids: string[];
+}
+
 export interface PbInsight {
   id: string;
   title: string;
@@ -742,6 +761,8 @@ export interface PbFeature {
   demand_breakdown?: PbDemandRow[];
   /** Evidence with no company attached — counted, never folded into demand. */
   demand_unattributed?: number;
+  /** The wiki page drafted for this feature, if one exists. */
+  spec_page_id: string | null;
   insight_count: number;
   vote_count: number;
   delivery_total: number;

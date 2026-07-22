@@ -2009,6 +2009,41 @@ function seedDemoData() {
     });
   });
 
+  // ===== Product discovery slice 2 (epics 49-50) — shipped =====
+  const discoverySlice2Epics = [
+    { title: 'Theme clustering', color: 'blue',
+      desc: 'A named grouping of insights between feedback and features, so two hundred insights stop being two hundred rows. Grouping is manual and works with no API key; the model only ever proposes, and a human confirms through the same endpoint a hand-made theme uses.',
+      children: [
+        { title: 'Migration 016: theme tables', type: 'task' },
+        { title: 'Theme CRUD and membership', type: 'story' },
+        { title: 'Promote a theme to a feature carrying its evidence', type: 'story' },
+        { title: 'AI suggestions that propose and never write', type: 'task' },
+      ] },
+    { title: 'Spec drafting', color: 'orange',
+      desc: 'Turn a feature and its evidence into a draft spec page in the wiki. Assembly is pure and always works; the model adds prose when configured, and a model failure still leaves an editable skeleton.',
+      children: [
+        { title: 'Spec assembly from stored data', type: 'task' },
+        { title: 'Migration 017 and the spec endpoint', type: 'story' },
+        { title: 'Spec chip on the feature detail sheet', type: 'task' },
+      ] },
+  ];
+  discoverySlice2Epics.forEach((epic, i) => {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(43 + i);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, ?)`,
+      [eid, projId3, `ATLAS-${num}`, num, epic.title, epic.desc, userIds[0], epic.color, startDate, dueDate, 43 + i]);
+    epic.children.forEach((c, ci) => {
+      const cnum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${cnum}`, cnum, c.title, c.type, userIds[0], userIds[0], eid, ci]);
+    });
+  });
+
   // ===== DEMO SERVICE DESK =====
   // Gives the help center shape on a fresh database. Dana (userIds[5]) is the
   // only seeded client, so the requests must be hers — seeding them against a
@@ -2343,6 +2378,18 @@ function seedProductDemoData() {
   // screen, which is what epic 48 exists to show.
   link(iLaptop, fMobile, 2, 'New starters lose their first day waiting on a replacement.');
   link(iExport, fCsv, 3, 'exporting to CSV by hand every Monday morning');
+
+  // ===== Demo theme (epic 49) =====
+  // Two insights that are plainly the same ask, grouped so the Themes tab has
+  // shape on a fresh database and "Promote to feature" has something to act on.
+  const themeId = uuid();
+  db.run('INSERT INTO pb_themes (id, name, summary, created_by) VALUES (?, ?, ?, ?)',
+    [themeId, 'Bulk export',
+     'Repeated asks for getting data out in bulk rather than a row at a time.', pmId]);
+  for (const insightId of [iCsv, iExport]) {
+    db.run('INSERT INTO pb_insight_themes (id, insight_id, theme_id) VALUES (?, ?, ?)',
+      [uuid(), insightId, themeId]);
+  }
 
   // Objectives linked to features
   const oEnt = uuid(), oNps = uuid();

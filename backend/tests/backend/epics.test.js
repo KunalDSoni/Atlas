@@ -221,7 +221,7 @@ describe('Atlas Development dogfood seed', () => {
     // + 1 wiki focus mode + 6 service desk (foundation, help center, queues, SLAs,
     // deflection, CSAT + report)
     // + 2 product discovery (insight capture, revenue-weighted demand).
-    expect(epics.body.length).toBe(47);
+    expect(epics.body.length).toBe(49);
 
     const first = epics.body.find((e) => e.issue_key === 'ATLAS-1');
     expect(first.title).toBe('Epic support');
@@ -230,7 +230,7 @@ describe('Atlas Development dogfood seed', () => {
     expect(second.title).toBe('Subtasks');
     expect(second.status).toBe('done');
     // Every roadmap epic is seeded done.
-    expect(epics.body.filter((e) => e.status === 'done').length).toBe(47);
+    expect(epics.body.filter((e) => e.status === 'done').length).toBe(49);
     expect(epics.body.some((e) => e.title === 'Product: Insights inbox')).toBe(true);
     expect(epics.body.some((e) => e.title === 'Wiki AI assistant')).toBe(true);
     expect(epics.body.some((e) => e.title === 'Custom fields')).toBe(true);
