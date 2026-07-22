@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Clock, Eye, EyeOff, FileText, Lightbulb, Loader2, Paperclip, Plus, Send, Trash2 } from 'lucide-react';
+import { Clock, Eye, EyeOff, FileText, Lightbulb, Loader2, Paperclip, Pencil, Plus, Send, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
@@ -30,6 +30,7 @@ import { PriorityIcon, StatusPill, TypeIcon, UserAvatar } from './primitives';
 import { LabelsEditor } from './labels-editor';
 import { CustomFieldsEditor } from './custom-fields-editor';
 import { LinkedIssues } from './linked-issues';
+import { EditIssueDialog } from './edit-issue-dialog';
 
 const UNASSIGNED = '__unassigned__';
 const NO_SPRINT = '__backlog__';
@@ -75,6 +76,7 @@ export function IssueDetailSheet({
   const [logComment, setLogComment] = useState('');
   const [estimateHours, setEstimateHours] = useState('');
   const [loggingWork, setLoggingWork] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
   const canEdit = canCreateIssues(user?.role);
   const workflow = useWorkflow(issue?.project_id);
@@ -296,6 +298,18 @@ export function IssueDetailSheet({
                   {watching ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
                   {watchers.length}
                 </Button>
+                {canEdit && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setEditOpen(true)}
+                    className="gap-1.5 text-xs"
+                    aria-label="Edit issue"
+                  >
+                    <Pencil className="size-3.5" />
+                    Edit
+                  </Button>
+                )}
                 {isAdmin(user?.role) && (
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
@@ -929,6 +943,16 @@ export function IssueDetailSheet({
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+
+            <EditIssueDialog
+              issue={issue}
+              open={editOpen}
+              onOpenChange={setEditOpen}
+              onSaved={() => {
+                onChanged?.();
+                void load();
+              }}
+            />
           </>
         )}
       </SheetContent>
