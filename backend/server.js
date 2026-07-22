@@ -37,6 +37,7 @@ const workflowsRoutes = require('./routes/workflows');
 const automationsRoutes = require('./routes/automations');
 const productCompaniesRoutes = require('./routes/product-companies');
 const productInsightsRoutes = require('./routes/product-insights');
+const productThemesRoutes = require('./routes/product-themes');
 const productFeaturesRoutes = require('./routes/product-features');
 const productObjectivesRoutes = require('./routes/product-objectives');
 const portalRoutes = require('./routes/portal');
@@ -194,6 +195,7 @@ app.use('/api', productCompaniesRoutes);
 app.use('/api', productInsightsRoutes);
 app.use('/api', productFeaturesRoutes);
 app.use('/api', productObjectivesRoutes);
+app.use('/api', productThemesRoutes);
 app.use('/api', portalRoutes);
 
 // AI assistant (Rovo-style): summarize, write, ask-your-wiki
