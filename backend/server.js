@@ -49,6 +49,7 @@ const customFieldsRoutes = require('./routes/custom-fields');
 const requestTypesRoutes = require('./routes/request-types');
 const queuesRoutes = require('./routes/queues');
 const slaRoutes = require('./routes/sla');
+const deflectionRoutes = require('./routes/deflection');
 const helpRoutes = require('./routes/help');
 
 const app = express();
@@ -218,6 +219,7 @@ app.use('/api', customFieldsRoutes);
 app.use('/api', requestTypesRoutes);
 app.use('/api', queuesRoutes);
 app.use('/api', slaRoutes);
+app.use('/api', deflectionRoutes);
 
 // SPA fallback (Express 5 compatible)
 app.get('/{*splat}', (req, res) => {

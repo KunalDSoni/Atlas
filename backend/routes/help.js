@@ -17,6 +17,7 @@ const { requireClientSafe } = require('../middleware/servicedesk');
 const { serverError } = require('../utils/errors');
 const { toPublicRequest, validateSubmission, renderSubmission } = require('../utils/servicedesk');
 const sla = require('../utils/sla-clocks');
+const { suggestionsFor, isSuggestible } = require('../utils/deflection');
 
 const router = express.Router();
 
@@ -49,7 +50,9 @@ async function projectRequest(db, issue) {
     `SELECT c.id, c.body, c.visibility, c.created_at, u.name as author_name
        FROM comments c JOIN users u ON u.id = c.author_id
       WHERE c.issue_id = ? ORDER BY c.created_at`, [issue.id]);
-  return toPublicRequest(issue, { requestType, statusLabel, statusCategory, comments });
+  const satisfaction = await queryOne(db,
+    'SELECT rating, comment FROM sd_satisfaction WHERE issue_id = ?', [issue.id]);
+  return toPublicRequest(issue, { requestType, statusLabel, statusCategory, comments, satisfaction });
 }
 
 // GET /api/help/request-types — every type in every service desk project.
@@ -169,6 +172,77 @@ router.post('/help/requests/:key/resolve', requireAuth, requireClientSafe, async
     await sla.onStatusChange(db, req.serviceRequest, nextStatus);
     const issue = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.serviceRequest.id]);
     res.json(await projectRequest(db, issue));
+  } catch (e) { serverError(res, e); }
+});
+
+// GET /api/help/suggestions?type=&q= — up to three articles, as the customer types.
+//
+// Never blocks submission: the raise form fires this alongside the draft and
+// ignores failures. Bounded to the request type's curated spaces by
+// utils/deflection.js, which is the only thing standing between a customer and
+// the internal wiki.
+router.get('/help/suggestions', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    res.json(await suggestionsFor(db, req.query.type, req.query.q));
+  } catch (e) { serverError(res, e); }
+});
+
+// POST /api/help/article-hits — a suggestion was opened, and maybe it helped.
+//
+// This is what makes deflection a measured number rather than a claim: `helped`
+// hits are the numerator of the deflection rate, and requests raised are the
+// rest of the denominator.
+router.post('/help/article-hits', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const { page_id, request_type_id, helped } = req.body;
+
+    // Refuse a hit on anything the caller could not have been shown — otherwise
+    // this endpoint confirms which page ids exist.
+    if (!(await isSuggestible(db, request_type_id, page_id))) {
+      return res.status(404).json({ error: 'Article not found' });
+    }
+
+    await run(db, 'INSERT INTO sd_article_hits (id, page_id, request_type_id, helped) VALUES (?, ?, ?, ?)',
+      [uuidv4(), page_id, request_type_id, helped ? 1 : 0]);
+    res.status(201).json({ ok: true });
+  } catch (e) { serverError(res, e); }
+});
+
+// POST /api/help/requests/:key/satisfaction — one rating per request.
+//
+// requireClientSafe 404s for anyone who is not the reporter or a participant;
+// the reporter check below narrows that to the reporter alone, still without
+// confirming the key exists to anybody else.
+router.post('/help/requests/:key/satisfaction', requireAuth, requireClientSafe, async (req, res) => {
+  try {
+    const db = await getDb();
+    const issue = req.serviceRequest;
+    if (issue.reporter_id !== req.userId) return res.status(404).json({ error: 'Request not found' });
+
+    const rating = Number(req.body.rating);
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      return res.status(400).json({ error: 'Rating must be a whole number from 1 to 5' });
+    }
+
+    // Rating is a judgement on a finished job; an open request has nothing to
+    // judge yet. Editable for as long as it stays resolved.
+    const { statusCategory } = await statusFor(db, issue.project_id, issue.status);
+    if (statusCategory !== 'done') {
+      return res.status(400).json({ error: 'Only a resolved request can be rated' });
+    }
+
+    const comment = req.body.comment ? String(req.body.comment).slice(0, 2000) : null;
+    const existing = await queryOne(db, 'SELECT issue_id FROM sd_satisfaction WHERE issue_id = ?', [issue.id]);
+    if (existing) {
+      await run(db, "UPDATE sd_satisfaction SET rating = ?, comment = ?, updated_at = datetime('now') WHERE issue_id = ?",
+        [rating, comment, issue.id]);
+    } else {
+      await run(db, 'INSERT INTO sd_satisfaction (issue_id, rating, comment) VALUES (?, ?, ?)',
+        [issue.id, rating, comment]);
+    }
+    res.status(201).json({ rating, comment });
   } catch (e) { serverError(res, e); }
 });
 

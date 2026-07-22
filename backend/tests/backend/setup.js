@@ -102,6 +102,7 @@ async function createTestApp() {
   testApp.use('/api', require('../../routes/request-types'));
   testApp.use('/api', require('../../routes/queues'));
   testApp.use('/api', require('../../routes/sla'));
+  testApp.use('/api', require('../../routes/deflection'));
 
   app = testApp;
   return testApp;

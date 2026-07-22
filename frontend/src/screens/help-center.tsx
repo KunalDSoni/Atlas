@@ -14,6 +14,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { api } from '@/lib/api';
+import { ArticleSuggestions } from '@/components/app/article-suggestions';
 import type { RequestField, RequestType } from '@/lib/types';
 import { EmptyState, ErrorState, PageHeader, RowsSkeleton } from '@/components/app/primitives';
 
@@ -157,6 +158,16 @@ export default function HelpCenterScreen() {
                 placeholder="A one-line description"
               />
             </div>
+            {active && (
+              <ArticleSuggestions
+                requestTypeId={active.id}
+                query={summary}
+                onDeflected={() => {
+                  toast.success('Glad that helped — nothing was sent.');
+                  setActive(null);
+                }}
+              />
+            )}
             {active?.fields.map((f) => (
               <FieldInput
                 key={f.key}

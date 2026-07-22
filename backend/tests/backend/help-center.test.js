@@ -31,7 +31,7 @@ describe('toPublicRequest projection', () => {
   test('exposes only the allow-listed keys', () => {
     expect(Object.keys(projected).sort()).toEqual([
       'comments', 'created_at', 'description', 'fields', 'key',
-      'request_type', 'status', 'status_category', 'summary', 'updated_at',
+      'request_type', 'satisfaction', 'status', 'status_category', 'summary', 'updated_at',
     ]);
   });
 

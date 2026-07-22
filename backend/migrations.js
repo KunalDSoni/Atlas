@@ -494,11 +494,77 @@ const MIGRATIONS = [
       },
     ],
   },
-  // 012 and 013 above are the service desk wave's queues and SLAs. 014 stays
-  // reserved for its deflection/CSAT half. The runner applies migrations in
-  // array order and the ledger keys on id, so the gap costs nothing — but
-  // reusing 014 later would collide with a deployment that had already
-  // stamped it.
+  {
+    id: '014_sd_deflection_csat',
+    description: 'Curated help articles, deflection hits, and one satisfaction rating per request',
+    steps: [
+      // Curation is what BOUNDS the customer-facing search: a request type's
+      // articles decide which spaces its suggestions may draw from, so an
+      // uncurated type offers nothing rather than the whole internal wiki.
+      {
+        sql: {
+          sqlite: `CREATE TABLE IF NOT EXISTS sd_type_articles (
+            request_type_id TEXT NOT NULL REFERENCES sd_request_types(id),
+            page_id TEXT NOT NULL REFERENCES wiki_pages(id),
+            position INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (request_type_id, page_id)
+          )`,
+          mysql: `CREATE TABLE IF NOT EXISTS sd_type_articles (
+            request_type_id VARCHAR(36) NOT NULL,
+            page_id VARCHAR(36) NOT NULL,
+            position INT DEFAULT 0,
+            created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+            PRIMARY KEY (request_type_id, page_id)
+          ) DEFAULT CHARSET=utf8mb4`,
+        },
+      },
+      {
+        sql: {
+          sqlite: `CREATE TABLE IF NOT EXISTS sd_article_hits (
+            id TEXT PRIMARY KEY,
+            page_id TEXT NOT NULL,
+            request_type_id TEXT,
+            helped INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now'))
+          )`,
+          mysql: `CREATE TABLE IF NOT EXISTS sd_article_hits (
+            id VARCHAR(36) PRIMARY KEY,
+            page_id VARCHAR(36) NOT NULL,
+            request_type_id VARCHAR(36) NULL,
+            helped TINYINT DEFAULT 0,
+            created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
+          ) DEFAULT CHARSET=utf8mb4`,
+        },
+      },
+      // UNIQUE on issue_id is the "one rating per request" rule in the schema
+      // rather than in a handler that could be bypassed by a second route.
+      {
+        sql: {
+          sqlite: `CREATE TABLE IF NOT EXISTS sd_satisfaction (
+            issue_id TEXT PRIMARY KEY REFERENCES issues(id),
+            rating INTEGER NOT NULL,
+            comment TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+          )`,
+          mysql: `CREATE TABLE IF NOT EXISTS sd_satisfaction (
+            issue_id VARCHAR(36) PRIMARY KEY,
+            rating INT NOT NULL,
+            comment TEXT,
+            created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+            updated_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
+          ) DEFAULT CHARSET=utf8mb4`,
+        },
+      },
+      {
+        sql: {
+          sqlite: 'CREATE INDEX IF NOT EXISTS idx_article_hits_type ON sd_article_hits(request_type_id)',
+          mysql: 'CREATE INDEX idx_article_hits_type ON sd_article_hits(request_type_id)',
+        },
+      },
+    ],
+  },
   {
     id: '015_insight_origins',
     description: 'Where an insight came from, and a snapshot of the captured text',

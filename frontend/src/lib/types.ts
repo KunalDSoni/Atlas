@@ -858,6 +858,41 @@ export interface PublicRequest {
   created_at: string;
   updated_at: string;
   comments: PublicRequestComment[];
+  /** The customer's own rating, once they've given one (epic 45). */
+  satisfaction: { rating: number; comment: string } | null;
+}
+
+// ----- KB deflection (epic 44) -----
+
+/** A suggested help article — the customer projection, nothing more. */
+export interface ArticleSuggestion {
+  id: string;
+  title: string;
+  slug: string;
+  excerpt: string;
+}
+
+/** A curated article row on the agent side. */
+export interface CuratedArticle {
+  page_id: string;
+  position: number;
+  title: string;
+  slug: string;
+  status: string;
+  space_id: string;
+  space_name: string | null;
+}
+
+// ----- Service desk report (epic 45) -----
+
+export interface ServiceDeskReport {
+  deflection: { helped: number; requests_raised: number; rate: number };
+  volume_by_type: { id: string; name: string; count: number }[];
+  median_minutes: { first_response: number | null; resolution: number | null };
+  sla_breach_by_type: { name: string; total: number; breached: number; rate: number }[];
+  csat: { count: number; average: number | null; distribution: Record<string, number> };
+  /** Always true — panels count only rows we store, never a backfilled estimate. */
+  since_tracking_began: boolean;
 }
 
 // ----- Agent queues (epic 42) -----

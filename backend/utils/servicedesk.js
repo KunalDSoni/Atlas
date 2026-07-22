@@ -80,7 +80,7 @@ function renderSubmission(schema, values) {
  * Rejected alternative: a deny-list of internal fields, which fails open the
  * day someone adds a column.
  */
-function toPublicRequest(issue, { requestType, statusLabel, statusCategory, comments = [] } = {}) {
+function toPublicRequest(issue, { requestType, statusLabel, statusCategory, comments = [], satisfaction = null } = {}) {
   let fields = {};
   try { fields = JSON.parse(issue.sd_fields || '{}'); } catch (e) { fields = {}; }
 
@@ -94,6 +94,11 @@ function toPublicRequest(issue, { requestType, statusLabel, statusCategory, comm
     status_category: statusCategory || null,
     created_at: issue.created_at,
     updated_at: issue.updated_at,
+    // The customer's own rating, so the detail screen can show what they gave
+    // and let them change it. Null until they rate.
+    satisfaction: satisfaction
+      ? { rating: Number(satisfaction.rating), comment: satisfaction.comment || '' }
+      : null,
     comments: comments
       .filter((c) => c.visibility !== 'internal')
       .map((c) => ({

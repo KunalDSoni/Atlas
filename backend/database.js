@@ -330,6 +330,27 @@ const SCHEMA_SQL = [
     target_minutes INTEGER NOT NULL,
     created_at TEXT DEFAULT (datetime('now'))
   )`,
+  `CREATE TABLE IF NOT EXISTS sd_type_articles (
+    request_type_id TEXT NOT NULL REFERENCES sd_request_types(id),
+    page_id TEXT NOT NULL REFERENCES wiki_pages(id),
+    position INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (request_type_id, page_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS sd_article_hits (
+    id TEXT PRIMARY KEY,
+    page_id TEXT NOT NULL,
+    request_type_id TEXT,
+    helped INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS sd_satisfaction (
+    issue_id TEXT PRIMARY KEY REFERENCES issues(id),
+    rating INTEGER NOT NULL,
+    comment TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  )`,
   `CREATE TABLE IF NOT EXISTS sd_sla_clocks (
     id TEXT PRIMARY KEY,
     issue_id TEXT NOT NULL REFERENCES issues(id),
@@ -836,6 +857,27 @@ const MYSQL_SCHEMA_SQL = [
     metric VARCHAR(20) NOT NULL,
     target_minutes INT NOT NULL,
     created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS sd_type_articles (
+    request_type_id VARCHAR(36) NOT NULL,
+    page_id VARCHAR(36) NOT NULL,
+    position INT DEFAULT 0,
+    created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (request_type_id, page_id)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS sd_article_hits (
+    id VARCHAR(36) PRIMARY KEY,
+    page_id VARCHAR(36) NOT NULL,
+    request_type_id VARCHAR(36) NULL,
+    helped TINYINT DEFAULT 0,
+    created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS sd_satisfaction (
+    issue_id VARCHAR(36) PRIMARY KEY,
+    rating INT NOT NULL,
+    comment TEXT,
+    created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
   ) DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS sd_sla_clocks (
     id VARCHAR(36) PRIMARY KEY,
@@ -1871,6 +1913,19 @@ function seedDemoData() {
         { title: 'Clock lifecycle: start, first response, resolution, pause/resume', type: 'story' },
         { title: 'SLA goals editor and waiting-for-customer statuses', type: 'story' },
       ] },
+    { title: 'Knowledge base deflection', color: 'green',
+      desc: 'Wiki articles offered while a customer describes their problem, bounded to the spaces an admin curated into so the internal wiki can never leak. Hits and "this solved it" are recorded, which makes the deflection rate a measured number rather than a claim.',
+      children: [
+        { title: 'Migration 014: curated articles, hits and satisfaction', type: 'task' },
+        { title: 'Curation bounds the customer-facing article search', type: 'story' },
+        { title: 'Debounced suggestions that never block submission', type: 'story' },
+      ] },
+    { title: 'CSAT and the service desk report', color: 'orange',
+      desc: 'One satisfaction rating per request, editable while it stays resolved and enforced to the reporter server-side, plus a report whose every panel counts only rows we store — labelled since tracking began, with no backfill invented for requests that predate a goal.',
+      children: [
+        { title: 'One rating per request, reporter only', type: 'story' },
+        { title: 'Service desk report: volume, SLA, deflection, CSAT', type: 'story' },
+      ] },
   ];
   serviceDeskEpics.forEach((epic, i) => {
     const eid = uuid();
@@ -2035,6 +2090,9 @@ function seedDemoData() {
         c.stopped === null ? null : ago(c.stopped)]);
   });
 
+  // Deflection + CSAT demo rows are seeded AFTER the wiki below, which is where
+  // the pages they point at are created. See seedServiceDeskExtras().
+
   // ===== CONFLUENCE SEED DATA =====
   const spaceEng = uuid();
   const spaceProd = uuid();
@@ -2079,6 +2137,48 @@ function seedDemoData() {
     db.run("INSERT INTO wiki_page_versions (id, page_id, version, title, body, editor_id, change_message) VALUES (?, ?, 1, ?, ?, ?, 'Initial version')",
       [uuid(), p[0], p[3], p[5], p[9]]);
   });
+
+  // ===== Deflection + CSAT demo (epics 44-45) =====
+  // A space of its own, deliberately. Curating an article is what opens its
+  // SPACE to customer-facing search (utils/deflection.js), so pointing the help
+  // desk at ENG would expose the engineering wiki — exactly what the boundary
+  // exists to prevent. These two pages are written to be customer-safe.
+  const spaceHelp = uuid();
+  db.run("INSERT INTO wiki_spaces (id, space_key, name, description, icon, color, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    [spaceHelp, 'HELP', 'Help articles', 'Self-service answers offered in the help center', '\u{1F4A1}', '#22a06b', userIds[0]]);
+
+  const helpArticles = [
+    ['Laptop will not power on', 'laptop-will-not-power-on',
+      '<h1>Laptop will not power on</h1><p>Hold the power button for 15 seconds, then plug the charger in directly (not through a dock) and wait two minutes before trying again.</p><p>If the charger light stays off, the power supply is the likely fault — raise a hardware request and mention which light you saw.</p>'],
+    ['Getting access to a system', 'getting-access-to-a-system',
+      '<h1>Getting access to a system</h1><p>Access is granted by the system owner, not the help desk. Raise an access request naming the system and why you need it, and it will be routed for approval.</p><p>Most approvals land within one working day.</p>'],
+  ];
+  const helpArticleIds = [];
+  helpArticles.forEach(([title, slug, body], i) => {
+    const pid = uuid();
+    helpArticleIds.push(pid);
+    db.run("INSERT INTO wiki_pages (id, space_id, parent_id, title, slug, body, body_format, status, position, author_id, last_editor_id, version, view_count) VALUES (?, ?, NULL, ?, ?, ?, 'html', 'current', ?, ?, ?, 1, ?)",
+      [pid, spaceHelp, title, slug, body, i, userIds[0], userIds[0], 20 + i * 7]);
+    db.run("INSERT INTO wiki_page_versions (id, page_id, version, title, body, editor_id, change_message) VALUES (?, ?, 1, ?, ?, ?, 'Initial version')",
+      [uuid(), pid, title, body, userIds[0]]);
+  });
+
+  // Hardware → laptop article, Access → access article.
+  db.run("INSERT INTO sd_type_articles (request_type_id, page_id, position) VALUES (?, ?, 0)",
+    [requestTypeIds[0], helpArticleIds[0]]);
+  db.run("INSERT INTO sd_type_articles (request_type_id, page_id, position) VALUES (?, ?, 0)",
+    [requestTypeIds[1], helpArticleIds[1]]);
+
+  // Four opened the laptop article, two of them said it solved the problem —
+  // so the demo shows a real deflection rate rather than a zero.
+  [1, 1, 0, 0].forEach((helped) => {
+    db.run("INSERT INTO sd_article_hits (id, page_id, request_type_id, helped) VALUES (?, ?, ?, ?)",
+      [uuid(), helpArticleIds[0], requestTypeIds[0], helped]);
+  });
+
+  // HD-3 is the resolved demo request, so it is the only one that can carry a rating.
+  db.run("INSERT INTO sd_satisfaction (issue_id, rating, comment) VALUES (?, 4, ?)",
+    [demoRequestIds[2], 'Sorted quickly, thanks.']);
 
   // Some labels
   db.run("INSERT INTO wiki_labels (id, page_id, label) VALUES (?, ?, ?)", [uuid(), pageIds.arch, 'architecture']);

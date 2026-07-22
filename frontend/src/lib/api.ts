@@ -15,6 +15,7 @@ import type {
   WorkLog, WorkflowStatus,
   PbCompany, PbCustomer, PbInsight, PbFeature, PbObjective, PortalFeature,
   PublicRequest, RequestType, Queue, QueueIssue, SlaGoal, SlaState,
+  ArticleSuggestion, CuratedArticle, ServiceDeskReport,
 } from './types';
 
 const TOKEN_KEY = 'atlas_token';
@@ -108,7 +109,27 @@ export const api = {
     reply: (key: string, body: string) =>
       post<{ id: string; body: string; created_at: string }>(`/help/requests/${key}/comments`, { body }),
     resolve: (key: string) => post<PublicRequest>(`/help/requests/${key}/resolve`),
+    /** Debounce this — it fires as the customer types and must never block submission. */
+    suggestions: (type: string, q: string) =>
+      get<ArticleSuggestion[]>(`/help/suggestions?type=${encodeURIComponent(type)}&q=${encodeURIComponent(q)}`),
+    logArticleHit: (body: { page_id: string; request_type_id: string; helped?: boolean }) =>
+      post<{ ok: boolean }>('/help/article-hits', body),
+    rate: (key: string, rating: number, comment?: string) =>
+      post<{ rating: number; comment: string | null }>(`/help/requests/${key}/satisfaction`, { rating, comment }),
   },
+
+  // KB deflection — curating articles is what bounds what customers may be
+  // shown, so it is board-admin only on the server.
+  articles: {
+    list: (requestTypeId: string) => get<CuratedArticle[]>(`/request-types/${requestTypeId}/articles`),
+    attach: (requestTypeId: string, page_id: string) =>
+      post<{ ok: boolean }>(`/request-types/${requestTypeId}/articles`, { page_id }),
+    detach: (requestTypeId: string, pageId: string) =>
+      del<{ ok: boolean }>(`/request-types/${requestTypeId}/articles/${pageId}`),
+  },
+
+  serviceDeskReport: (projectId: string) =>
+    get<ServiceDeskReport>(`/projects/${projectId}/servicedesk-report`),
 
   requestTypes: {
     list: (projectId: string) => get<RequestType[]>(`/projects/${projectId}/request-types`),

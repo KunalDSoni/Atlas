@@ -61,6 +61,7 @@ const WIKI_NAV: NavItem[] = [{ to: '/wiki', label: 'Wiki', icon: BookOpen }];
 // has no queues to show, and an empty section is worse than no section.
 const SERVICE_DESK_NAV: NavItem[] = [
   { to: '/servicedesk', label: 'Queues', icon: Headphones },
+  { to: '/servicedesk/report', label: 'Report', icon: Gauge },
   { to: '/servicedesk/settings', label: 'Configuration', icon: SlidersHorizontal },
 ];
 

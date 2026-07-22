@@ -10,6 +10,54 @@ import type { PublicRequest } from '@/lib/types';
 import { EmptyState, ErrorState, PageHeader, RowsSkeleton } from '@/components/app/primitives';
 import { cn } from '@/lib/utils';
 
+/** One rating per request, editable while it stays resolved. */
+function SatisfactionCard({ requestKey, existing, onRated }: {
+  requestKey: string;
+  existing: { rating: number; comment: string } | null;
+  onRated: (s: { rating: number; comment: string }) => void;
+}) {
+  const [saving, setSaving] = useState(false);
+
+  async function rate(rating: number) {
+    setSaving(true);
+    try {
+      await api.help.rate(requestKey, rating);
+      onRated({ rating, comment: existing?.comment ?? '' });
+      toast.success('Thanks for the feedback');
+    } catch (e) {
+      toast.error('Could not save your rating', { description: e instanceof Error ? e.message : undefined });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card className="mb-4 p-4">
+      <p className="text-sm font-medium">
+        {existing ? 'You rated this request' : 'How did we do?'}
+      </p>
+      <div className="mt-2 flex gap-1">
+        {[1, 2, 3, 4, 5].map((star) => (
+          <button
+            key={star}
+            type="button"
+            disabled={saving}
+            aria-label={`${star} star${star === 1 ? '' : 's'}`}
+            onClick={() => void rate(star)}
+            className={cn(
+              'text-2xl leading-none transition-colors',
+              existing && star <= existing.rating ? 'text-amber-500' : 'text-muted-foreground/40 hover:text-amber-400',
+            )}
+          >
+            ★
+          </button>
+        ))}
+      </div>
+      {existing && <p className="mt-1 text-xs text-muted-foreground">You can change this while the request stays resolved.</p>}
+    </Card>
+  );
+}
+
 const STATUS_STYLES: Record<string, string> = {
   todo: 'bg-muted text-muted-foreground',
   in_progress: 'bg-blue-500/15 text-blue-600 dark:text-blue-400',
@@ -165,6 +213,16 @@ function RequestDetail({ requestKey }: { requestKey: string }) {
           </div>
         }
       />
+
+      {/* Rating only makes sense once the job is done, and stays editable for
+          as long as it stays done — the server enforces both. */}
+      {request.status_category === 'done' && (
+        <SatisfactionCard
+          requestKey={request.key}
+          existing={request.satisfaction}
+          onRated={(s) => setRequest((r) => (r ? { ...r, satisfaction: s } : r))}
+        />
+      )}
 
       {fieldEntries.length > 0 && (
         <Card className="mb-4 p-4">
