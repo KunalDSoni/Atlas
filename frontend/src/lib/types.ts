@@ -655,6 +655,21 @@ export interface PbCustomer {
   insight_count?: number;
 }
 
+export type InsightOrigin = 'request' | 'comment' | 'wiki' | 'portal' | 'manual';
+
+/** One company's contribution to a feature's demand. `arr` is null when the
+ *  figure was estimated from the tier median, so an estimate can never be
+ *  read as recorded revenue. */
+export interface PbDemandRow {
+  company_id: string;
+  company_name: string | null;
+  tier: CompanyTier | null;
+  arr: number | null;
+  estimated: boolean;
+  insight_count: number;
+  contribution: number;
+}
+
 export interface PbInsight {
   id: string;
   title: string;
@@ -663,6 +678,14 @@ export interface PbInsight {
   customer_id: string | null;
   created_by: string | null;
   processed: number;
+  /** Where this came from. Null on insights that predate epic 47. */
+  origin_kind: InsightOrigin | null;
+  /** Backlink to the source row. Null for portal ideas (the insight IS the
+   *  submission) and may dangle if the source was deleted — the excerpt is the
+   *  evidence, not this. */
+  origin_id: string | null;
+  origin_excerpt: string | null;
+  dismissed_at: string | null;
   created_at: string;
   customer_name?: string | null;
   customer_email?: string | null;
@@ -705,7 +728,16 @@ export interface PbFeature {
   project_name?: string | null;
   project_key?: string | null;
   release_name?: string | null;
+  /** Tier-weighted evidence: SUM(importance x tier). Predates demand and
+   *  remains the features screen's default sort — the two answer different
+   *  questions and are shown side by side rather than merged. */
   user_impact: number;
+  /** Revenue-weighted evidence: SUM(arr x importance), in currency. */
+  demand: number;
+  /** Per-company contributions, ranked. Present on single-feature responses. */
+  demand_breakdown?: PbDemandRow[];
+  /** Evidence with no company attached — counted, never folded into demand. */
+  demand_unattributed?: number;
   insight_count: number;
   vote_count: number;
   delivery_total: number;
