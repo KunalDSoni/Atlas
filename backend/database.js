@@ -390,6 +390,7 @@ const SCHEMA_SQL = [
     impact INTEGER,
     confidence INTEGER,
     release_id TEXT REFERENCES versions(id),
+    spec_page_id TEXT,
     created_by TEXT REFERENCES users(id),
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
@@ -878,6 +879,7 @@ const MYSQL_SCHEMA_SQL = [
     impact INT,
     confidence INT,
     release_id VARCHAR(36),
+    spec_page_id VARCHAR(36),
     created_by VARCHAR(36),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP

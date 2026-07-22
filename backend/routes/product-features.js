@@ -20,6 +20,8 @@ const { getDb, queryAll, queryOne, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
 const { demandForFeatures } = require('../utils/demand');
+const { buildSpecBody } = require('../utils/spec-draft');
+const { complete, aiEnabled, MODELS } = require('./ai');
 const { projectStatuses } = require('./workflows');
 
 const router = express.Router();
@@ -277,6 +279,89 @@ router.post('/product/features/:id/vote', requireAuth, async (req, res) => {
     }
     const count = await queryOne(db, 'SELECT COUNT(*) as c FROM pb_votes WHERE feature_id = ?', [req.params.id]);
     res.json({ voted: !existing, vote_count: count.c });
+  } catch (e) { serverError(res, e); }
+});
+
+// POST /api/product/features/:id/spec — draft a spec page in the wiki from what
+// the database already knows about this feature.
+//
+// Idempotent: a feature has one spec page, and a second call returns it rather
+// than making another. Regenerating over an existing page would overwrite prose
+// a human has since edited, which needs its own decision about version history —
+// deliberately out of scope here.
+//
+// The caller names the space. A global setting would be invisible and wrong the
+// moment a second team wants a different one; defaulting to the first space is
+// silently arbitrary.
+router.post('/product/features/:id/spec', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const feature = await queryOne(db, 'SELECT * FROM pb_features WHERE id = ?', [req.params.id]);
+    if (!feature) return res.status(404).json({ error: 'Feature not found' });
+
+    // Re-check the page still exists: spec_page_id is not a foreign key, so a
+    // page deleted from the wiki leaves a dangling link that should draft afresh
+    // rather than 200 with a dead id.
+    if (feature.spec_page_id) {
+      const existing = await queryOne(db, 'SELECT id FROM wiki_pages WHERE id = ?', [feature.spec_page_id]);
+      if (existing) return res.json({ page_id: feature.spec_page_id, created: false });
+    }
+
+    const { space_id } = req.body;
+    if (!space_id) return res.status(400).json({ error: 'space_id required' });
+    const space = await queryOne(db, 'SELECT id FROM wiki_spaces WHERE id = ?', [space_id]);
+    if (!space) return res.status(404).json({ error: 'Space not found' });
+
+    const objectives = await queryAll(db,
+      `SELECT o.name FROM pb_feature_objectives fo
+       JOIN pb_objectives o ON fo.objective_id = o.id
+       WHERE fo.feature_id = ?`, [req.params.id]);
+    const evidence = await queryAll(db,
+      `SELECT il.quote, il.importance, co.name as company_name
+       FROM pb_insight_links il
+       JOIN pb_insights ins ON il.insight_id = ins.id
+       LEFT JOIN pb_customers cu ON ins.customer_id = cu.id
+       LEFT JOIN pb_companies co ON cu.company_id = co.id
+       WHERE il.feature_id = ? ORDER BY il.importance DESC`, [req.params.id]);
+    const demandMap = await demandForFeatures(db, [req.params.id]);
+
+    let body = buildSpecBody({
+      feature,
+      objectives,
+      evidence,
+      demandBreakdown: demandMap.get(req.params.id).breakdown,
+    });
+
+    if (aiEnabled()) {
+      try {
+        const drafted = await complete({
+          model: MODELS.write,
+          maxTokens: 2000,
+          system: 'You draft product specs. Given an assembled spec skeleton, rewrite the '
+            + 'Problem, Proposed solution and Open questions sections using the evidence '
+            + 'present. Keep every heading, and reproduce the Evidence, Demand and '
+            + 'Objectives sections exactly as given. Reply with HTML only, no code fences.',
+          user: body,
+        });
+        // Only accept a draft that still looks like the document we sent. A
+        // model failure or a refusal must leave the assembled skeleton intact —
+        // a spec you can edit beats an error, and the caller asked for a spec,
+        // not for AI.
+        if (drafted && drafted.includes('<h1>')) body = drafted;
+      } catch {
+        /* keep the assembled skeleton */
+      }
+    }
+
+    const pageId = uuidv4();
+    const slug = `spec-${String(feature.name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
+    await run(db,
+      `INSERT INTO wiki_pages (id, space_id, title, slug, body, body_format, status, author_id)
+       VALUES (?, ?, ?, ?, ?, 'html', 'current', ?)`,
+      [pageId, space_id, `Spec: ${feature.name}`, slug, body, req.userId]);
+    await run(db, 'UPDATE pb_features SET spec_page_id = ? WHERE id = ?', [pageId, req.params.id]);
+
+    res.status(201).json({ page_id: pageId, created: true });
   } catch (e) { serverError(res, e); }
 });
 

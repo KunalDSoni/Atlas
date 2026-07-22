@@ -479,6 +479,20 @@ const MIGRATIONS = [
       },
     ],
   },
+  {
+    id: '017_feature_spec_pages',
+    description: 'Link a feature to its spec page in the wiki',
+    steps: [{
+      addColumn: {
+        table: 'pb_features', column: 'spec_page_id',
+        // Not a foreign key: a spec page can be deleted from the wiki without
+        // the feature becoming unreadable, and the endpoint re-checks the page
+        // still exists before treating the link as live.
+        sqlite: 'ALTER TABLE pb_features ADD COLUMN spec_page_id TEXT',
+        mysql: 'ALTER TABLE pb_features ADD COLUMN spec_page_id VARCHAR(36) NULL',
+      },
+    }],
+  },
 ];
 
 const LEDGER_SQL = {

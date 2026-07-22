@@ -81,3 +81,64 @@ describe('spec assembly', () => {
     expect(html).toContain('No evidence linked yet');
   });
 });
+
+describe('spec endpoint', () => {
+  const request = require('supertest');
+  const { createTestApp, adminHeaders, loginAs } = require('./setup');
+  let app, headers, clientHeaders, featureId, spaceId;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+    headers = await adminHeaders();
+    clientHeaders = await loginAs('dana@customer.example.com', 'password123');
+    const features = await request(app).get('/api/product/features').set(headers);
+    featureId = features.body[0].id;
+    const spaces = await request(app).get('/api/wiki/spaces').set(headers);
+    spaceId = spaces.body[0].id;
+  });
+
+  test('creates a wiki page and links it from the feature', async () => {
+    const res = await request(app).post(`/api/product/features/${featureId}/spec`).set(headers)
+      .send({ space_id: spaceId });
+    expect(res.status).toBe(201);
+    expect(res.body.page_id).toBeTruthy();
+    expect(res.body.created).toBe(true);
+
+    const page = await request(app).get(`/api/wiki/pages/${res.body.page_id}`).set(headers);
+    expect(page.status).toBe(200);
+    expect(page.body.body).toContain('<h2>Evidence</h2>');
+    expect(page.body.title).toContain('Spec:');
+
+    const feature = await request(app).get(`/api/product/features/${featureId}`).set(headers);
+    expect(feature.body.spec_page_id).toBe(res.body.page_id);
+  });
+
+  test('a second call returns the existing page rather than duplicating it', async () => {
+    const again = await request(app).post(`/api/product/features/${featureId}/spec`).set(headers)
+      .send({ space_id: spaceId });
+    expect(again.status).toBe(200);
+    expect(again.body.created).toBe(false);
+
+    const feature = await request(app).get(`/api/product/features/${featureId}`).set(headers);
+    expect(again.body.page_id).toBe(feature.body.spec_page_id);
+  });
+
+  test('requires a space', async () => {
+    const features = await request(app).get('/api/product/features').set(headers);
+    const other = features.body.find((f) => f.id !== featureId && !f.spec_page_id);
+    const res = await request(app).post(`/api/product/features/${other.id}/spec`).set(headers).send({});
+    expect(res.status).toBe(400);
+  });
+
+  test('a missing feature is a 404', async () => {
+    const res = await request(app).post('/api/product/features/no-such-feature/spec').set(headers)
+      .send({ space_id: spaceId });
+    expect(res.status).toBe(404);
+  });
+
+  test('a client cannot draft a spec', async () => {
+    const res = await request(app).post(`/api/product/features/${featureId}/spec`).set(clientHeaders)
+      .send({ space_id: spaceId });
+    expect(res.status).toBe(403);
+  });
+});
