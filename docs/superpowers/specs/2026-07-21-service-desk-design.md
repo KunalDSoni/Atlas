@@ -444,3 +444,45 @@ so nothing above 41 exists yet.
 — a queue stores its JQL as text, so deleting a status via
 `DELETE /api/statuses/:id?migrate_to=` leaves every queue referencing the old
 key silently returning zero rows, with nothing detecting it.
+
+---
+
+## Slice 2 — what actually shipped (epics 42–43)
+
+Built against the ORIGINAL §Epic 42 / §Epic 43 above, before the decisions in
+the previous section were seen. Merged green: migrations 012 and 013, 520
+backend tests passing, epics 42 (agent queues) and 43 (SLAs) seeded. Three
+places where it diverges from the decisions recorded above, left standing
+deliberately rather than silently:
+
+**Counts do use one grouped query, and it works.** Decision 3 holds that a
+single grouped count "cannot work once each queue carries arbitrary JQL". That
+is true of `GROUP BY`, but not of the form shipped:
+
+```sql
+SELECT SUM(CASE WHEN <where_q1> THEN 1 ELSE 0 END) AS c0,
+       SUM(CASE WHEN <where_q2> THEN 1 ELSE 0 END) AS c1
+  FROM issues i JOIN projects p ON p.id = i.project_id
+ WHERE i.project_id = ?
+```
+
+Each queue contributes its own predicate as a separate aggregate, so the WHERE
+clauses never need to agree. One round trip and **one** table scan, where
+`UNION ALL` of N subqueries is one round trip and N scans. A test asserts the
+sidebar count equals the rows the queue returns. If `UNION ALL` is still wanted,
+it is a drop-in replacement in `routes/queues.js` — but the stated reason for it
+does not apply.
+
+**JQL v2 and the stored `due_at` are not built.** Queues run on JQL v1, so
+`sla = breached`, `waiting_for_customer` and `request_type` are not expressible
+and the seeded demo queues use only what v1 supports. Decisions 1 and 2 remain
+the right next step; nothing shipped here forecloses them, and `due_at` can be
+added to `sd_sla_clocks` alongside the existing lifecycle writes in
+`utils/sla-clocks.js`.
+
+**Epic numbering follows the original spec** (42 = queues, 43 = SLAs), not the
+unapproved restructure. Those two epics are now seeded, so renumbering is no
+longer free — the restructure would have to renumber a seeded roadmap.
+
+Still unresolved, as flagged above: deleting a status leaves queues referencing
+the old key returning zero rows, with nothing detecting it.
