@@ -33,7 +33,10 @@ test.describe('wiki issue links', () => {
     const chip = page.locator('.wiki-issue-chip', { hasText: issue.issue_key });
     await expect(chip).toBeVisible({ timeout: 15_000 });
     await chip.click();
-    await expect(page).toHaveURL(new RegExp(`/(board|epics)\\?issue=${issue.id}`), { timeout: 15_000 });
+    // One route serves every issue type now, and the project comes from the
+    // key's prefix — so a chip is a link to the issue, not to a screen.
+    await expect(page).toHaveURL(
+      new RegExp(`/${projects[0].key}/${issue.issue_key}$`, 'i'), { timeout: 15_000 });
     await assertNoCrash(page);
 
     await page.request.delete(`/api/wiki/pages/${created.id}`, { headers });

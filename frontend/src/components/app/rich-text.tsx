@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useAIEnabled } from '@/hooks/use-ai';
 import { cn } from '@/lib/utils';
+import { issueUrl } from '@/lib/urls';
 
 const PURIFY_CONFIG: Config = {
   ALLOWED_TAGS: [
@@ -341,15 +342,11 @@ export function RichTextView({
     const chip = (e.target as HTMLElement).closest?.('a[data-issue-id]');
     if (!chip) return;
     e.preventDefault();
-    // Navigate by the id the server resolved. The previous implementation
-    // searched by key and fell back to the first result, which could open an
-    // unrelated issue when the key no longer existed.
-    const id = chip.getAttribute('data-issue-id') ?? '';
+    // The key is the address. Type no longer selects a screen — one route
+    // serves epics, stories, tasks and bugs alike — and the project comes from
+    // the key's prefix, so a chip pointing into another project just works.
     const key = chip.getAttribute('data-issue-key') ?? '';
-    // Chips in prose resolve their type via issueMap; chips inside [jql:]
-    // tables carry it as data-issue-type since they aren't in the page's map.
-    const type = issueMap.get(key)?.type ?? chip.getAttribute('data-issue-type') ?? '';
-    navigate(type === 'epic' ? `/epics?issue=${id}` : `/board?issue=${id}`);
+    navigate(issueUrl(key));
   }
 
   function onPointerOver(e: React.PointerEvent<HTMLDivElement>) {

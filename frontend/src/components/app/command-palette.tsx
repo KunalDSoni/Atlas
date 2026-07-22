@@ -10,6 +10,7 @@ import {
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
 import { useProjects } from '@/hooks/use-projects';
+import { issueUrl } from '@/lib/urls';
 import { isAdmin } from '@/lib/domain';
 import type { Issue, SearchResults } from '@/lib/types';
 import { TypeIcon } from './primitives';
@@ -109,7 +110,7 @@ export function CommandPalette() {
                 <CommandItem
                   key={i.id}
                   value={`${i.issue_key} ${i.title}`}
-                  onSelect={() => run(() => navigate(i.type === 'epic' ? `/epics?issue=${i.id}` : `/board?issue=${i.id}`))}
+                  onSelect={() => run(() => navigate(issueUrl(i.issue_key)))}
                   className="gap-2"
                 >
                   <TypeIcon type={i.type} />
@@ -129,12 +130,7 @@ export function CommandPalette() {
                 <CommandItem
                   key={i.id}
                   value={`${i.issue_key} ${i.title}`}
-                  onSelect={() =>
-                    run(() => {
-                      if (i.project_id !== currentProjectId) setCurrentProjectId(i.project_id);
-                      navigate(i.type === 'epic' ? `/epics?issue=${i.id}` : `/board?issue=${i.id}`);
-                    })
-                  }
+                  onSelect={() => run(() => navigate(issueUrl(i.issue_key)))}
                   className="gap-2"
                 >
                   <TypeIcon type={i.type} />

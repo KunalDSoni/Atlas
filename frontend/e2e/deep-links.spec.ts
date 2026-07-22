@@ -30,3 +30,25 @@ test.describe('legacy URLs keep working', () => {
     await expect(page).toHaveURL(/\/atlas\/backlog/);
   });
 });
+
+test.describe('navigation carries the project', () => {
+  // Asserting on the href, not on the URL after clicking: a bare /backlog link
+  // still LANDS on /atlas/backlog via the legacy redirect, so only the href
+  // proves the sidebar itself carries the project.
+  test('sidebar links are project-scoped', async ({ page }) => {
+    await login(page);
+    await page.goto('/atlas/board');
+    await expect(page.getByRole('link', { name: 'Backlog' })).toHaveAttribute('href', '/atlas/backlog');
+    await page.getByRole('link', { name: 'Backlog' }).click();
+    await expect(page).toHaveURL(/\/atlas\/backlog/);
+  });
+
+  test('switching project rewrites the URL and keeps the screen', async ({ page }) => {
+    await login(page);
+    await page.goto('/atlas/backlog');
+    await page.getByRole('button', { name: 'Switch project' }).click();
+    await page.getByRole('menuitem').filter({ hasNotText: /atlas development/i }).first().click();
+    await expect(page).toHaveURL(/\/[a-z0-9-]+\/backlog/);
+    await expect(page).not.toHaveURL(/\/atlas\/backlog/);
+  });
+});

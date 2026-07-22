@@ -18,6 +18,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
 import { useProjects } from '@/hooks/use-projects';
 import { canCreateProjects, isAdmin } from '@/lib/domain';
+import { projectUrl } from '@/lib/urls';
 import type { AppNotification } from '@/lib/types';
 import { timeAgo } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -33,16 +34,21 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string }>;
 }
 
-const PROJECT_NAV: NavItem[] = [
+const GLOBAL_NAV: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/board', label: 'Board', icon: Columns3 },
-  { to: '/backlog', label: 'Backlog', icon: ListTodo },
-  { to: '/epics', label: 'Epics', icon: Zap },
-  { to: '/roadmap', label: 'Roadmap', icon: CalendarRange },
-  { to: '/sprints', label: 'Sprints', icon: Rocket },
-  { to: '/releases', label: 'Releases', icon: Package },
-  { to: '/reports', label: 'Reports', icon: Gauge },
-  { to: '/automation', label: 'Automation', icon: Zap },
+];
+
+// `to` is a SCREEN NAME here, not a path — it is resolved against the current
+// project key at render time, so every link carries the project it belongs to.
+const PROJECT_NAV: NavItem[] = [
+  { to: 'board', label: 'Board', icon: Columns3 },
+  { to: 'backlog', label: 'Backlog', icon: ListTodo },
+  { to: 'epics', label: 'Epics', icon: Zap },
+  { to: 'roadmap', label: 'Roadmap', icon: CalendarRange },
+  { to: 'sprints', label: 'Sprints', icon: Rocket },
+  { to: 'releases', label: 'Releases', icon: Package },
+  { to: 'reports', label: 'Reports', icon: Gauge },
+  { to: 'automation', label: 'Automation', icon: Zap },
 ];
 
 const PRODUCT_NAV: NavItem[] = [
@@ -60,9 +66,9 @@ const WIKI_NAV: NavItem[] = [{ to: '/wiki', label: 'Wiki', icon: BookOpen }];
 // Only rendered when the current project is a service desk — a board project
 // has no queues to show, and an empty section is worse than no section.
 const SERVICE_DESK_NAV: NavItem[] = [
-  { to: '/servicedesk', label: 'Queues', icon: Headphones },
-  { to: '/servicedesk/report', label: 'Report', icon: Gauge },
-  { to: '/servicedesk/settings', label: 'Configuration', icon: SlidersHorizontal },
+  { to: 'servicedesk', label: 'Queues', icon: Headphones },
+  { to: 'servicedesk/report', label: 'Report', icon: Gauge },
+  { to: 'servicedesk/settings', label: 'Configuration', icon: SlidersHorizontal },
 ];
 
 const ADMIN_NAV: NavItem[] = [
@@ -81,7 +87,7 @@ function NavSection({ title, items, onNavigate }: { title: string; items: NavIte
           <NavLink
             key={to}
             to={to}
-            end={to === '/admin' || to === '/wiki' || to === '/servicedesk'}
+            end={to === '/admin' || to === '/wiki' || to.endsWith('/servicedesk')}
             onClick={onNavigate}
             className={({ isActive }) =>
               cn(
@@ -179,6 +185,11 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { user } = useAuth();
   const { currentProject } = useProjects();
 
+  // A project nav item without a project is a link to nowhere — render the
+  // section empty until projects have loaded rather than emitting /undefined/board.
+  const scoped = (items: NavItem[]) =>
+    currentProject ? items.map((i) => ({ ...i, to: projectUrl(currentProject.key, i.to) })) : [];
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-14 items-center gap-2 px-5">
@@ -195,11 +206,12 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           scroll container to its CONTENT, so the nav runs past the bottom of the
           sticky column and never overflows anything it could scroll. */}
       <ScrollArea className="min-h-0 flex-1">
-        <NavSection title="Project" items={PROJECT_NAV} onNavigate={onNavigate} />
+        <NavSection title="Project" items={GLOBAL_NAV} onNavigate={onNavigate} />
+        <NavSection title="Board" items={scoped(PROJECT_NAV)} onNavigate={onNavigate} />
         {currentProject?.is_service_desk ? (
           <>
             <Separator className="my-2" />
-            <NavSection title="Service desk" items={SERVICE_DESK_NAV} onNavigate={onNavigate} />
+            <NavSection title="Service desk" items={scoped(SERVICE_DESK_NAV)} onNavigate={onNavigate} />
           </>
         ) : null}
         <Separator className="my-2" />
