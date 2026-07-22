@@ -439,6 +439,46 @@ const MIGRATIONS = [
       },
     ],
   },
+  {
+    id: '016_insight_themes',
+    description: 'Themes: a named grouping of insights between feedback and features',
+    steps: [
+      {
+        sql: {
+          sqlite: `CREATE TABLE IF NOT EXISTS pb_themes (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            summary TEXT DEFAULT '',
+            created_by TEXT REFERENCES users(id),
+            created_at TEXT DEFAULT (datetime('now'))
+          )`,
+          mysql: `CREATE TABLE IF NOT EXISTS pb_themes (
+            id VARCHAR(36) PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            summary TEXT,
+            created_by VARCHAR(36),
+            created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
+          ) DEFAULT CHARSET=utf8mb4`,
+        },
+      },
+      {
+        sql: {
+          sqlite: `CREATE TABLE IF NOT EXISTS pb_insight_themes (
+            id TEXT PRIMARY KEY,
+            insight_id TEXT NOT NULL REFERENCES pb_insights(id),
+            theme_id TEXT NOT NULL REFERENCES pb_themes(id),
+            UNIQUE(insight_id, theme_id)
+          )`,
+          mysql: `CREATE TABLE IF NOT EXISTS pb_insight_themes (
+            id VARCHAR(36) PRIMARY KEY,
+            insight_id VARCHAR(36) NOT NULL,
+            theme_id VARCHAR(36) NOT NULL,
+            UNIQUE KEY uniq_insight_theme (insight_id, theme_id)
+          ) DEFAULT CHARSET=utf8mb4`,
+        },
+      },
+    ],
+  },
 ];
 
 const LEDGER_SQL = {

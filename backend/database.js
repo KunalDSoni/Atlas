@@ -404,6 +404,19 @@ const SCHEMA_SQL = [
     created_at TEXT DEFAULT (datetime('now')),
     UNIQUE(insight_id, feature_id)
   )`,
+  `CREATE TABLE IF NOT EXISTS pb_themes (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    summary TEXT DEFAULT '',
+    created_by TEXT REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS pb_insight_themes (
+    id TEXT PRIMARY KEY,
+    insight_id TEXT NOT NULL REFERENCES pb_insights(id),
+    theme_id TEXT NOT NULL REFERENCES pb_themes(id),
+    UNIQUE(insight_id, theme_id)
+  )`,
   `CREATE TABLE IF NOT EXISTS pb_feature_issues (
     id TEXT PRIMARY KEY,
     feature_id TEXT NOT NULL REFERENCES pb_features(id),
@@ -878,6 +891,19 @@ const MYSQL_SCHEMA_SQL = [
     created_by VARCHAR(36),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_insight_feature (insight_id, feature_id)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS pb_themes (
+    id VARCHAR(36) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    summary TEXT,
+    created_by VARCHAR(36),
+    created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS pb_insight_themes (
+    id VARCHAR(36) PRIMARY KEY,
+    insight_id VARCHAR(36) NOT NULL,
+    theme_id VARCHAR(36) NOT NULL,
+    UNIQUE KEY uniq_insight_theme (insight_id, theme_id)
   ) DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS pb_feature_issues (
     id VARCHAR(36) PRIMARY KEY,
