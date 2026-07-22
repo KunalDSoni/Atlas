@@ -329,6 +329,26 @@ router.post('/projects/:projectId/issues', requireAuth, requireBoardAdmin, async
   } catch (e) { serverError(res, e); }
 });
 
+// GET /api/issues/by-key/:key — resolve a human-readable key (ATLAS-3).
+//
+// This is what makes /atlas/ATLAS-3 a bootable URL: the page has a key, not a
+// UUID, and must not have to guess an id before it can render. Keys are unique
+// across projects because projects.key is.
+//
+// Authorisation is deliberate parity with GET /issues/:id below — requireAuth,
+// and clients never arrive because middleware/servicedesk.blockClients is
+// mounted ahead of this router. There is no per-project read filter on issues
+// today and this endpoint does not invent one.
+router.get('/issues/by-key/:key', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const issue = await queryOne(db, 'SELECT * FROM issues WHERE UPPER(issue_key) = ?',
+      [String(req.params.key).toUpperCase()]);
+    if (!issue) return res.status(404).json({ error: 'Issue not found' });
+    res.json(await enrichIssue(db, issue));
+  } catch (e) { serverError(res, e); }
+});
+
 // GET /api/issues/:id
 router.get('/issues/:id', requireAuth, async (req, res) => {
   try {
