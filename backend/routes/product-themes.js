@@ -21,6 +21,7 @@ const { v4: uuidv4 } = require('uuid');
 const { getDb, queryAll, queryOne, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
+const { complete, aiEnabled, MODELS } = require('./ai');
 
 const router = express.Router();
 
@@ -72,6 +73,80 @@ router.post('/product/themes', requireAuth, async (req, res) => {
     await addMembers(db, id, insight_ids);
 
     res.status(201).json(await queryOne(db, `${THEME_SELECT} WHERE t.id = ?`, [id]));
+  } catch (e) { serverError(res, e); }
+});
+
+// How many insights one suggest call may consider, and how much of each. A
+// bounded batch keeps the prompt bounded — an inbox with two thousand rows must
+// not build a two thousand row prompt.
+const SUGGEST_BATCH = 40;
+const SUGGEST_EXCERPT = 240;
+
+// Model output is untrusted input. Extracted from the route so it can be tested
+// without an API key — the suite runs with none, so an inline version would
+// have shipped completely unexercised.
+//
+// Returns null when the response is not JSON at all; otherwise an array, having
+// dropped every id that was not in the batch we asked about. Without that
+// filter a hallucinated id would flow into POST /themes and silently do nothing,
+// or worse, name a real insight the model never saw.
+function parseSuggestions(raw, validIds) {
+  let parsed;
+  try {
+    parsed = JSON.parse(String(raw).replace(/^```(?:json)?/i, '').replace(/```$/, '').trim());
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object') return null;
+
+  return (Array.isArray(parsed.themes) ? parsed.themes : [])
+    .map((t) => ({
+      name: String((t && t.name) || '').slice(0, 200),
+      summary: String((t && t.summary) || '').slice(0, 1000),
+      insight_ids: (Array.isArray(t && t.insight_ids) ? t.insight_ids : []).filter((id) => validIds.has(id)),
+    }))
+    // A theme of one is not a grouping, and an unnamed one is not usable.
+    .filter((t) => t.name && t.insight_ids.length >= 2);
+}
+
+// POST /api/product/themes/suggest — proposes groupings over untriaged
+// insights. Declared before the '/:id' routes, which would otherwise match
+// 'suggest' as an identifier.
+//
+// Writes NOTHING. The PM edits the proposal and confirms it through
+// POST /product/themes, which is the only path that creates a theme. Clustering
+// feedback is a judgement call where a confident wrong answer is worse than no
+// answer, so the model never gets the last word.
+router.post('/product/themes/suggest', requireAuth, async (req, res) => {
+  try {
+    if (!aiEnabled()) return res.json({ enabled: false, suggestions: [] });
+
+    const db = await getDb();
+    const rows = await queryAll(db,
+      `SELECT id, title, origin_excerpt, content FROM pb_insights
+       WHERE processed = 0 AND dismissed_at IS NULL
+       ORDER BY created_at DESC LIMIT ?`, [SUGGEST_BATCH]);
+    if (rows.length < 2) return res.json({ enabled: true, suggestions: [] });
+
+    const catalogue = rows.map((r) =>
+      `${r.id} :: ${r.title} :: ${String(r.origin_excerpt || r.content || '').slice(0, SUGGEST_EXCERPT)}`
+    ).join('\n');
+
+    const raw = await complete({
+      model: MODELS.summary,
+      maxTokens: 1500,
+      system: 'You group customer feedback into themes. Reply with JSON only: '
+        + '{"themes":[{"name":"...","summary":"...","insight_ids":["..."]}]}. '
+        + 'Use only ids from the input. Omit an insight rather than forcing it into a theme. '
+        + 'A theme needs at least two insights. No preamble, no code fences.',
+      user: `Group these insights. Each line is "id :: title :: excerpt".\n\n${catalogue}`,
+    });
+
+    const suggestions = parseSuggestions(raw, new Set(rows.map((r) => r.id)));
+    if (suggestions === null) {
+      return res.json({ enabled: true, suggestions: [], error: 'Could not parse the suggestion' });
+    }
+    res.json({ enabled: true, suggestions });
   } catch (e) { serverError(res, e); }
 });
 
@@ -182,3 +257,6 @@ router.post('/product/themes/:id/promote', requireAuth, async (req, res) => {
 });
 
 module.exports = router;
+// Exported for testing: the suite runs without an API key, so the route body
+// that calls this never executes there.
+module.exports.parseSuggestions = parseSuggestions;

@@ -184,3 +184,81 @@ describe('promotion to a feature', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('AI suggestions', () => {
+  // The suite runs with no ANTHROPIC_API_KEY, so the disabled branch below IS
+  // the path any deployment without a key takes. It must answer cleanly rather
+  // than 500, and it must not write.
+  test('reports disabled and writes nothing when no API key is configured', async () => {
+    const before = await request(app).get('/api/product/themes').set(headers);
+
+    const res = await request(app).post('/api/product/themes/suggest').set(headers).send({});
+    expect(res.status).toBe(200);
+    expect(res.body.enabled).toBe(false);
+    expect(res.body.suggestions).toEqual([]);
+
+    const after = await request(app).get('/api/product/themes').set(headers);
+    expect(after.body.length).toBe(before.body.length);
+  });
+
+  test('suggest is matched before the :id route rather than read as a theme id', async () => {
+    // POST /product/themes/suggest must not fall through to a handler that
+    // treats "suggest" as an identifier.
+    const res = await request(app).post('/api/product/themes/suggest').set(headers).send({});
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('enabled');
+  });
+
+  test('a client cannot reach the suggest endpoint', async () => {
+    const res = await request(app).post('/api/product/themes/suggest').set(clientHeaders).send({});
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('suggestion parsing — model output is untrusted input', () => {
+  const { parseSuggestions } = require('../../routes/product-themes');
+  const valid = new Set(['a', 'b', 'c']);
+
+  test('accepts well-formed JSON', () => {
+    const out = parseSuggestions('{"themes":[{"name":"Export","summary":"s","insight_ids":["a","b"]}]}', valid);
+    expect(out).toHaveLength(1);
+    expect(out[0].insight_ids).toEqual(['a', 'b']);
+  });
+
+  test('tolerates the code fences models add despite being told not to', () => {
+    const out = parseSuggestions('```json\n{"themes":[{"name":"E","insight_ids":["a","b"]}]}\n```', valid);
+    expect(out).toHaveLength(1);
+  });
+
+  test('drops hallucinated ids that were never in the batch', () => {
+    const out = parseSuggestions('{"themes":[{"name":"E","insight_ids":["a","b","made-up"]}]}', valid);
+    expect(out[0].insight_ids).toEqual(['a', 'b']);
+  });
+
+  test('drops a theme left with fewer than two real ids', () => {
+    const out = parseSuggestions('{"themes":[{"name":"E","insight_ids":["a","ghost"]}]}', valid);
+    expect(out).toEqual([]);
+  });
+
+  test('drops an unnamed theme', () => {
+    const out = parseSuggestions('{"themes":[{"insight_ids":["a","b"]}]}', valid);
+    expect(out).toEqual([]);
+  });
+
+  test('returns null for prose instead of JSON', () => {
+    expect(parseSuggestions('I am afraid I cannot do that.', valid)).toBeNull();
+  });
+
+  test('survives structurally wrong JSON without throwing', () => {
+    expect(parseSuggestions('{"themes":"not-an-array"}', valid)).toEqual([]);
+    expect(parseSuggestions('{"themes":[null,42,"x"]}', valid)).toEqual([]);
+    expect(parseSuggestions('[]', valid)).toEqual([]);
+    expect(parseSuggestions('null', valid)).toBeNull();
+  });
+
+  test('truncates an absurdly long name rather than storing it', () => {
+    const long = 'x'.repeat(500);
+    const out = parseSuggestions(`{"themes":[{"name":"${long}","insight_ids":["a","b"]}]}`, valid);
+    expect(out[0].name.length).toBe(200);
+  });
+});
