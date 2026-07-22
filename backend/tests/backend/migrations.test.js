@@ -132,6 +132,19 @@ describe('015_insight_origins', () => {
     expect(row).toBeTruthy();
   });
 
+  test('016 creates the theme tables', async () => {
+    const db = await getDb();
+    const tables = (await queryAll(db, "SELECT name FROM sqlite_master WHERE type='table'")).map((t) => t.name);
+    expect(tables).toContain('pb_themes');
+    expect(tables).toContain('pb_insight_themes');
+  });
+
+  test('016 is recorded in the migration ledger', async () => {
+    const db = await getDb();
+    const row = await queryOne(db, 'SELECT id FROM schema_migrations WHERE id = ?', ['016_insight_themes']);
+    expect(row).toBeTruthy();
+  });
+
   test('existing insights survive with null origins rather than being rewritten', async () => {
     // The columns are additive: a pre-existing insight keeps its row and simply
     // has no origin, which the inbox renders as a manual capture.

@@ -191,3 +191,12 @@ router.post('/ai/ask', requireAuth, requireAI, async (req, res) => {
 });
 
 module.exports = router;
+// Exported so other routes can make a model call without duplicating the
+// client, the refusal handling, or model selection. Same shape as
+// routes/wiki.js exporting pageAccess and routes/workflows.js exporting
+// projectStatuses — routes sharing helpers with routes, rather than a util
+// requiring a route (which is what forced the in-function require in
+// utils/insight-origin.js).
+module.exports.complete = complete;
+module.exports.aiEnabled = () => config.ai.enabled();
+module.exports.MODELS = MODELS;

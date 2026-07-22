@@ -604,6 +604,60 @@ const MIGRATIONS = [
       },
     ],
   },
+  {
+    id: '016_insight_themes',
+    description: 'Themes: a named grouping of insights between feedback and features',
+    steps: [
+      {
+        sql: {
+          sqlite: `CREATE TABLE IF NOT EXISTS pb_themes (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            summary TEXT DEFAULT '',
+            created_by TEXT REFERENCES users(id),
+            created_at TEXT DEFAULT (datetime('now'))
+          )`,
+          mysql: `CREATE TABLE IF NOT EXISTS pb_themes (
+            id VARCHAR(36) PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            summary TEXT,
+            created_by VARCHAR(36),
+            created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
+          ) DEFAULT CHARSET=utf8mb4`,
+        },
+      },
+      {
+        sql: {
+          sqlite: `CREATE TABLE IF NOT EXISTS pb_insight_themes (
+            id TEXT PRIMARY KEY,
+            insight_id TEXT NOT NULL REFERENCES pb_insights(id),
+            theme_id TEXT NOT NULL REFERENCES pb_themes(id),
+            UNIQUE(insight_id, theme_id)
+          )`,
+          mysql: `CREATE TABLE IF NOT EXISTS pb_insight_themes (
+            id VARCHAR(36) PRIMARY KEY,
+            insight_id VARCHAR(36) NOT NULL,
+            theme_id VARCHAR(36) NOT NULL,
+            UNIQUE KEY uniq_insight_theme (insight_id, theme_id)
+          ) DEFAULT CHARSET=utf8mb4`,
+        },
+      },
+    ],
+  },
+  {
+    id: '017_feature_spec_pages',
+    description: 'Link a feature to its spec page in the wiki',
+    steps: [{
+      addColumn: {
+        table: 'pb_features', column: 'spec_page_id',
+        // Not a foreign key: a spec page can be deleted from the wiki without
+        // the feature becoming unreadable, and the endpoint re-checks the page
+        // still exists before treating the link as live.
+        sqlite: 'ALTER TABLE pb_features ADD COLUMN spec_page_id TEXT',
+        mysql: 'ALTER TABLE pb_features ADD COLUMN spec_page_id VARCHAR(36) NULL',
+      },
+    }],
+  },
 ];
 
 const LEDGER_SQL = {
