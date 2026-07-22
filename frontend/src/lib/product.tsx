@@ -1,6 +1,6 @@
 // Shared display helpers for the Product module (labels, colors, score math).
 import type {
-  CompanyTier, FeatureStatus, InsightSource, ObjectiveStatus, PortalStatus, Timeframe,
+  CompanyTier, FeatureStatus, InsightOrigin, InsightSource, ObjectiveStatus, PortalStatus, Timeframe,
 } from './types';
 
 export const FEATURE_STATUS_LABELS: Record<FeatureStatus, string> = {
@@ -40,6 +40,17 @@ export const INSIGHT_SOURCE_LABELS: Record<InsightSource, string> = {
   sales: 'Sales',
   interview: 'Interview',
   other: 'Other',
+};
+
+// Where a captured insight came from. Distinct from `source`, which is the
+// broad category (support/sales/…): origin names the specific surface, so the
+// inbox can chip "Request" or "Wiki" and link back to the row it came from.
+export const INSIGHT_ORIGIN_LABELS: Record<InsightOrigin, string> = {
+  request: 'Request',
+  comment: 'Comment',
+  wiki: 'Wiki',
+  portal: 'Portal',
+  manual: 'Manual',
 };
 
 export const TIER_LABELS: Record<CompanyTier, string> = {
