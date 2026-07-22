@@ -152,6 +152,25 @@ describe('demand on the features API', () => {
     expect(typeof res.body.demand_unattributed).toBe('number');
   });
 
+  test('the seeded demo actually demonstrates the disagreement it claims to', async () => {
+    // Guards the demo data, not the formula: a fresh database must show demand
+    // and user_impact ranking differently, or the screens have nothing to say.
+    const res = await request(app).get('/api/product/features').set(headers);
+    const withDemand = res.body.filter((f) => f.demand > 0);
+    expect(withDemand.length).toBeGreaterThan(0);
+
+    const byDemand = [...withDemand].sort((a, b) => b.demand - a.demand).map((f) => f.name);
+    const byImpact = [...withDemand].sort((a, b) => b.user_impact - a.user_impact).map((f) => f.name);
+    expect(byDemand).not.toEqual(byImpact);
+  });
+
+  test('a captured insight is seeded with its origin', async () => {
+    const res = await request(app).get('/api/product/insights?processed=0').set(headers);
+    const captured = res.body.filter((i) => i.origin_kind && i.origin_kind !== 'manual');
+    expect(captured.length).toBeGreaterThan(0);
+    expect(captured.some((i) => i.origin_excerpt)).toBe(true);
+  });
+
   test('demand reflects the ARR behind the evidence, not just its tier', async () => {
     // Two companies on the SAME tier with very different ARR must produce
     // different demand — that difference is the entire reason this epic exists,

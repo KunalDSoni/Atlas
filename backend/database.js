@@ -1812,6 +1812,43 @@ function seedDemoData() {
     });
   });
 
+  // ===== Product discovery wave (epics 47-48) — shipped =====
+  // Numbered from 47: 42-46 are reserved for the rest of the service desk wave
+  // (queues, SLAs, deflection, CSAT), which is designed but not built.
+  const discoveryEpics = [
+    { title: 'Insight capture', color: 'teal',
+      desc: 'Turn text that already exists in Atlas — a service desk request, an issue comment, a wiki passage — into a triageable insight. The excerpt is snapshotted rather than joined, so evidence survives its source being edited or deleted.',
+      children: [
+        { title: 'Migration 015: insight origin columns', type: 'task' },
+        { title: 'Origin resolution with source-visibility checks', type: 'task' },
+        { title: 'Capture endpoint and portal origin stamping', type: 'story' },
+        { title: 'Inbox origin chips, excerpts and dismiss', type: 'story' },
+      ] },
+    { title: 'Revenue-weighted demand', color: 'green',
+      desc: 'Rank features by the ARR behind them, not just a three-point tier proxy, with a breakdown naming the companies that asked. Sits alongside user_impact rather than redefining it — where the two disagree, the disagreement is the finding.',
+      children: [
+        { title: 'Demand calculation with tier-median fallback', type: 'task' },
+        { title: 'Demand and breakdown on the features API', type: 'task' },
+        { title: 'Demand column and who-asked-for-this panel', type: 'story' },
+      ] },
+  ];
+  discoveryEpics.forEach((epic, i) => {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(41 + i);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, ?)`,
+      [eid, projId3, `ATLAS-${num}`, num, epic.title, epic.desc, userIds[0], epic.color, startDate, dueDate, 41 + i]);
+    epic.children.forEach((c, ci) => {
+      const cnum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${cnum}`, cnum, c.title, c.type, userIds[0], userIds[0], eid, ci]);
+    });
+  });
+
   // ===== DEMO SERVICE DESK =====
   // Gives the help center shape on a fresh database. Dana (userIds[5]) is the
   // only seeded client, so the requests must be hers — seeding them against a
@@ -1954,13 +1991,22 @@ function seedProductDemoData() {
     [acme, 'Acme Corp', 'strategic', 250000, 'Largest account; renewal in Q4.']);
   db.run("INSERT INTO pb_companies (id, name, tier, arr, notes) VALUES (?, ?, ?, ?, ?)",
     [globex, 'Globex', 'growth', 60000, 'Expanding seats quarter over quarter.']);
-  const custMaya = uuid(), custTom = uuid(), custLena = uuid();
+  // Initech is strategic like Acme but a fraction of the revenue. That pairing
+  // is the point of epic 48's demo: user_impact scores a strategic account at 3
+  // whatever it pays, so on tier alone Acme and Initech are interchangeable —
+  // and on demand they are not.
+  const initech = uuid();
+  db.run("INSERT INTO pb_companies (id, name, tier, arr, notes) VALUES (?, ?, ?, ?, ?)",
+    [initech, 'Initech', 'strategic', 18000, 'Strategic logo, small spend — a reference account.']);
+  const custMaya = uuid(), custTom = uuid(), custLena = uuid(), custPeter = uuid();
   db.run("INSERT INTO pb_customers (id, name, email, company_id) VALUES (?, ?, ?, ?)",
     [custMaya, 'Maya Okafor', 'maya@acme.example', acme]);
   db.run("INSERT INTO pb_customers (id, name, email, company_id) VALUES (?, ?, ?, ?)",
     [custTom, 'Tom Bradley', 'tom@acme.example', acme]);
   db.run("INSERT INTO pb_customers (id, name, email, company_id) VALUES (?, ?, ?, ?)",
     [custLena, 'Lena Fischer', 'lena@globex.example', globex]);
+  db.run("INSERT INTO pb_customers (id, name, email, company_id) VALUES (?, ?, ?, ?)",
+    [custPeter, 'Peter Gibbons', 'peter@initech.example', initech]);
 
   // Features across statuses/timeframes (portal_status on the public ones)
   const mkFeature = (name, description, status, timeframe, portalStatus, effort, value, reach, impact, confidence) => {
@@ -1993,6 +2039,29 @@ function seedProductDemoData() {
   mkInsight('Portal is blinding at night', 'Any chance of a dark theme on the ideas portal?', 'portal', custTom, 0);
   mkInsight('Search misses synonyms', 'Searching "login" does not find "sign-in" issues. Smarter search would help a lot.', 'portal', null, 0);
 
+  // ===== Captured insights (epic 47) =====
+  // Attached to real seeded help desk requests where there are any, so the
+  // origin chip in the inbox links somewhere real. The excerpt is stored
+  // regardless — that is the whole point of snapshotting — so a deployment
+  // without demo requests still gets a sensible row.
+  const mkCaptured = (title, excerpt, customerId, originKind, originId) => {
+    const id = uuid();
+    db.run(`INSERT INTO pb_insights
+        (id, title, content, source, customer_id, created_by, processed, origin_kind, origin_id, origin_excerpt)
+      VALUES (?, ?, '', ?, ?, ?, 0, ?, ?, ?)`,
+      [id, title, originKind === 'wiki' ? 'interview' : 'support', customerId, adminId, originKind, originId, excerpt]);
+    return id;
+  };
+  const seededRequest = pick("SELECT id FROM issues WHERE type = 'request' ORDER BY issue_number LIMIT 1");
+  const iLaptop = mkCaptured(
+    'Hardware failures are costing onboarding days',
+    'Third laptop this quarter that will not power on. New starters lose their first day waiting on a replacement.',
+    custPeter, 'request', seededRequest);
+  const iExport = mkCaptured(
+    'Asked again for bulk export during a support thread',
+    'We are still exporting to CSV by hand every Monday morning. It is the one thing our ops team complains about.',
+    custMaya, 'comment', null);
+
   const link = (insightId, featureId, importance, quote) =>
     db.run("INSERT INTO pb_insight_links (id, insight_id, feature_id, importance, quote, created_by) VALUES (?, ?, ?, ?, ?, ?)",
       [uuid(), insightId, featureId, importance, quote, pmId]);
@@ -2000,6 +2069,11 @@ function seedProductDemoData() {
   link(iSso2, fSso, 3, 'We need SSO by end of quarter.');
   link(iApi, fApi, 2, 'An API with tokens would unblock them.');
   link(iCsv, fCsv, 2, 'CSV import would have made it an hour.');
+  // Initech (strategic, $18k) and Acme (strategic, $250k) both weigh 3 under
+  // user_impact. Linking each to CSV import makes the two numbers disagree on
+  // screen, which is what epic 48 exists to show.
+  link(iLaptop, fMobile, 2, 'New starters lose their first day waiting on a replacement.');
+  link(iExport, fCsv, 3, 'exporting to CSV by hand every Monday morning');
 
   // Objectives linked to features
   const oEnt = uuid(), oNps = uuid();
