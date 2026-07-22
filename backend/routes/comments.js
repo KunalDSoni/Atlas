@@ -10,6 +10,7 @@ const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
 const { notify, mentionedUserIds } = require('../utils/notify');
+const sla = require('../utils/sla-clocks');
 
 const router = express.Router();
 
@@ -61,8 +62,15 @@ router.post('/issues/:issueId/comments', requireAuth, async (req, res) => {
       [id, req.params.issueId, authorId, commentBody, visibility]);
 
     // Fan out: @mentions first (stronger signal), then issue watchers.
-    const issue = await queryOne(db, 'SELECT id, issue_key FROM issues WHERE id = ?', [req.params.issueId]);
+    const issue = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.issueId]);
     if (issue) {
+      // On a service desk request, a public reply from staff is the first
+      // response the SLA measures; an internal note deliberately is not.
+      await sla.onComment(db, issue, {
+        byCustomer: authorId === issue.reporter_id && req.userRole === 'client',
+        visibility,
+      });
+
       const actor = await queryOne(db, 'SELECT name FROM users WHERE id = ?', [authorId]);
       const actorName = actor?.name || 'Someone';
       const mentioned = await mentionedUserIds(db, commentBody, authorId);

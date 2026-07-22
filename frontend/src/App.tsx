@@ -37,6 +37,8 @@ const ProductCustomers = lazy(() => import('@/screens/product-customers'));
 const Portal = lazy(() => import('@/screens/portal'));
 const HelpCenter = lazy(() => import('@/screens/help-center'));
 const HelpRequests = lazy(() => import('@/screens/help-requests'));
+const ServiceDeskQueues = lazy(() => import('@/screens/servicedesk-queues'));
+const ServiceDeskSettings = lazy(() => import('@/screens/servicedesk-settings'));
 
 function FullPageSpinner() {
   return (
@@ -118,6 +120,8 @@ function ProtectedLayout() {
               <Route path="/product/roadmap" element={<ProductRoadmap />} />
               <Route path="/product/objectives" element={<ProductObjectives />} />
               <Route path="/product/customers" element={<ProductCustomers />} />
+              <Route path="/servicedesk" element={<ServiceDeskQueues />} />
+              <Route path="/servicedesk/settings" element={<ServiceDeskSettings />} />
               <Route path="/portal" element={<Portal />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/settings" element={<Settings />} />

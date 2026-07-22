@@ -92,6 +92,13 @@ router.put('/statuses/:id', requireAuth, requireBoardAdmin, async (req, res) => 
     for (const key of allowed) {
       if (req.body[key] !== undefined) { updates.push(`${key} = ?`); params.push(req.body[key]); }
     }
+    // Flagging a status as "waiting for customer" is what pauses a service desk
+    // SLA clock while the ball is in the customer's court (epic 43). Stored as
+    // 0/1 because SQLite has no boolean.
+    if (req.body.waiting_for_customer !== undefined) {
+      updates.push('waiting_for_customer = ?');
+      params.push(req.body.waiting_for_customer ? 1 : 0);
+    }
     if (updates.length > 0) {
       params.push(req.params.id);
       await run(db, `UPDATE project_statuses SET ${updates.join(', ')} WHERE id = ?`, params);

@@ -47,6 +47,8 @@ const webhooksRoutes = require('./routes/webhooks');
 const streamRoutes = require('./routes/stream');
 const customFieldsRoutes = require('./routes/custom-fields');
 const requestTypesRoutes = require('./routes/request-types');
+const queuesRoutes = require('./routes/queues');
+const slaRoutes = require('./routes/sla');
 const helpRoutes = require('./routes/help');
 
 const app = express();
@@ -211,7 +213,11 @@ app.use('/api', streamRoutes);
 
 // Per-project custom fields
 app.use('/api', customFieldsRoutes);
+
+// Service desk, agent side — request type forms and saved queues
 app.use('/api', requestTypesRoutes);
+app.use('/api', queuesRoutes);
+app.use('/api', slaRoutes);
 
 // SPA fallback (Express 5 compatible)
 app.get('/{*splat}', (req, res) => {

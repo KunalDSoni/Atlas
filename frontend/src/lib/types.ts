@@ -14,6 +14,8 @@ export interface WorkflowStatus {
   category: StatusCategory;
   position: number;
   builtin: boolean;
+  /** 1 while the request sits with the customer — pauses its SLA clocks (epic 43). */
+  waiting_for_customer?: number;
 }
 export type IssueType = 'story' | 'bug' | 'task' | 'epic' | 'subtask';
 export type Priority = 'highest' | 'high' | 'medium' | 'low';
@@ -53,6 +55,8 @@ export interface Project {
   lead_color: string | null;
   issue_count: number;
   member_count: number;
+  /** 1 when the project is a service desk — gates queues, SLAs and the help center. */
+  is_service_desk?: number;
 }
 
 export interface Sprint {
@@ -822,4 +826,76 @@ export interface PublicRequest {
   created_at: string;
   updated_at: string;
   comments: PublicRequestComment[];
+}
+
+// ----- Agent queues (epic 42) -----
+
+/** Columns a queue table may show — mirrors QUEUE_COLUMNS in utils/queues.js. */
+export type QueueColumn =
+  | 'key' | 'summary' | 'type' | 'status' | 'priority' | 'assignee'
+  | 'reporter' | 'request_type' | 'created' | 'updated' | 'sla';
+
+export interface Queue {
+  id: string;
+  project_id: string;
+  name: string;
+  /** JQL-lite, evaluated server-side by utils/jql.js. */
+  jql: string;
+  columns: QueueColumn[];
+  order_by: string;
+  position: number;
+  /** Live count, present only on the project listing. */
+  count?: number | null;
+  /** Why a stored query no longer parses, if it does not. */
+  invalid?: string | null;
+}
+
+// ----- SLAs (epic 43) -----
+
+export type SlaMetric = 'first_response' | 'resolution';
+export type SlaStatus = 'ok' | 'at_risk' | 'breached';
+
+export interface SlaGoal {
+  id: string;
+  request_type_id: string;
+  /** null means the goal applies at any priority. */
+  priority: string | null;
+  metric: SlaMetric;
+  target_minutes: number;
+}
+
+/** Derived on read — mirrors slaState() in utils/sla.js. Never stored. */
+export interface SlaState {
+  metric: SlaMetric;
+  elapsed_minutes: number;
+  remaining_minutes: number;
+  target_minutes: number;
+  status: SlaStatus;
+  paused: boolean;
+  stopped: boolean;
+  started_at?: string;
+  stopped_at?: string | null;
+  breached_at?: string | null;
+}
+
+/** A row in a queue table. Lean by design — not a full enriched issue. */
+export interface QueueIssue {
+  id: string;
+  issue_key: string;
+  title: string;
+  type: string;
+  status: string;
+  priority: string;
+  labels: string;
+  created_at: string;
+  updated_at: string;
+  request_type_id: string | null;
+  request_type_name: string | null;
+  request_type_icon: string | null;
+  assignee_name: string | null;
+  assignee_color: string | null;
+  reporter_name: string | null;
+  reporter_color: string | null;
+  /** Keyed by metric; `{}` when the request has no goals. */
+  sla: Partial<Record<SlaMetric, SlaState>>;
 }

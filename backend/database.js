@@ -312,6 +312,37 @@ const SCHEMA_SQL = [
     position INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now'))
   )`,
+  `CREATE TABLE IF NOT EXISTS sd_queues (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    name TEXT NOT NULL,
+    jql TEXT NOT NULL,
+    column_keys TEXT NOT NULL DEFAULT '[]',
+    order_by TEXT DEFAULT 'created_at',
+    position INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS sd_sla_goals (
+    id TEXT PRIMARY KEY,
+    request_type_id TEXT NOT NULL REFERENCES sd_request_types(id),
+    priority TEXT,
+    metric TEXT NOT NULL CHECK(metric IN ('first_response','resolution')),
+    target_minutes INTEGER NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS sd_sla_clocks (
+    id TEXT PRIMARY KEY,
+    issue_id TEXT NOT NULL REFERENCES issues(id),
+    metric TEXT NOT NULL,
+    goal_id TEXT,
+    target_minutes INTEGER NOT NULL,
+    started_at TEXT DEFAULT (datetime('now')),
+    stopped_at TEXT,
+    paused_at TEXT,
+    paused_total_minutes INTEGER DEFAULT 0,
+    breached_at TEXT,
+    UNIQUE(issue_id, metric)
+  )`,
   `CREATE TABLE IF NOT EXISTS wiki_page_restrictions (
     page_id TEXT NOT NULL REFERENCES wiki_pages(id),
     user_id TEXT NOT NULL REFERENCES users(id),
@@ -783,6 +814,37 @@ const MYSQL_SCHEMA_SQL = [
     fields TEXT NOT NULL,
     position INT DEFAULT 0,
     created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS sd_queues (
+    id VARCHAR(36) PRIMARY KEY,
+    project_id VARCHAR(36) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    jql TEXT NOT NULL,
+    column_keys TEXT NOT NULL,
+    order_by VARCHAR(40) DEFAULT 'created_at',
+    position INT DEFAULT 0,
+    created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS sd_sla_goals (
+    id VARCHAR(36) PRIMARY KEY,
+    request_type_id VARCHAR(36) NOT NULL,
+    priority VARCHAR(20) NULL,
+    metric VARCHAR(20) NOT NULL,
+    target_minutes INT NOT NULL,
+    created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS sd_sla_clocks (
+    id VARCHAR(36) PRIMARY KEY,
+    issue_id VARCHAR(36) NOT NULL,
+    metric VARCHAR(20) NOT NULL,
+    goal_id VARCHAR(36) NULL,
+    target_minutes INT NOT NULL,
+    started_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+    stopped_at DATETIME(3) NULL,
+    paused_at DATETIME(3) NULL,
+    paused_total_minutes INT DEFAULT 0,
+    breached_at DATETIME(3) NULL,
+    UNIQUE KEY uniq_issue_metric (issue_id, metric)
   ) DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS wiki_page_restrictions (
     page_id VARCHAR(36) NOT NULL,
@@ -1786,6 +1848,21 @@ function seedDemoData() {
         { title: 'Confine client-role users to the help center', type: 'task' },
         { title: 'Help center screens and client redirect', type: 'story' },
       ] },
+    { title: 'Agent queues', color: 'blue',
+      desc: 'Named, saved JQL views over a service desk project, with live counts in the sidebar from a single grouped query and bulk actions on the rows.',
+      children: [
+        { title: 'Migration 012: sd_queues', type: 'task' },
+        { title: 'Queue CRUD with server-validated JQL and sort', type: 'story' },
+        { title: 'Queue screen: sidebar counts, columns, bulk actions', type: 'story' },
+      ] },
+    { title: 'SLAs', color: 'orange',
+      desc: 'First response and resolution goals per request type, derived on read rather than fired by a scheduler: clocks store timestamps, and one slaState() helper turns them into a badge, a detail panel and a report that cannot disagree.',
+      children: [
+        { title: 'Migration 013: SLA goals and clocks', type: 'task' },
+        { title: 'slaState(): elapsed, at-risk and breach derived on read', type: 'story' },
+        { title: 'Clock lifecycle: start, first response, resolution, pause/resume', type: 'story' },
+        { title: 'SLA goals editor and waiting-for-customer statuses', type: 'story' },
+      ] },
   ];
   serviceDeskEpics.forEach((epic, i) => {
     const eid = uuid();
@@ -1841,12 +1918,76 @@ function seedDemoData() {
     { type: 1, title: 'Access to the analytics dashboard', status: 'in_progress', fields: { system: 'Analytics', reason: 'Reporting for Q3' } },
     { type: 2, title: 'Meeting room display keeps disconnecting', status: 'done', fields: { details: 'Room 4B, every morning' } },
   ];
+  const demoRequestIds = [];
   demoRequests.forEach((r, i) => {
+    const reqId = uuid();
+    demoRequestIds.push(reqId);
     db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, request_type_id, sd_fields, board_order)
       VALUES (?, ?, ?, ?, ?, ?, 'request', ?, 'medium', ?, ?, ?, ?)`,
-      [uuid(), projId4, `HD-${i + 1}`, i + 1, r.title,
+      [reqId, projId4, `HD-${i + 1}`, i + 1, r.title,
         Object.entries(r.fields).map(([k, v]) => `**${k}**\n${v}`).join('\n\n'),
         r.status, userIds[5], requestTypeIds[r.type], JSON.stringify(r.fields), i]);
+  });
+
+  // ===== Service desk workflow, queues and SLAs (epics 42-43) =====
+  // The help desk gets its own workflow so "Waiting for customer" exists as a
+  // real status — that flag is what pauses an SLA clock.
+  const hdStatuses = [
+    { key: 'todo', label: 'Open', category: 'todo', waiting: 0 },
+    { key: 'in_progress', label: 'In progress', category: 'in_progress', waiting: 0 },
+    { key: 'waiting_for_customer', label: 'Waiting for customer', category: 'in_progress', waiting: 1 },
+    { key: 'done', label: 'Resolved', category: 'done', waiting: 0 },
+  ];
+  hdStatuses.forEach((s, i) => {
+    db.run('INSERT INTO project_statuses (id, project_id, key, label, category, position, waiting_for_customer) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [uuid(), projId4, s.key, s.label, s.category, i, s.waiting]);
+  });
+
+  [
+    { name: 'All open', jql: 'type = request AND status != done', order: 'priority',
+      cols: ['key', 'summary', 'request_type', 'status', 'assignee', 'sla'] },
+    { name: 'Unassigned', jql: 'type = request AND assignee = unassigned', order: 'created_at',
+      cols: ['key', 'summary', 'request_type', 'created', 'sla'] },
+    { name: 'Assigned to me', jql: 'type = request AND assignee = me', order: 'priority',
+      cols: ['key', 'summary', 'status', 'priority', 'sla'] },
+    { name: 'Resolved', jql: 'type = request AND status = done', order: 'updated_at',
+      cols: ['key', 'summary', 'request_type', 'updated'] },
+  ].forEach((q, i) => {
+    db.run('INSERT INTO sd_queues (id, project_id, name, jql, column_keys, order_by, position) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [uuid(), projId4, q.name, q.jql, JSON.stringify(q.cols), q.order, i]);
+  });
+
+  // Tight goals on hardware, looser on the catch-all, so the demo shows both a
+  // healthy clock and a breached one.
+  const slaGoals = [
+    { type: 0, metric: 'first_response', priority: null, minutes: 60 },
+    { type: 0, metric: 'resolution', priority: null, minutes: 480 },
+    { type: 1, metric: 'first_response', priority: null, minutes: 240 },
+    { type: 1, metric: 'resolution', priority: null, minutes: 2880 },
+    { type: 2, metric: 'first_response', priority: null, minutes: 480 },
+  ];
+  slaGoals.forEach((g) => {
+    db.run('INSERT INTO sd_sla_goals (id, request_type_id, priority, metric, target_minutes) VALUES (?, ?, ?, ?, ?)',
+      [uuid(), requestTypeIds[g.type], g.priority, g.metric, g.minutes]);
+  });
+
+  // Clocks for the seeded requests. Backdated deliberately: HD-1 breached its
+  // 60-minute first response two hours ago, HD-2 is comfortably inside its
+  // window, and HD-3 was resolved within target. Nothing here is computed —
+  // these are the timestamps, and every badge derives itself from them.
+  const clocks = [
+    { req: 0, metric: 'first_response', target: 60, startedMinsAgo: 180, stopped: null },
+    { req: 0, metric: 'resolution', target: 480, startedMinsAgo: 180, stopped: null },
+    { req: 1, metric: 'first_response', target: 240, startedMinsAgo: 90, stopped: 30 },
+    { req: 1, metric: 'resolution', target: 2880, startedMinsAgo: 90, stopped: null },
+    { req: 2, metric: 'first_response', target: 480, startedMinsAgo: 2000, stopped: 1900 },
+  ];
+  const ago = (mins) => new Date(Date.now() - mins * 60_000).toISOString().replace('T', ' ').slice(0, 19);
+  clocks.forEach((c) => {
+    db.run(`INSERT INTO sd_sla_clocks (id, issue_id, metric, target_minutes, started_at, stopped_at)
+      VALUES (?, ?, ?, ?, ?, ?)`,
+      [uuid(), demoRequestIds[c.req], c.metric, c.target, ago(c.startedMinsAgo),
+        c.stopped === null ? null : ago(c.stopped)]);
   });
 
   // ===== CONFLUENCE SEED DATA =====

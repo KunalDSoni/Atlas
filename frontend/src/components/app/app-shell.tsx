@@ -4,6 +4,7 @@ import {
   Bell, CalendarRange, ChevronsUpDown, Columns3, FileClock, Gauge, LayoutDashboard, ListTodo, LogOut, Menu, Package,
   Rocket, Search, Settings as SettingsIcon, Shield, User as UserIcon, Users, BookOpen, Zap,
   Inbox, Lightbulb, Target, Map as MapIcon, Building2, MessagesSquare, Plus,
+  Headphones, SlidersHorizontal,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -56,6 +57,13 @@ const PRODUCT_NAV: NavItem[] = [
 
 const WIKI_NAV: NavItem[] = [{ to: '/wiki', label: 'Wiki', icon: BookOpen }];
 
+// Only rendered when the current project is a service desk — a board project
+// has no queues to show, and an empty section is worse than no section.
+const SERVICE_DESK_NAV: NavItem[] = [
+  { to: '/servicedesk', label: 'Queues', icon: Headphones },
+  { to: '/servicedesk/settings', label: 'Configuration', icon: SlidersHorizontal },
+];
+
 const ADMIN_NAV: NavItem[] = [
   { to: '/admin', label: 'Overview', icon: Shield },
   { to: '/admin/users', label: 'Users', icon: Users },
@@ -72,7 +80,7 @@ function NavSection({ title, items, onNavigate }: { title: string; items: NavIte
           <NavLink
             key={to}
             to={to}
-            end={to === '/admin' || to === '/wiki'}
+            end={to === '/admin' || to === '/wiki' || to === '/servicedesk'}
             onClick={onNavigate}
             className={({ isActive }) =>
               cn(
@@ -168,6 +176,7 @@ function ProjectSwitcher() {
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { user } = useAuth();
+  const { currentProject } = useProjects();
 
   return (
     <div className="flex h-full flex-col">
@@ -183,6 +192,12 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
       <ScrollArea className="flex-1">
         <NavSection title="Project" items={PROJECT_NAV} onNavigate={onNavigate} />
+        {currentProject?.is_service_desk ? (
+          <>
+            <Separator className="my-2" />
+            <NavSection title="Service desk" items={SERVICE_DESK_NAV} onNavigate={onNavigate} />
+          </>
+        ) : null}
         <Separator className="my-2" />
         <NavSection title="Product" items={PRODUCT_NAV} onNavigate={onNavigate} />
         {isAdmin(user?.role) && (

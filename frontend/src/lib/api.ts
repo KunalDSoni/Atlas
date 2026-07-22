@@ -14,7 +14,7 @@ import type {
   WikiAttachment, ApiToken, Webhook, CustomField,
   WorkLog, WorkflowStatus,
   PbCompany, PbCustomer, PbInsight, PbFeature, PbObjective, PortalFeature,
-  PublicRequest, RequestType,
+  PublicRequest, RequestType, Queue, QueueIssue, SlaGoal, SlaState,
 } from './types';
 
 const TOKEN_KEY = 'atlas_token';
@@ -118,6 +118,28 @@ export const api = {
     remove: (id: string) => del<{ ok: boolean }>(`/request-types/${id}`),
   },
 
+  // Agent queues — saved JQL views over a service desk project. The listing
+  // carries live counts, so the sidebar needs no second call per queue.
+  queues: {
+    list: (projectId: string) => get<Queue[]>(`/projects/${projectId}/queues`),
+    get: (id: string) => get<Queue>(`/queues/${id}`),
+    create: (projectId: string, body: Partial<Queue>) =>
+      post<Queue>(`/projects/${projectId}/queues`, body),
+    update: (id: string, body: Partial<Queue>) => put<Queue>(`/queues/${id}`, body),
+    remove: (id: string) => del<{ ok: boolean }>(`/queues/${id}`),
+    issues: (id: string) => get<QueueIssue[]>(`/queues/${id}/issues`),
+  },
+
+  sla: {
+    goals: (requestTypeId: string) => get<SlaGoal[]>(`/request-types/${requestTypeId}/sla-goals`),
+    createGoal: (requestTypeId: string, body: Partial<SlaGoal>) =>
+      post<SlaGoal>(`/request-types/${requestTypeId}/sla-goals`, body),
+    updateGoal: (id: string, body: Partial<SlaGoal>) => put<SlaGoal>(`/sla-goals/${id}`, body),
+    removeGoal: (id: string) => del<{ ok: boolean }>(`/sla-goals/${id}`),
+    /** Live state for one issue, by id or key. */
+    forIssue: (idOrKey: string) => get<SlaState[]>(`/issues/${idOrKey}/sla`),
+  },
+
   auth: {
     login: (email: string, password: string) => post<AuthUser>('/auth/login', { email, password }),
     logout: () => post<{ ok: boolean }>('/auth/logout'),
@@ -207,8 +229,11 @@ export const api = {
     list: (projectId: string) => get<WorkflowStatus[]>(`/projects/${projectId}/statuses`),
     create: (projectId: string, body: { label: string; key?: string; category?: string }) =>
       post<WorkflowStatus>(`/projects/${projectId}/statuses`, body),
-    update: (id: string, body: Partial<Pick<WorkflowStatus, 'label' | 'category' | 'position'>>) =>
-      put<WorkflowStatus>(`/statuses/${id}`, body),
+    update: (
+      id: string,
+      body: Partial<Pick<WorkflowStatus, 'label' | 'category' | 'position'>>
+        & { waiting_for_customer?: boolean },
+    ) => put<WorkflowStatus>(`/statuses/${id}`, body),
     remove: (id: string, migrateTo?: string) =>
       del<{ ok: boolean; migrated_to: string }>(`/statuses/${id}${migrateTo ? `?migrate_to=${encodeURIComponent(migrateTo)}` : ''}`),
   },

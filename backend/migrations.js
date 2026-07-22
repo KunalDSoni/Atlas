@@ -396,6 +396,104 @@ const MIGRATIONS = [
       },
     ],
   },
+  {
+    id: '012_sd_queues',
+    description: 'Agent queues: a stored JQL query per project with its own columns and sort',
+    steps: [
+      // `column_keys`, not `columns`: the latter is a keyword in MySQL and would
+      // need backticks that SQLite rejects, forcing every query touching this
+      // table to be written twice. The name is the only thing that differs from
+      // the design note.
+      {
+        sql: {
+          sqlite: `CREATE TABLE IF NOT EXISTS sd_queues (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id),
+            name TEXT NOT NULL,
+            jql TEXT NOT NULL,
+            column_keys TEXT NOT NULL DEFAULT '[]',
+            order_by TEXT DEFAULT 'created_at',
+            position INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now'))
+          )`,
+          mysql: `CREATE TABLE IF NOT EXISTS sd_queues (
+            id VARCHAR(36) PRIMARY KEY,
+            project_id VARCHAR(36) NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            jql TEXT NOT NULL,
+            column_keys TEXT NOT NULL,
+            order_by VARCHAR(40) DEFAULT 'created_at',
+            position INT DEFAULT 0,
+            created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
+          ) DEFAULT CHARSET=utf8mb4`,
+        },
+      },
+    ],
+  },
+  {
+    id: '013_sd_slas',
+    description: 'SLA goals per request type, and the clocks derived on read',
+    steps: [
+      {
+        sql: {
+          sqlite: `CREATE TABLE IF NOT EXISTS sd_sla_goals (
+            id TEXT PRIMARY KEY,
+            request_type_id TEXT NOT NULL REFERENCES sd_request_types(id),
+            priority TEXT,
+            metric TEXT NOT NULL CHECK(metric IN ('first_response','resolution')),
+            target_minutes INTEGER NOT NULL,
+            created_at TEXT DEFAULT (datetime('now'))
+          )`,
+          mysql: `CREATE TABLE IF NOT EXISTS sd_sla_goals (
+            id VARCHAR(36) PRIMARY KEY,
+            request_type_id VARCHAR(36) NOT NULL,
+            priority VARCHAR(20) NULL,
+            metric VARCHAR(20) NOT NULL,
+            target_minutes INT NOT NULL,
+            created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
+          ) DEFAULT CHARSET=utf8mb4`,
+        },
+      },
+      // No scheduler writes these rows — every column is a timestamp, and state
+      // is derived from them on read by utils/sla.js::slaState.
+      {
+        sql: {
+          sqlite: `CREATE TABLE IF NOT EXISTS sd_sla_clocks (
+            id TEXT PRIMARY KEY,
+            issue_id TEXT NOT NULL REFERENCES issues(id),
+            metric TEXT NOT NULL,
+            goal_id TEXT,
+            target_minutes INTEGER NOT NULL,
+            started_at TEXT DEFAULT (datetime('now')),
+            stopped_at TEXT,
+            paused_at TEXT,
+            paused_total_minutes INTEGER DEFAULT 0,
+            breached_at TEXT,
+            UNIQUE(issue_id, metric)
+          )`,
+          mysql: `CREATE TABLE IF NOT EXISTS sd_sla_clocks (
+            id VARCHAR(36) PRIMARY KEY,
+            issue_id VARCHAR(36) NOT NULL,
+            metric VARCHAR(20) NOT NULL,
+            goal_id VARCHAR(36) NULL,
+            target_minutes INT NOT NULL,
+            started_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+            stopped_at DATETIME(3) NULL,
+            paused_at DATETIME(3) NULL,
+            paused_total_minutes INT DEFAULT 0,
+            breached_at DATETIME(3) NULL,
+            UNIQUE KEY uniq_issue_metric (issue_id, metric)
+          ) DEFAULT CHARSET=utf8mb4`,
+        },
+      },
+      {
+        sql: {
+          sqlite: 'CREATE INDEX IF NOT EXISTS idx_sla_clocks_issue ON sd_sla_clocks(issue_id)',
+          mysql: 'CREATE INDEX idx_sla_clocks_issue ON sd_sla_clocks(issue_id)',
+        },
+      },
+    ],
+  },
 ];
 
 const LEDGER_SQL = {

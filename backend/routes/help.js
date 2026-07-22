@@ -16,6 +16,7 @@ const { requireAuth } = require('../middleware/auth');
 const { requireClientSafe } = require('../middleware/servicedesk');
 const { serverError } = require('../utils/errors');
 const { toPublicRequest, validateSubmission, renderSubmission } = require('../utils/servicedesk');
+const sla = require('../utils/sla-clocks');
 
 const router = express.Router();
 
@@ -99,6 +100,7 @@ router.post('/help/requests', requireAuth, async (req, res) => {
         defaultStatus, req.userId, type.id, JSON.stringify(submission.values)]);
 
     const issue = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [id]);
+    await sla.onRequestRaised(db, issue);
     res.status(201).json(await projectRequest(db, issue));
   } catch (e) { serverError(res, e); }
 });
@@ -144,6 +146,9 @@ router.post('/help/requests/:key/comments', requireAuth, requireClientSafe, asyn
         [uuidv4(), req.serviceRequest.id, req.userId]);
     }
 
+    // The customer has replied, so any clock paused waiting for them resumes.
+    await sla.onComment(db, req.serviceRequest, { byCustomer: true });
+
     const comment = await queryOne(db, 'SELECT * FROM comments WHERE id = ?', [id]);
     res.status(201).json({ id: comment.id, body: comment.body, created_at: comment.created_at });
   } catch (e) { serverError(res, e); }
@@ -159,8 +164,9 @@ router.post('/help/requests/:key/resolve', requireAuth, requireClientSafe, async
     const done = await queryOne(db,
       "SELECT key FROM project_statuses WHERE project_id = ? AND category = 'done' ORDER BY position LIMIT 1",
       [req.serviceRequest.project_id]);
-    await run(db, 'UPDATE issues SET status = ? WHERE id = ?',
-      [done ? done.key : 'done', req.serviceRequest.id]);
+    const nextStatus = done ? done.key : 'done';
+    await run(db, 'UPDATE issues SET status = ? WHERE id = ?', [nextStatus, req.serviceRequest.id]);
+    await sla.onStatusChange(db, req.serviceRequest, nextStatus);
     const issue = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.serviceRequest.id]);
     res.json(await projectRequest(db, issue));
   } catch (e) { serverError(res, e); }

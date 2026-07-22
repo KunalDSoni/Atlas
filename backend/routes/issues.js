@@ -19,6 +19,7 @@ const { dispatch: dispatchWebhook } = require('../utils/webhooks');
 const { publish } = require('../utils/events');
 const { issueCustomFieldsBatch } = require('./custom-fields');
 const { placeholders, indexBy, countsBy } = require('../utils/sql');
+const sla = require('../utils/sla-clocks');
 
 const requireBoardAdmin = requireRole('admin', 'board_admin');
 
@@ -413,6 +414,7 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
 
     let updated = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
     if (req.body.status !== undefined && req.body.status !== issue.status) {
+      await sla.onStatusChange(db, updated, updated.status);
       await runAutomation(db, { type: 'status_changed', issue: updated, actorId: req.userId });
       await checkAllSubtasksDone(db, updated, req.userId);
       updated = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
@@ -488,6 +490,9 @@ router.put('/issues/:id/move', requireAuth, async (req, res) => {
 
     let updated = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
     if (status !== undefined && status !== issue.status) {
+      // A board drag is a status change like any other — the SLA cannot only
+      // notice the ones made through the issue form.
+      await sla.onStatusChange(db, updated, updated.status);
       await runAutomation(db, { type: 'status_changed', issue: updated, actorId: req.userId });
       await checkAllSubtasksDone(db, updated, req.userId);
       updated = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
