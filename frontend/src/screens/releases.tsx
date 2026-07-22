@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Package, Plus, Rocket, Tag, Trash2, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -15,6 +16,7 @@ import { canManageSprints } from '@/lib/domain';
 import type { ProjectComponent, Version } from '@/lib/types';
 import { EmptyState, ErrorState, PageHeader, RowsSkeleton } from '@/components/app/primitives';
 import { formatDate } from '@/lib/format';
+import { releaseUrl } from '@/lib/urls';
 import { cn } from '@/lib/utils';
 
 export default function ReleasesScreen() {
@@ -166,10 +168,14 @@ export default function ReleasesScreen() {
               return (
                 <li key={v.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
                   <Package className={cn('size-4 shrink-0', v.status === 'released' ? 'text-success' : 'text-muted-foreground')} />
-                  <span className="min-w-0 flex-1">
+                  <Link
+                    to={releaseUrl(currentProject?.key ?? '', v.slug)}
+                    data-release-slug={v.slug}
+                    className="min-w-0 flex-1 rounded-sm transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-ring"
+                  >
                     <span className="block truncate text-sm font-medium">{v.name}</span>
                     {v.description && <span className="block truncate text-xs text-muted-foreground">{v.description}</span>}
-                  </span>
+                  </Link>
                   <span className="hidden w-44 shrink-0 items-center gap-2 sm:flex">
                     <Progress value={pct} className="h-1.5" />
                     <span className="whitespace-nowrap text-[11px] tabular-nums text-muted-foreground">

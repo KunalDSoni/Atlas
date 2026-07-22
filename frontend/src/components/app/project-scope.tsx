@@ -13,7 +13,9 @@ const Board = lazy(() => import('@/screens/board'));
 const Backlog = lazy(() => import('@/screens/backlog'));
 const Epics = lazy(() => import('@/screens/epics'));
 const Sprints = lazy(() => import('@/screens/sprints'));
+const SprintDetail = lazy(() => import('@/screens/sprint-detail'));
 const Releases = lazy(() => import('@/screens/releases'));
+const ReleaseDetail = lazy(() => import('@/screens/release-detail'));
 const Roadmap = lazy(() => import('@/screens/roadmap'));
 const Automation = lazy(() => import('@/screens/automation'));
 const Reports = lazy(() => import('@/screens/reports'));
@@ -93,7 +95,9 @@ export function ProjectScope() {
         <Route path="epics" element={<Epics />} />
         <Route path="roadmap" element={<Roadmap />} />
         <Route path="sprints" element={<Sprints />} />
+        <Route path="sprints/:sprintSlug" element={<SprintDetail />} />
         <Route path="releases" element={<Releases />} />
+        <Route path="releases/:releaseSlug" element={<ReleaseDetail />} />
         <Route path="reports" element={<Reports />} />
         <Route path="automation" element={<Automation />} />
         <Route path="servicedesk" element={<ServiceDeskQueues />} />

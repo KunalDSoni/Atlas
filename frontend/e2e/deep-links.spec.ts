@@ -105,3 +105,27 @@ test.describe('an issue is a place', () => {
     await expect(page).toHaveURL(new RegExp(`/atlas/${key}`));
   });
 });
+
+test.describe('sprints and releases are places', () => {
+  test('a sprint row opens its own URL', async ({ page }) => {
+    await login(page);
+    await page.goto('/atlas/sprints');
+    await page.getByRole('button', { name: 'New sprint' }).first().click();
+    await page.getByLabel('Name').fill('Q3 Hardening');
+    await page.getByRole('button', { name: 'Create sprint' }).click();
+    await page.locator('[data-sprint-slug]').first().click();
+    await expect(page).toHaveURL(/\/atlas\/sprints\/[a-z0-9-]+/);
+    await assertNoCrash(page);
+  });
+
+  test('a release row opens its own URL', async ({ page }) => {
+    await login(page);
+    await page.goto('/atlas/releases');
+    await page.getByRole('button', { name: 'New version' }).click();
+    await page.getByLabel('Name').fill('Q3 Hardening');
+    await page.getByRole('button', { name: 'Create' }).click();
+    await page.locator('[data-release-slug]').first().click();
+    await expect(page).toHaveURL(/\/atlas\/releases\/[a-z0-9-]+/);
+    await assertNoCrash(page);
+  });
+});

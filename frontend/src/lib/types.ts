@@ -63,6 +63,7 @@ export interface Sprint {
   id: string;
   project_id: string;
   name: string;
+  slug: string;
   goal: string | null;
   status: SprintStatus;
   start_date: string | null;
@@ -241,6 +242,7 @@ export interface Version {
   id: string;
   project_id: string;
   name: string;
+  slug: string;
   description: string | null;
   status: 'unreleased' | 'released';
   release_date: string | null;

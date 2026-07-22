@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { CalendarRange, Plus, Rocket, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -22,6 +23,7 @@ import { SPRINT_TONE, canManageSprints } from '@/lib/domain';
 import type { Sprint, SprintStatus } from '@/lib/types';
 import { CardsSkeleton, EmptyState, ErrorState, PageHeader } from '@/components/app/primitives';
 import { formatDate } from '@/lib/format';
+import { sprintUrl } from '@/lib/urls';
 import { cn } from '@/lib/utils';
 
 // Must match the sprints.status CHECK constraint in backend/database.js — an
@@ -30,10 +32,12 @@ const SPRINT_STATUSES: SprintStatus[] = ['planning', 'active', 'completed'];
 
 function SprintCard({
   sprint,
+  projectKey,
   canManage,
   onChanged,
 }: {
   sprint: Sprint;
+  projectKey: string;
   canManage: boolean;
   onChanged: () => void;
 }) {
@@ -62,7 +66,15 @@ function SprintCard({
     <Card>
       <CardHeader className="gap-1">
         <div className="flex items-start justify-between gap-2">
-          <CardTitle className="text-base">{sprint.name}</CardTitle>
+          <CardTitle className="min-w-0 text-base">
+            <Link
+              to={sprintUrl(projectKey, sprint.slug)}
+              data-sprint-slug={sprint.slug}
+              className="block truncate transition-colors hover:text-primary"
+            >
+              {sprint.name}
+            </Link>
+          </CardTitle>
           <span
             className={cn(
               'shrink-0 rounded-sm px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide',
@@ -339,7 +351,13 @@ export default function SprintsScreen() {
                 </h2>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {group.items.map((s) => (
-                    <SprintCard key={s.id} sprint={s} canManage={canManage} onChanged={load} />
+                    <SprintCard
+                      key={s.id}
+                      sprint={s}
+                      projectKey={currentProject?.key ?? ''}
+                      canManage={canManage}
+                      onChanged={load}
+                    />
                   ))}
                 </div>
               </section>

@@ -47,6 +47,14 @@ export function issueUrl(issueKey: string): string {
   return `/${projectKeyOf(issueKey)}/${issueKey.toUpperCase()}`;
 }
 
+export function sprintUrl(projectKey: string, slug: string): string {
+  return `/${projectKey.toLowerCase()}/sprints/${slug}`;
+}
+
+export function releaseUrl(projectKey: string, slug: string): string {
+  return `/${projectKey.toLowerCase()}/releases/${slug}`;
+}
+
 /** For Copy Link — a URL that survives being pasted into Slack. */
 export function absoluteUrl(path: string): string {
   return `${window.location.origin}${path}`;
