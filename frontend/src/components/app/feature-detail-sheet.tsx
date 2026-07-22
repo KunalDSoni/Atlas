@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { DollarSign, MessageSquareQuote, Rocket, Target, Trash2, TrendingUp, Users2, Vote } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { DollarSign, FileText, MessageSquareQuote, Rocket, Target, Trash2, TrendingUp, Users2, Vote } from 'lucide-react';
 import { toast } from 'sonner';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
@@ -9,7 +10,7 @@ import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { api } from '@/lib/api';
 import { useProjects } from '@/hooks/use-projects';
-import type { PbFeature } from '@/lib/types';
+import type { PbFeature, WikiSpace } from '@/lib/types';
 import {
   FEATURE_STATUS_CLASS, FEATURE_STATUS_LABELS, FEATURE_STATUS_OPTIONS,
   TIMEFRAME_LABELS, TIMEFRAME_OPTIONS, TIER_CLASS, TIER_LABELS, computeRice,
@@ -40,6 +41,10 @@ export function FeatureDetailSheet({
   const [feature, setFeature] = useState<PbFeature | null>(null);
   const [loading, setLoading] = useState(false);
   const [pushType, setPushType] = useState('epic');
+  const [spaces, setSpaces] = useState<WikiSpace[]>([]);
+  const [specSpace, setSpecSpace] = useState('');
+  const [drafting, setDrafting] = useState(false);
+  const navigate = useNavigate();
   const [pushProject, setPushProject] = useState('');
 
   const load = useCallback(async () => {
@@ -49,6 +54,9 @@ export function FeatureDetailSheet({
       const f = await api.product.feature(featureId);
       setFeature(f);
       setPushProject(f.project_id || projects[0]?.id || '');
+      // Spaces populate the spec picker. A failure here must not break the
+      // sheet — the rest of the feature is still readable without it.
+      setSpaces(await api.wiki.spaces().catch(() => []));
     } catch (e) {
       toast.error('Failed to load feature', { description: e instanceof Error ? e.message : undefined });
     } finally {
@@ -57,6 +65,22 @@ export function FeatureDetailSheet({
   }, [featureId, projects]);
 
   useEffect(() => { if (open && featureId) void load(); }, [open, featureId, load]);
+
+  async function draftSpec() {
+    if (!feature || !specSpace) return;
+    setDrafting(true);
+    try {
+      const out = await api.product.draftSpec(feature.id, specSpace);
+      toast.success(out.created ? 'Spec drafted' : 'Spec already exists', {
+        description: 'Opened as an ordinary wiki page — edit it there.',
+      });
+      setFeature(await api.product.feature(feature.id));
+    } catch (e) {
+      toast.error('Could not draft the spec', { description: e instanceof Error ? e.message : undefined });
+    } finally {
+      setDrafting(false);
+    }
+  }
 
   async function patch(body: Partial<PbFeature>) {
     if (!feature) return;
@@ -129,6 +153,31 @@ export function FeatureDetailSheet({
                 <ScoreTile icon={DollarSign} label="Demand" value={feature.demand > 0 ? formatArr(feature.demand) : '—'} />
                 <ScoreTile icon={TrendingUp} label="RICE" value={rice ?? '—'} />
                 <ScoreTile icon={Vote} label="Votes" value={feature.vote_count} />
+              </div>
+
+              {/* Spec — the wiki is the editor, so this is a link, not an
+                  embedded document. Drafting is idempotent: once a page exists
+                  the button becomes a chip through to it. */}
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Spec</p>
+                {feature.spec_page_id ? (
+                  <Button variant="outline" size="sm" onClick={() => navigate(`/wiki/pages/${feature.spec_page_id}`)}>
+                    <FileText className="size-3.5" /> Open spec page
+                  </Button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Select value={specSpace} onValueChange={setSpecSpace}>
+                      <SelectTrigger className="h-9 w-48"><SelectValue placeholder="Choose a space" /></SelectTrigger>
+                      <SelectContent>
+                        {spaces.map((sp) => <SelectItem key={sp.id} value={sp.id}>{sp.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <Button size="sm" variant="outline" disabled={!specSpace || drafting}
+                      onClick={() => void draftSpec()}>
+                      <FileText className="size-3.5" /> {drafting ? 'Drafting…' : 'Draft spec'}
+                    </Button>
+                  </div>
+                )}
               </div>
 
               {/* Who asked for this — the evidence behind the demand number, so

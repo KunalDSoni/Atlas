@@ -13,7 +13,7 @@ import type {
   PageApproval, PageApprovalEntry, PageTask,
   WikiAttachment, ApiToken, Webhook, CustomField,
   WorkLog, WorkflowStatus,
-  PbCompany, PbCustomer, PbInsight, PbFeature, PbObjective, PortalFeature,
+  PbCompany, PbCustomer, PbInsight, PbFeature, PbObjective, PbTheme, PbThemeSuggestion, PortalFeature,
   PublicRequest, RequestType, Queue, QueueIssue, SlaGoal, SlaState,
   ArticleSuggestion, CuratedArticle, ServiceDeskReport,
 } from './types';
@@ -449,6 +449,24 @@ export const api = {
       customer_id?: string;
     }) => post<PbInsight>('/product/insights/capture', body),
     dismissInsight: (id: string) => post<{ ok: boolean }>(`/product/insights/${id}/dismiss`, {}),
+
+    // Themes — a grouping of insights above feedback and below a feature.
+    themes: () => get<PbTheme[]>('/product/themes'),
+    theme: (id: string) => get<PbTheme>(`/product/themes/${id}`),
+    createTheme: (body: { name: string; summary?: string; insight_ids?: string[] }) =>
+      post<PbTheme>('/product/themes', body),
+    removeTheme: (id: string) => del<{ ok: boolean }>(`/product/themes/${id}`),
+    addToTheme: (id: string, insight_ids: string[]) =>
+      post<PbTheme>(`/product/themes/${id}/insights`, { insight_ids }),
+    promoteTheme: (id: string, project_id: string) =>
+      post<{ id: string; name: string; insight_count: number }>(`/product/themes/${id}/promote`, { project_id }),
+    /** Proposes only — nothing is stored until createTheme is called. */
+    suggestThemes: () =>
+      post<{ enabled: boolean; suggestions: PbThemeSuggestion[]; error?: string }>('/product/themes/suggest', {}),
+
+    /** Idempotent: returns the existing page when one has already been drafted. */
+    draftSpec: (featureId: string, space_id: string) =>
+      post<{ page_id: string; created: boolean }>(`/product/features/${featureId}/spec`, { space_id }),
     insight: (id: string) => get<PbInsight>(`/product/insights/${id}`),
     createInsight: (body: { title: string; content?: string; source?: string; customer_id?: string | null }) =>
       post<PbInsight>('/product/insights', body),

@@ -1,0 +1,1 @@
+import{r as s,b as c}from"./index-I-rj2DQN.js";let e=null;const a=new Set;function f(){const[l,n]=s.useState(e??!1);return s.useEffect(()=>{if(e!==null){n(e);return}return a.add(n),c.ai.status().then(t=>{e=t.enabled,a.forEach(r=>r(t.enabled))}).catch(()=>{e=!1,a.forEach(t=>t(!1))}),()=>{a.delete(n)}},[]),l}export{f as u};
