@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Copy, Plus, Search, UserX } from 'lucide-react';
+import { Copy, Pencil, Plus, Search, UserCheck, UserX } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
@@ -127,6 +128,118 @@ function CreateUserDialog({ open, onOpenChange, onCreated }: { open: boolean; on
   );
 }
 
+
+/**
+ * Everything about a user an admin may change.
+ *
+ * Split from the row's role dropdown deliberately: role is the one field
+ * changed often enough to want inline, while name, email and the profile
+ * fields are an occasional, deliberate edit that deserves a review step.
+ */
+function EditUserDialog({ user, onOpenChange, onSaved }: {
+  user: User | null;
+  onOpenChange: (o: boolean) => void;
+  onSaved: () => void;
+}) {
+  const [form, setForm] = useState({
+    name: '', email: '', role: 'user' as Role,
+    department: '', job_title: '', phone: '', timezone: '', bio: '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    setForm({
+      name: user.name ?? '',
+      email: user.email ?? '',
+      role: user.role,
+      department: user.department ?? '',
+      job_title: user.job_title ?? '',
+      phone: user.phone ?? '',
+      timezone: user.timezone ?? '',
+      bio: user.bio ?? '',
+    });
+  }, [user]);
+
+  const set = (k: keyof typeof form) => (e: { target: { value: string } }) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  async function save() {
+    if (!user) return;
+    setSaving(true);
+    try {
+      await api.users.update(user.id, form);
+      toast.success(`${form.name} updated`);
+      onOpenChange(false);
+      onSaved();
+    } catch (e) {
+      // The server owns the rules an admin can trip here — duplicate email,
+      // last-admin demotion — so its message is the useful one.
+      toast.error('Could not save', { description: e instanceof Error ? e.message : undefined });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={!!user} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Edit {user?.name}</DialogTitle>
+          <DialogDescription>Changes apply immediately across the app.</DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="edit-name">Name</Label>
+            <Input id="edit-name" value={form.name} onChange={set('name')} />
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="edit-email">Email</Label>
+            <Input id="edit-email" type="email" value={form.email} onChange={set('email')} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-role">Role</Label>
+            <Select value={form.role} onValueChange={(v) => setForm((f) => ({ ...f, role: v as Role }))}>
+              <SelectTrigger id="edit-role"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {ROLES.map((r) => <SelectItem key={r} value={r}>{ROLE_LABEL[r]}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-dept">Department</Label>
+            <Input id="edit-dept" value={form.department} onChange={set('department')} placeholder="Engineering" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-title">Job title</Label>
+            <Input id="edit-title" value={form.job_title} onChange={set('job_title')} placeholder="Senior Engineer" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-phone">Phone</Label>
+            <Input id="edit-phone" value={form.phone} onChange={set('phone')} placeholder="+1-555-0100" />
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="edit-tz">Timezone</Label>
+            <Input id="edit-tz" value={form.timezone} onChange={set('timezone')} placeholder="Europe/London" />
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="edit-bio">Bio</Label>
+            <Textarea id="edit-bio" rows={3} value={form.bio} onChange={set('bio')} />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={() => void save()} disabled={saving || !form.name.trim()}>
+            {saving ? 'Saving…' : 'Save changes'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function AdminUsersScreen() {
   const { user: me } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
@@ -134,6 +247,7 @@ export default function AdminUsersScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [editing, setEditing] = useState<User | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -176,6 +290,16 @@ export default function AdminUsersScreen() {
       void load();
     } catch (e) {
       toast.error('Could not deactivate user', { description: e instanceof Error ? e.message : undefined });
+    }
+  }
+
+  async function reactivate(u: User) {
+    try {
+      await api.users.update(u.id, { is_active: 1 });
+      toast.success(`${u.name} reactivated`);
+      void load();
+    } catch (e) {
+      toast.error('Could not reactivate user', { description: e instanceof Error ? e.message : undefined });
     }
   }
 
@@ -273,7 +397,23 @@ export default function AdminUsersScreen() {
                 <TableCell className="hidden text-xs text-muted-foreground sm:table-cell">
                   {formatDate(u.created_at)}
                 </TableCell>
-                <TableCell>
+                <TableCell className="whitespace-nowrap">
+                  <Button
+                    variant="ghost" size="icon" className="size-8"
+                    aria-label={`Edit ${u.name}`}
+                    onClick={() => setEditing(u)}
+                  >
+                    <Pencil className="size-4" />
+                  </Button>
+                  {!u.is_active && (
+                    <Button
+                      variant="ghost" size="icon" className="size-8"
+                      aria-label={`Reactivate ${u.name}`}
+                      onClick={() => void reactivate(u)}
+                    >
+                      <UserCheck className="size-4" />
+                    </Button>
+                  )}
                   {u.id !== me?.id && Boolean(u.is_active) && (
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
@@ -308,6 +448,7 @@ export default function AdminUsersScreen() {
       </Card>
 
       <CreateUserDialog open={createOpen} onOpenChange={setCreateOpen} onCreated={load} />
+      <EditUserDialog user={editing} onOpenChange={(o) => !o && setEditing(null)} onSaved={load} />
     </>
   );
 }
