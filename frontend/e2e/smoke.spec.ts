@@ -23,7 +23,8 @@ test.describe('every main screen renders without crashing', () => {
     '/dashboard', '/board', '/backlog', '/epics', '/roadmap', '/sprints',
     '/releases', '/reports', '/automation',
     '/product/insights', '/product/features', '/product/prioritize',
-    '/product/roadmap', '/product/objectives', '/product/customers', '/portal',
+    '/product/roadmap', '/product/objectives', '/product/customers',
+    '/product/outcomes', '/portal',
     '/wiki', '/profile', '/settings',
     '/admin', '/admin/users', '/admin/projects', '/admin/audit-log',
   ];
