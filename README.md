@@ -107,6 +107,42 @@ atlas/
     └── build/              # Vite output — served by the backend
 ```
 
+## URLs
+
+Every project screen and every issue has a permanent, shareable URL. The project
+key is the first path segment and is the source of truth for which project is
+open — `/atlas/board` means project ATLAS whoever opens it.
+
+```
+/                        → the remembered project's board
+/atlas                   → /atlas/board
+/atlas/board             /atlas/backlog    /atlas/epics
+/atlas/roadmap           /atlas/sprints    /atlas/releases
+/atlas/reports           /atlas/automation /atlas/servicedesk/*
+/atlas/ATLAS-3           an issue of any type — epic, story, task or bug
+
+/dashboard  /product/*  /wiki/*  /portal  /admin/*  /profile  /settings
+```
+
+Issue keys match `^[A-Z][A-Z0-9]*-\d+$` and screen segments are lowercase, so
+`/atlas/board` and `/atlas/ATLAS-3` never collide and there is no reserved-word
+list to maintain. Type is deliberately *not* in the path: an issue's type is
+mutable, so a `/task/ATL-3` URL would break on an ordinary edit.
+
+Clicking a card opens the drawer and pushes the issue's URL; pasting that URL
+into a fresh tab renders the full page instead. Both are the same route and the
+same component — the difference is only whether history state carries a
+`background` location to layer over.
+
+**Two files spell routes, and nothing else does:** `frontend/src/lib/urls.ts`
+and `backend/utils/links.js`. Build links through them.
+
+Project keys are frozen after creation. `issue_key` is denormalised and every
+shared link embeds the key, so a rename would strand both.
+
+Pre-scheme paths (`/board`, `/board?issue=<uuid>`, …) still resolve — old
+notification rows and bookmarks hold them. See `components/app/legacy-redirect.tsx`.
+
 ## API Reference
 
 ### Auth Module

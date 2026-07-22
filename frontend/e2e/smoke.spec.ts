@@ -16,6 +16,10 @@ test.describe('auth', () => {
 
 test.describe('every main screen renders without crashing', () => {
   const routes = [
+    // Canonical, project-scoped.
+    '/atlas', '/atlas/board', '/atlas/backlog', '/atlas/epics', '/atlas/roadmap',
+    '/atlas/sprints', '/atlas/releases', '/atlas/reports', '/atlas/automation',
+    // Pre-scheme paths, kept so the redirects stay covered too.
     '/dashboard', '/board', '/backlog', '/epics', '/roadmap', '/sprints',
     '/releases', '/reports', '/automation',
     '/product/insights', '/product/features', '/product/prioritize',
