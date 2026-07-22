@@ -2226,6 +2226,33 @@ function seedDemoData() {
     });
   }
 
+  // ===== Personal JQL saved filters (epic 55) — shipped =====
+  {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(54);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, 54)`,
+      [eid, projId3, `ATLAS-${num}`, num, 'Personal JQL saved filters',
+       'First-class personal, project-scoped JQL views with a validated typed contract, editable saved queries, inline errors and permanent issue result links.',
+       userIds[0], 'blue', startDate, dueDate]);
+    [
+      { title: 'Normalize legacy backlog presets into an explicit typed contract', type: 'task' },
+      { title: 'Validate create and update atomically through the JQL v2 compiler', type: 'story' },
+      { title: 'Build the dedicated project filters screen and navigation', type: 'story' },
+      { title: 'Run project-scoped queries with permanent issue result links', type: 'story' },
+      { title: 'Cover ownership, persistence and compatibility regressions', type: 'task' },
+    ].forEach((child, ci) => {
+      const childNum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${childNum}`, childNum, child.title, child.type,
+         userIds[0], userIds[0], eid, ci]);
+    });
+  }
+
   // ===== DEMO SERVICE DESK =====
   // Gives the help center shape on a fresh database. Dana (userIds[5]) is the
   // only seeded client, so the requests must be hers — seeding them against a

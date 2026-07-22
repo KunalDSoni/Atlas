@@ -204,6 +204,7 @@ export interface SearchIssueHit {
   project_id: string;
   project_key: string;
   project_name: string;
+  assignee_name?: string | null;
 }
 
 export interface SearchPageHit {
@@ -218,9 +219,26 @@ export interface SearchPageHit {
 export interface SearchResults {
   issues: SearchIssueHit[];
   pages: SearchPageHit[];
+  jql?: boolean;
 }
 
-/** Saved backlog filter (per user, per project). */
+export interface BacklogSavedFilterParams {
+  kind: 'backlog';
+  query: string;
+  status: string;
+  type: string;
+  assignee: string;
+  label: string;
+}
+
+export interface JqlSavedFilterParams {
+  kind: 'jql';
+  jql: string;
+}
+
+export type SavedFilterParams = BacklogSavedFilterParams | JqlSavedFilterParams;
+
+/** Personal saved filter, isolated by user and project. */
 export interface SavedFilter {
   id: string;
   project_id: string;
@@ -228,13 +246,7 @@ export interface SavedFilter {
   name: string;
   params: string;
   created_at: string;
-  params_parsed: {
-    query?: string;
-    status?: string;
-    type?: string;
-    assignee?: string;
-    label?: string;
-  };
+  params_parsed: SavedFilterParams;
 }
 
 /** Fix version (release) with issue rollups. */

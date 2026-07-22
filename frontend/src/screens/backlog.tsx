@@ -64,7 +64,9 @@ export default function BacklogScreen() {
       ]);
       setIssues(i);
       setSprints(sp);
-      setSavedFilters(sf);
+      // JQL filters have their own screen; this picker remains the compact
+      // backlog-control preset it was before Epic 55.
+      setSavedFilters(sf.filter((filter) => filter.params_parsed.kind === 'backlog'));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load backlog');
     } finally {
@@ -116,12 +118,13 @@ export default function BacklogScreen() {
   );
 
   function applySavedFilter(f: SavedFilter) {
-    const p = f.params_parsed ?? {};
-    setQuery(p.query ?? '');
-    setStatusFilter(p.status ?? 'all');
-    setTypeFilter(p.type ?? 'all');
-    setAssigneeFilter(p.assignee ?? 'all');
-    setLabelFilter(p.label ?? 'all');
+    const p = f.params_parsed;
+    if (p.kind !== 'backlog') return;
+    setQuery(p.query);
+    setStatusFilter(p.status);
+    setTypeFilter(p.type);
+    setAssigneeFilter(p.assignee);
+    setLabelFilter(p.label);
     setSelectedFilterId(f.id);
   }
 
@@ -129,6 +132,7 @@ export default function BacklogScreen() {
     if (!currentProjectId || !saveName.trim()) return;
     try {
       const created = await api.filters.create(currentProjectId, saveName.trim(), {
+        kind: 'backlog',
         query, status: statusFilter, type: typeFilter, assignee: assigneeFilter, label: labelFilter,
       });
       setSavedFilters((prev) => [...prev, created]);

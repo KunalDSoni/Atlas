@@ -315,16 +315,18 @@ export const api = {
   },
 
   search: {
-    query: (q: string, projectId?: string) =>
-      get<SearchResults>(`/search?q=${encodeURIComponent(q)}${projectId ? `&project_id=${encodeURIComponent(projectId)}` : ''}`),
+    query: (q: string, projectId?: string, forceJql = false) =>
+      get<SearchResults>(`/search?q=${encodeURIComponent(q)}${projectId ? `&project_id=${encodeURIComponent(projectId)}` : ''}${forceJql ? '&jql=true' : ''}`),
     /** JQL v2 evaluation for the wiki [jql:] macro. 400s carry the parse error. */
-    jql: (q: string) => get<{ issues: JqlSearchIssue[]; jql?: boolean }>(`/search?q=${encodeURIComponent(q)}`),
+    jql: (q: string) => get<{ issues: JqlSearchIssue[]; jql?: boolean }>(`/search?q=${encodeURIComponent(q)}&jql=true`),
   },
 
   filters: {
     list: (projectId: string) => get<SavedFilter[]>(`/projects/${projectId}/filters`),
     create: (projectId: string, name: string, params: SavedFilter['params_parsed']) =>
       post<SavedFilter>(`/projects/${projectId}/filters`, { name, params }),
+    update: (id: string, body: { name?: string; params?: SavedFilter['params_parsed'] }) =>
+      put<SavedFilter>(`/filters/${id}`, body),
     remove: (id: string) => del<{ ok: boolean }>(`/filters/${id}`),
   },
 

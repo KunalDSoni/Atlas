@@ -17,7 +17,7 @@ const ISSUE_KEY = /^[A-Za-z][A-Za-z0-9]*(-[A-Za-z0-9]+)*-\d+$/;
 
 /** The screens that live under a project key. */
 export const PROJECT_SCREENS = [
-  'board', 'backlog', 'epics', 'roadmap', 'sprints',
+  'board', 'backlog', 'filters', 'epics', 'roadmap', 'sprints',
   'releases', 'reports', 'automation', 'servicedesk',
 ] as const;
 

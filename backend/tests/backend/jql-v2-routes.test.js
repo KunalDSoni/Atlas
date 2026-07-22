@@ -92,4 +92,12 @@ describe('JQL v2 through search and queues', () => {
     expect(res.body.jql).toBe(true);
     expect(res.body.error).toMatch(/brached.*column/i);
   });
+
+  test('explicit JQL mode parses malformed text instead of falling back to text search', async () => {
+    const res = await request(app).get('/api/search').set(headers)
+      .query({ q: 'not a valid query', project_id: projectId, jql: 'true' });
+    expect(res.status).toBe(400);
+    expect(res.body.jql).toBe(true);
+    expect(res.body.error).toMatch(/column/i);
+  });
 });

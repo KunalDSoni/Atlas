@@ -11,6 +11,7 @@ import { isIssueKey, issueUrl } from '@/lib/urls';
 
 const Board = lazy(() => import('@/screens/board'));
 const Backlog = lazy(() => import('@/screens/backlog'));
+const Filters = lazy(() => import('@/screens/filters'));
 const Epics = lazy(() => import('@/screens/epics'));
 const Sprints = lazy(() => import('@/screens/sprints'));
 const SprintDetail = lazy(() => import('@/screens/sprint-detail'));
@@ -92,6 +93,7 @@ export function ProjectScope() {
         <Route path="" element={<Navigate to="board" replace />} />
         <Route path="board" element={<Board />} />
         <Route path="backlog" element={<Backlog />} />
+        <Route path="filters" element={<Filters />} />
         <Route path="epics" element={<Epics />} />
         <Route path="roadmap" element={<Roadmap />} />
         <Route path="sprints" element={<Sprints />} />

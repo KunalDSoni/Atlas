@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  BookOpen, Columns3, FileClock, Gauge, LayoutDashboard, ListTodo, Rocket,
+  BookOpen, Columns3, FileClock, Gauge, LayoutDashboard, ListFilter, ListTodo, Rocket,
   Settings as SettingsIcon, Shield, User as UserIcon, Users,
 } from 'lucide-react';
 import {
@@ -19,6 +19,7 @@ const NAV = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/board', label: 'Board', icon: Columns3 },
   { to: '/backlog', label: 'Backlog', icon: ListTodo },
+  { to: '/filters', label: 'Filters', icon: ListFilter },
   { to: '/sprints', label: 'Sprints', icon: Rocket },
   { to: '/reports', label: 'Reports', icon: Gauge },
   { to: '/wiki', label: 'Wiki', icon: BookOpen },
