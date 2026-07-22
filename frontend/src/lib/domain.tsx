@@ -106,7 +106,7 @@ export const ROLE_LABEL: Record<Role, string> = {
 };
 
 export const SPRINT_TONE: Record<SprintStatus, string> = {
-  planned: 'bg-muted text-muted-foreground',
+  planning: 'bg-muted text-muted-foreground',
   active: 'bg-success-muted text-success',
   completed: 'bg-muted text-muted-foreground',
 };

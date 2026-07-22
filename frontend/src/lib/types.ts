@@ -19,7 +19,7 @@ export interface WorkflowStatus {
 }
 export type IssueType = 'story' | 'bug' | 'task' | 'epic' | 'subtask' | 'request';
 export type Priority = 'highest' | 'high' | 'medium' | 'low';
-export type SprintStatus = 'planned' | 'active' | 'completed';
+export type SprintStatus = 'planning' | 'active' | 'completed';
 export type LinkType = 'relates_to' | 'blocks' | 'is_blocked_by' | 'duplicates' | 'is_duplicated_by';
 
 export interface User {

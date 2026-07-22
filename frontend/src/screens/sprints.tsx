@@ -24,7 +24,9 @@ import { CardsSkeleton, EmptyState, ErrorState, PageHeader } from '@/components/
 import { formatDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
-const SPRINT_STATUSES: SprintStatus[] = ['planned', 'active', 'completed'];
+// Must match the sprints.status CHECK constraint in backend/database.js — an
+// unlisted value is rejected by the DB, not silently stored.
+const SPRINT_STATUSES: SprintStatus[] = ['planning', 'active', 'completed'];
 
 function SprintCard({
   sprint,
@@ -177,7 +179,7 @@ function CreateSprintDialog({
         goal: goal.trim() || null,
         start_date: start || null,
         end_date: end || null,
-        status: 'planned',
+        status: 'planning',
       });
       toast.success('Sprint created');
       onOpenChange(false);
@@ -298,7 +300,7 @@ export default function SprintsScreen() {
   }
 
   const active = sprints.filter((s) => s.status === 'active');
-  const planned = sprints.filter((s) => s.status === 'planned');
+  const planned = sprints.filter((s) => s.status === 'planning');
   const completed = sprints.filter((s) => s.status === 'completed');
 
   return (
