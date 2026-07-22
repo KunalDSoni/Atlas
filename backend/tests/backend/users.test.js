@@ -264,3 +264,118 @@ describe('PUT /api/users/:id — the lockout guard', () => {
     expect(res.status).toBe(400);
   });
 });
+
+// ===== ADMIN PASSWORD RESET =====
+// The one-time password shown at creation is the ONLY copy — it is stored
+// hashed and never shown again. Without a reset, a user who loses it before
+// their first login has an account nobody can recover through the app, admin
+// included. This is that missing route.
+
+describe('POST /api/users/:id/reset-password', () => {
+  let target, targetEmail;
+
+  beforeEach(async () => {
+    targetEmail = `reset-${Date.now()}-${Math.random().toString(36).slice(2, 7)}@example.com`;
+    const created = await request(app).post('/api/users').set(headers)
+      .send({ name: 'Forgetful Person', email: targetEmail, role: 'user' });
+    target = created.body;
+  });
+
+  test('an admin gets a fresh one-time password back', async () => {
+    const res = await request(app).post(`/api/users/${target.id}/reset-password`).set(headers);
+    expect(res.status).toBe(200);
+    expect(typeof res.body.password).toBe('string');
+    expect(res.body.password.length).toBeGreaterThanOrEqual(12);
+    expect(res.body.password).not.toBe(target.initial_password);
+  });
+
+  test('the new password actually works, and the old one stops working', async () => {
+    const res = await request(app).post(`/api/users/${target.id}/reset-password`).set(headers);
+
+    const withNew = await request(app).post('/api/auth/login')
+      .send({ email: targetEmail, password: res.body.password });
+    expect(withNew.status).toBe(200);
+
+    const withOld = await request(app).post('/api/auth/login')
+      .send({ email: targetEmail, password: target.initial_password });
+    expect(withOld.status).toBe(401);
+  });
+
+  test('the password is never stored in the clear', async () => {
+    const res = await request(app).post(`/api/users/${target.id}/reset-password`).set(headers);
+    const { getDb, queryOne } = require('../../database');
+    const db = await getDb();
+    const row = await queryOne(db, 'SELECT password FROM users WHERE id = ?', [target.id]);
+    expect(row.password).not.toContain(res.body.password);
+    expect(row.password).toMatch(/^scrypt\$/);
+  });
+
+  test('resetting revokes existing sessions — a reset is how you evict an intruder', async () => {
+    const first = await request(app).post('/api/auth/login')
+      .send({ email: targetEmail, password: target.initial_password });
+    const stolen = { 'x-auth-token': first.body.token };
+
+    // The stolen session works before the reset...
+    expect((await request(app).get('/api/auth/me').set(stolen)).status).toBe(200);
+
+    await request(app).post(`/api/users/${target.id}/reset-password`).set(headers);
+
+    // ...and must not survive it.
+    expect((await request(app).get('/api/auth/me').set(stolen)).status).toBe(401);
+  });
+
+  test('an admin can set a chosen password instead of a generated one', async () => {
+    const res = await request(app).post(`/api/users/${target.id}/reset-password`).set(headers)
+      .send({ password: 'handover-2026' });
+    expect(res.status).toBe(200);
+    expect(res.body.password).toBe('handover-2026');
+
+    const login = await request(app).post('/api/auth/login')
+      .send({ email: targetEmail, password: 'handover-2026' });
+    expect(login.status).toBe(200);
+  });
+
+  test('a chosen password that is too short is refused', async () => {
+    const res = await request(app).post(`/api/users/${target.id}/reset-password`).set(headers)
+      .send({ password: 'short' });
+    expect(res.status).toBe(400);
+  });
+
+  test('a non-admin cannot reset anybody', async () => {
+    const user = await loginAs('priya@example.com', 'password123');
+    const res = await request(app).post(`/api/users/${target.id}/reset-password`).set(user);
+    expect(res.status).toBe(403);
+  });
+
+  test('resetting an unknown user is a 404', async () => {
+    const res = await request(app).post('/api/users/no-such-id/reset-password').set(headers);
+    expect(res.status).toBe(404);
+  });
+
+  test('the reset is audited, without the password in the log', async () => {
+    const res = await request(app).post(`/api/users/${target.id}/reset-password`).set(headers);
+    const log = await request(app).get('/api/admin/audit-log?category=users').set(headers);
+    const entry = log.body.entries.find((e) => e.entity_id === target.id && /reset/i.test(e.action));
+    expect(entry).toBeDefined();
+    expect(JSON.stringify(entry)).not.toContain(res.body.password);
+  });
+});
+
+describe('POST /api/users — a chosen password at creation', () => {
+  test('an admin may set the password up front', async () => {
+    const email = `chosen-${Date.now()}@example.com`;
+    const res = await request(app).post('/api/users').set(headers)
+      .send({ name: 'Chosen Password', email, role: 'user', password: 'welcome-aboard' });
+    expect(res.status).toBe(201);
+    expect(res.body.initial_password).toBe('welcome-aboard');
+
+    const login = await request(app).post('/api/auth/login').send({ email, password: 'welcome-aboard' });
+    expect(login.status).toBe(200);
+  });
+
+  test('a chosen password that is too short is refused', async () => {
+    const res = await request(app).post('/api/users').set(headers)
+      .send({ name: 'Too Short', email: `short-${Date.now()}@example.com`, password: 'abc' });
+    expect(res.status).toBe(400);
+  });
+});

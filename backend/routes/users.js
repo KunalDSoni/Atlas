@@ -17,6 +17,29 @@ const { serverError } = require('../utils/errors');
 const router = express.Router();
 
 const ROLES = ['admin', 'board_admin', 'user', 'client'];
+// Matches the self-service rule in routes/profile.js, so an admin handing over
+// a password cannot set one the owner would be refused when changing it back.
+const MIN_PASSWORD = 6;
+
+/** A one-time password: 16 url-safe characters, generated, never stored in the clear. */
+function generatePassword() {
+  return crypto.randomBytes(12).toString('base64url');
+}
+
+/**
+ * Validates an admin-supplied password, or generates one.
+ * Returns { ok: true, password } or { ok: false, error }.
+ */
+function resolvePassword(supplied) {
+  if (supplied === undefined || supplied === null || supplied === '') {
+    return { ok: true, password: generatePassword() };
+  }
+  const password = String(supplied);
+  if (password.length < MIN_PASSWORD) {
+    return { ok: false, error: `Password must be at least ${MIN_PASSWORD} characters` };
+  }
+  return { ok: true, password };
+}
 // Deliberately loose: the point is to catch a typo, not to adjudicate RFC 5322.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -50,7 +73,9 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
     const id = uuidv4();
     // Generated per-user rather than a shared well-known default. Returned once so the
     // admin can hand it over; it is only ever stored as a hash.
-    const initialPassword = req.body.password || crypto.randomBytes(12).toString('base64url');
+    const chosen = resolvePassword(req.body.password);
+    if (!chosen.ok) return res.status(400).json({ error: chosen.error });
+    const initialPassword = chosen.password;
     const color = avatar_color || '#6366f1';
     await run(db, `INSERT INTO users (id, name, email, password, role, avatar_color) VALUES (?, ?, ?, ?, ?, ?)`,
       [id, name, email, await hashPassword(initialPassword), role || 'user', color]);
@@ -150,6 +175,44 @@ router.put('/:id', requireAuth, requireAdmin, async (req, res) => {
 
     const updated = await queryOne(db, 'SELECT id, name, email, role, avatar_color, avatar_url, phone, department, job_title, bio, timezone, is_active, last_login, created_at FROM users WHERE id = ?', [req.params.id]);
     res.json(updated);
+  } catch (e) { serverError(res, e); }
+});
+
+// POST /api/users/:id/reset-password (admin only)
+//
+// The password shown when an account is created is the only copy — it is stored
+// hashed and never shown again. Without this route, losing it left an account
+// nobody could recover through the app, admin included.
+//
+// Deliberately NOT part of PUT /:id: a password change revokes every session,
+// which is far too destructive to happen as a side effect of editing a job
+// title. It is its own verb because it is its own decision.
+router.post('/:id/reset-password', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const db = await getDb();
+    const user = await queryOne(db, 'SELECT id, name, email FROM users WHERE id = ?', [req.params.id]);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const chosen = resolvePassword(req.body?.password);
+    if (!chosen.ok) return res.status(400).json({ error: chosen.error });
+
+    await run(db, 'UPDATE users SET password = ? WHERE id = ?',
+      [await hashPassword(chosen.password), req.params.id]);
+
+    // Every existing session dies with the old password. Resetting is how an
+    // admin evicts someone whose account is compromised, and a live session
+    // surviving that would make the reset theatre.
+    await run(db, 'DELETE FROM sessions WHERE user_id = ?', [req.params.id]);
+
+    // The password itself is never logged — the log has a wider audience than
+    // the one-time handover does.
+    auditLog({
+      userId: req.userId, action: 'Reset user password', category: 'users',
+      entityType: 'user', entityId: req.params.id, entityName: `${user.name} (${user.email})`,
+      details: { sessions_revoked: true },
+    });
+
+    res.json({ id: user.id, email: user.email, password: chosen.password });
   } catch (e) { serverError(res, e); }
 });
 

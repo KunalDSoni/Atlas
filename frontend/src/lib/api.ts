@@ -170,8 +170,15 @@ export const api = {
   users: {
     list: () => get<User[]>('/users'),
     get: (id: string) => get<User>(`/users/${id}`),
-    create: (body: { name: string; email: string; role?: string; avatar_color?: string }) =>
+    create: (body: { name: string; email: string; role?: string; avatar_color?: string; password?: string }) =>
       post<User & { initial_password: string }>('/users', body),
+    /**
+     * Returns the new one-time password — the ONLY time it is ever readable.
+     * Revokes the user's sessions server-side.
+     */
+    resetPassword: (id: string, password?: string) =>
+      post<{ id: string; email: string; password: string }>(`/users/${id}/reset-password`,
+        password ? { password } : {}),
     // An admin may edit every field on the account, profile fields included —
     // the person it describes may never log in to set them themselves.
     update: (

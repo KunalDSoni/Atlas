@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Copy, Pencil, Plus, Search, UserCheck, UserX } from 'lucide-react';
+import { Copy, KeyRound, Pencil, Plus, Search, UserCheck, UserX } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -240,6 +240,54 @@ function EditUserDialog({ user, onOpenChange, onSaved }: {
   );
 }
 
+
+/**
+ * Shows a one-time password exactly once.
+ *
+ * Same treatment as account creation, because it is the same fact: the server
+ * stores only a hash, so this is the only moment the value is readable. If the
+ * admin closes without copying it, the only way forward is another reset.
+ */
+function OneTimePasswordDialog({ result, onOpenChange }: {
+  result: { email: string; password: string } | null;
+  onOpenChange: (o: boolean) => void;
+}) {
+  return (
+    <Dialog open={!!result} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Password reset</DialogTitle>
+          <DialogDescription>
+            Copy this now — it is stored hashed and cannot be shown again. Any sessions
+            they had open have been signed out.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2 py-3">
+          <p className="text-sm">
+            <span className="text-muted-foreground">Email:</span>{' '}
+            <span className="font-mono">{result?.email}</span>
+          </p>
+          <div className="flex items-center gap-2 rounded-md bg-muted px-3 py-2">
+            <code className="min-w-0 flex-1 truncate text-sm">{result?.password}</code>
+            <Button
+              size="icon" variant="ghost" className="size-7" aria-label="Copy password"
+              onClick={() => {
+                if (result) void navigator.clipboard.writeText(result.password);
+                toast.success('Password copied');
+              }}
+            >
+              <Copy className="size-3.5" />
+            </Button>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button onClick={() => onOpenChange(false)}>Done</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function AdminUsersScreen() {
   const { user: me } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
@@ -248,6 +296,7 @@ export default function AdminUsersScreen() {
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<User | null>(null);
+  const [resetResult, setResetResult] = useState<{ email: string; password: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -290,6 +339,15 @@ export default function AdminUsersScreen() {
       void load();
     } catch (e) {
       toast.error('Could not deactivate user', { description: e instanceof Error ? e.message : undefined });
+    }
+  }
+
+  async function resetPassword(u: User) {
+    try {
+      const res = await api.users.resetPassword(u.id);
+      setResetResult({ email: res.email, password: res.password });
+    } catch (e) {
+      toast.error('Could not reset the password', { description: e instanceof Error ? e.message : undefined });
     }
   }
 
@@ -405,6 +463,26 @@ export default function AdminUsersScreen() {
                   >
                     <Pencil className="size-4" />
                   </Button>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="ghost" size="icon" className="size-8" aria-label={`Reset password for ${u.name}`}>
+                        <KeyRound className="size-4" />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Reset {u.name}'s password?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          A new one-time password is generated and shown once. Their current
+                          password stops working and any open sessions are signed out.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => void resetPassword(u)}>Reset password</AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                   {!u.is_active && (
                     <Button
                       variant="ghost" size="icon" className="size-8"
@@ -449,6 +527,7 @@ export default function AdminUsersScreen() {
 
       <CreateUserDialog open={createOpen} onOpenChange={setCreateOpen} onCreated={load} />
       <EditUserDialog user={editing} onOpenChange={(o) => !o && setEditing(null)} onSaved={load} />
+      <OneTimePasswordDialog result={resetResult} onOpenChange={(o) => !o && setResetResult(null)} />
     </>
   );
 }
