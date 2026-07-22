@@ -9,6 +9,8 @@ import { SettingsProvider } from '@/hooks/use-settings';
 import { FocusModeProvider } from '@/context/focus-mode';
 import { AppShell } from '@/components/app/app-shell';
 import { ProjectScope } from '@/components/app/project-scope';
+import { LegacyProjectRedirect } from '@/components/app/legacy-redirect';
+import { PROJECT_SCREENS } from '@/lib/urls';
 import LoginScreen from '@/screens/login';
 
 const Dashboard = lazy(() => import('@/screens/dashboard'));
@@ -111,6 +113,16 @@ function ProtectedLayout() {
               <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
               <Route path="/admin/projects" element={<RequireAdmin><AdminProjects /></RequireAdmin>} />
               <Route path="/admin/audit-log" element={<RequireAdmin><AuditLog /></RequireAdmin>} />
+              {/* Pre-scheme paths. Static, so they outrank :projectKey. */}
+              {PROJECT_SCREENS.map((screen) => (
+                <Route
+                  key={screen}
+                  path={`/${screen}`}
+                  element={<LegacyProjectRedirect screen={screen} />}
+                />
+              ))}
+              <Route path="/servicedesk/settings" element={<LegacyProjectRedirect screen="servicedesk/settings" />} />
+              <Route path="/servicedesk/report" element={<LegacyProjectRedirect screen="servicedesk/report" />} />
               {/*
                 Declared after every static path. React Router ranks static
                 segments above dynamic ones, so /dashboard and /wiki/... are

@@ -21,3 +21,12 @@ test.describe('project-scoped URLs', () => {
     await expect(page.getByText(/project not found/i)).toBeVisible();
   });
 });
+
+test.describe('legacy URLs keep working', () => {
+  test('a bare legacy screen redirects to the remembered project', async ({ page }) => {
+    await login(page);
+    await page.goto('/atlas/board');       // establishes the remembered project
+    await page.goto('/backlog');
+    await expect(page).toHaveURL(/\/atlas\/backlog/);
+  });
+});
