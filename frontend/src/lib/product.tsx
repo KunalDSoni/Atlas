@@ -1,6 +1,6 @@
 // Shared display helpers for the Product module (labels, colors, score math).
 import type {
-  CompanyTier, FeatureStatus, InsightOrigin, InsightSource, ObjectiveStatus, PortalStatus, Timeframe,
+  CompanyTier, FeatureStatus, InsightOrigin, InsightSource, ObjectiveStatus, OutcomeVerdict, PortalStatus, Timeframe,
 } from './types';
 
 export const FEATURE_STATUS_LABELS: Record<FeatureStatus, string> = {
@@ -97,12 +97,27 @@ export const PORTAL_STATUS_CLASS: Record<PortalStatus, string> = {
   launched: 'bg-emerald-500/15 text-emerald-600',
 };
 
+export const OUTCOME_VERDICT_LABELS: Record<OutcomeVerdict, string> = {
+  achieved: 'Achieved',
+  partial: 'Partially achieved',
+  missed: 'Missed',
+  too_early: 'Too early',
+};
+
+export const OUTCOME_VERDICT_CLASS: Record<OutcomeVerdict, string> = {
+  achieved: 'bg-emerald-500/15 text-emerald-600',
+  partial: 'bg-amber-500/15 text-amber-600',
+  missed: 'bg-red-500/15 text-red-500',
+  too_early: 'bg-blue-500/15 text-blue-500',
+};
+
 export const FEATURE_STATUS_OPTIONS = Object.keys(FEATURE_STATUS_LABELS) as FeatureStatus[];
 export const TIMEFRAME_OPTIONS = Object.keys(TIMEFRAME_LABELS) as Timeframe[];
 export const INSIGHT_SOURCE_OPTIONS = Object.keys(INSIGHT_SOURCE_LABELS) as InsightSource[];
 export const TIER_OPTIONS = Object.keys(TIER_LABELS) as CompanyTier[];
 export const OBJECTIVE_STATUS_OPTIONS = Object.keys(OBJECTIVE_STATUS_LABELS) as ObjectiveStatus[];
 export const PORTAL_STATUS_OPTIONS = Object.keys(PORTAL_STATUS_LABELS) as PortalStatus[];
+export const OUTCOME_VERDICT_OPTIONS = Object.keys(OUTCOME_VERDICT_LABELS) as OutcomeVerdict[];
 
 /** RICE = reach × impact × (confidence/100) / max(effort,1). Mirrors the server. */
 export function computeRice(f: { reach: number | null; impact: number | null; confidence: number | null; effort: number | null }): number | null {

@@ -13,7 +13,8 @@ import type {
   PageApproval, PageApprovalEntry, PageTask,
   WikiAttachment, ApiToken, Webhook, CustomField,
   WorkLog, WorkflowStatus,
-  PbCompany, PbCustomer, PbInsight, PbFeature, PbObjective, PbTheme, PbThemeSuggestion, PortalFeature,
+  PbCompany, PbCustomer, PbInsight, PbFeature, PbFeatureOutcome, PbObjective,
+  PbOutcomesResponse, PbTheme, PbThemeSuggestion, PortalFeature,
   PublicRequest, RequestType, Queue, QueueIssue, SlaGoal, SlaState,
   ArticleSuggestion, CuratedArticle, ServiceDeskReport,
 } from './types';
@@ -496,6 +497,15 @@ export const api = {
     unlinkIssue: (linkId: string) => del<{ ok: boolean }>(`/product/feature-issues/${linkId}`),
     voteFeature: (featureId: string) =>
       post<{ voted: boolean; vote_count: number }>(`/product/features/${featureId}/vote`),
+
+    // Outcomes — the metric can be set before launch; measured/verdict records
+    // the later review. The queue window is caller-configurable and defaults to
+    // the deployment setting on the server.
+    outcomes: (reviewAfterDays?: number) =>
+      get<PbOutcomesResponse>(`/product/outcomes${reviewAfterDays ? `?review_after_days=${reviewAfterDays}` : ''}`),
+    saveOutcome: (featureId: string, body: Partial<Pick<PbFeatureOutcome,
+      'metric' | 'target' | 'baseline' | 'measured' | 'verdict' | 'notes'>>) =>
+      put<PbFeatureOutcome>(`/product/features/${featureId}/outcome`, body),
 
     // Objectives
     objectives: () => get<PbObjective[]>('/product/objectives'),

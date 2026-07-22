@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { DollarSign, FileText, MessageSquareQuote, Rocket, Target, Trash2, TrendingUp, Users2, Vote } from 'lucide-react';
+import { Activity, DollarSign, FileText, MessageSquareQuote, Pencil, Rocket, Target, Trash2, TrendingUp, Users2, Vote } from 'lucide-react';
 import { toast } from 'sonner';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
@@ -11,11 +11,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { api } from '@/lib/api';
 import { useProjects } from '@/hooks/use-projects';
 import type { PbFeature, WikiSpace } from '@/lib/types';
+import { OutcomeDialog } from '@/components/app/outcome-dialog';
 import {
   FEATURE_STATUS_CLASS, FEATURE_STATUS_LABELS, FEATURE_STATUS_OPTIONS,
+  OUTCOME_VERDICT_CLASS, OUTCOME_VERDICT_LABELS,
   TIMEFRAME_LABELS, TIMEFRAME_OPTIONS, TIER_CLASS, TIER_LABELS, computeRice,
 } from '@/lib/product';
-import { formatArr } from '@/lib/format';
+import { formatArr, formatDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 const NONE = '__none__';
@@ -44,6 +46,8 @@ export function FeatureDetailSheet({
   const [spaces, setSpaces] = useState<WikiSpace[]>([]);
   const [specSpace, setSpecSpace] = useState('');
   const [drafting, setDrafting] = useState(false);
+  const [outcomeOpen, setOutcomeOpen] = useState(false);
+  const [outcomePrompted, setOutcomePrompted] = useState(false);
   const navigate = useNavigate();
   const [pushProject, setPushProject] = useState('');
 
@@ -85,8 +89,15 @@ export function FeatureDetailSheet({
   async function patch(body: Partial<PbFeature>) {
     if (!feature) return;
     try {
+      const enteringLaunch = body.status === 'launched' && feature.status !== 'launched';
       const updated = await api.product.updateFeature(feature.id, body);
       setFeature({ ...feature, ...updated });
+      // Prompt only after the status write succeeds. Closing this dialog leaves
+      // the launch intact, so a missing metric is visible rather than coercive.
+      if (enteringLaunch && updated.needs_outcome_metric) {
+        setOutcomePrompted(true);
+        setOutcomeOpen(true);
+      }
       onChange?.();
     } catch (e) {
       toast.error('Update failed', { description: e instanceof Error ? e.message : undefined });
@@ -131,6 +142,7 @@ export function FeatureDetailSheet({
     ? Math.round((feature.delivery_done / feature.delivery_total) * 100) : 0;
 
   return (
+    <>
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-full gap-0 overflow-y-auto p-0 sm:max-w-2xl">
         {loading && !feature ? (
@@ -154,6 +166,47 @@ export function FeatureDetailSheet({
                 <ScoreTile icon={TrendingUp} label="RICE" value={rice ?? '—'} />
                 <ScoreTile icon={Vote} label="Votes" value={feature.vote_count} />
               </div>
+
+              {/* Outcome — available before launch for planning, and paired
+                  with the post-launch signal once the feature ships. */}
+              <section className="rounded-lg border border-border bg-muted/20 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="flex items-center gap-1.5 text-sm font-semibold"><Activity className="size-4" /> Outcome</h3>
+                    {feature.launched_at && <p className="mt-0.5 text-xs text-muted-foreground">Launched {formatDate(feature.launched_at)}</p>}
+                  </div>
+                  <Button size="sm" variant="outline" onClick={() => { setOutcomePrompted(false); setOutcomeOpen(true); }}>
+                    <Pencil className="size-3.5" /> {feature.outcome?.metric ? 'Edit' : 'Set measure'}
+                  </Button>
+                </div>
+                {feature.outcome?.metric ? (
+                  <div className="mt-3 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium">{feature.outcome.metric}</span>
+                      {feature.outcome.verdict && (
+                        <Badge className={cn('font-medium', OUTCOME_VERDICT_CLASS[feature.outcome.verdict])}>
+                          {OUTCOME_VERDICT_LABELS[feature.outcome.verdict]}
+                        </Badge>
+                      )}
+                    </div>
+                    {(feature.outcome.baseline || feature.outcome.target) && (
+                      <p className="text-xs text-muted-foreground">
+                        {feature.outcome.baseline || 'No baseline'} → {feature.outcome.target || 'No target'}
+                      </p>
+                    )}
+                    {feature.outcome.measured && <p className="text-xs"><span className="text-muted-foreground">Measured:</span> {feature.outcome.measured}</p>}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    {feature.status === 'launched' ? 'This launch has no declared success measure yet.' : 'Declare what success should look like before launch.'}
+                  </p>
+                )}
+                {feature.status === 'launched' && (
+                  <p className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
+                    {feature.post_launch_insight_count || 0} linked feedback signal{feature.post_launch_insight_count === 1 ? '' : 's'} since launch
+                  </p>
+                )}
+              </section>
 
               {/* Spec — the wiki is the editor, so this is a link, not an
                   embedded document. Drafting is idempotent: once a page exists
@@ -312,5 +365,20 @@ export function FeatureDetailSheet({
         ) : null}
       </SheetContent>
     </Sheet>
+    {feature && (
+      <OutcomeDialog
+        featureId={feature.id}
+        featureName={feature.name}
+        outcome={feature.outcome}
+        open={outcomeOpen}
+        prompted={outcomePrompted}
+        onOpenChange={(next) => { setOutcomeOpen(next); if (!next) setOutcomePrompted(false); }}
+        onSaved={(outcome) => {
+          setFeature((current) => current ? { ...current, outcome, needs_outcome_metric: !outcome.metric } : current);
+          onChange?.();
+        }}
+      />
+    )}
+    </>
   );
 }

@@ -91,6 +91,7 @@ async function createTestApp() {
   testApp.use('/api', require('../../routes/product-companies'));
   testApp.use('/api', require('../../routes/product-insights'));
   testApp.use('/api', require('../../routes/product-features'));
+  testApp.use('/api', require('../../routes/product-outcomes'));
   testApp.use('/api', require('../../routes/product-objectives'));
   testApp.use('/api', require('../../routes/product-themes'));
   testApp.use('/api', require('../../routes/portal'));

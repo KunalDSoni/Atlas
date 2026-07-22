@@ -713,6 +713,66 @@ const MIGRATIONS = [
       },
     ],
   },
+  {
+    // The product-discovery design originally called this migration 018.
+    // Permanent entity URLs landed first and use 018 for sprint/release slugs,
+    // so outcome tracking takes the next append-only id instead of rewriting
+    // migration history.
+    id: '019_feature_outcomes',
+    description: 'Feature success measures, launch reviews, and a durable launch timestamp',
+    steps: [
+      {
+        addColumn: {
+          table: 'pb_features', column: 'launched_at',
+          sqlite: 'ALTER TABLE pb_features ADD COLUMN launched_at TEXT',
+          mysql: 'ALTER TABLE pb_features ADD COLUMN launched_at DATETIME(3) NULL',
+        },
+      },
+      {
+        sql: {
+          sqlite: `CREATE TABLE IF NOT EXISTS pb_feature_outcomes (
+            feature_id TEXT PRIMARY KEY REFERENCES pb_features(id),
+            metric TEXT,
+            target TEXT,
+            baseline TEXT,
+            measured TEXT,
+            verdict TEXT CHECK(verdict IS NULL OR verdict IN ('achieved','partial','missed','too_early')),
+            reviewed_at TEXT,
+            reviewed_by TEXT REFERENCES users(id),
+            notes TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+          )`,
+          mysql: `CREATE TABLE IF NOT EXISTS pb_feature_outcomes (
+            feature_id VARCHAR(36) PRIMARY KEY,
+            metric TEXT,
+            target TEXT,
+            baseline TEXT,
+            measured TEXT,
+            verdict VARCHAR(20) NULL,
+            reviewed_at DATETIME(3) NULL,
+            reviewed_by VARCHAR(36) NULL,
+            notes TEXT,
+            created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+            updated_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
+          ) DEFAULT CHARSET=utf8mb4`,
+        },
+      },
+      // Existing launched features predate launched_at. updated_at is the
+      // closest honest timestamp Atlas has for them; all future transitions
+      // write the exact first-launch time and never overwrite it on later edits.
+      {
+        sql: {
+          sqlite: `UPDATE pb_features
+                   SET launched_at = COALESCE(updated_at, created_at, datetime('now'))
+                   WHERE status = 'launched' AND launched_at IS NULL`,
+          mysql: `UPDATE pb_features
+                  SET launched_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP(3))
+                  WHERE status = 'launched' AND launched_at IS NULL`,
+        },
+      },
+    ],
+  },
 ];
 
 const LEDGER_SQL = {

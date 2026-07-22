@@ -638,6 +638,7 @@ export type FeatureStatus = 'idea' | 'discovery' | 'planned' | 'in_progress' | '
 export type Timeframe = 'now' | 'next' | 'later';
 export type PortalStatus = 'under_consideration' | 'planned' | 'launched';
 export type ObjectiveStatus = 'on_track' | 'at_risk' | 'off_track' | 'done';
+export type OutcomeVerdict = 'achieved' | 'partial' | 'missed' | 'too_early';
 
 export interface PbCompany {
   id: string;
@@ -765,6 +766,9 @@ export interface PbFeature {
   demand_unattributed?: number;
   /** The wiki page drafted for this feature, if one exists. */
   spec_page_id: string | null;
+  /** Set once, on the first transition into launched. Later feature edits do
+   *  not move the boundary used for post-launch feedback. */
+  launched_at: string | null;
   insight_count: number;
   vote_count: number;
   delivery_total: number;
@@ -773,6 +777,65 @@ export interface PbFeature {
   insights?: PbFeatureInsight[];
   issues?: PbFeatureIssue[];
   objectives?: PbFeatureObjective[];
+  outcome?: PbFeatureOutcome | null;
+  needs_outcome_metric?: boolean;
+  post_launch_insight_count?: number;
+  post_launch_insights?: PbPostLaunchInsight[];
+}
+
+export interface PbFeatureOutcome {
+  feature_id: string;
+  metric: string | null;
+  target: string | null;
+  baseline: string | null;
+  measured: string | null;
+  verdict: OutcomeVerdict | null;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  reviewed_by_name?: string | null;
+  notes: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PbPostLaunchInsight {
+  feature_id: string;
+  id: string;
+  title: string;
+  content: string | null;
+  source: InsightSource;
+  origin_kind: InsightOrigin | null;
+  origin_excerpt: string | null;
+  created_at: string;
+  importance: number;
+  quote: string | null;
+  customer_name?: string | null;
+  company_name?: string | null;
+  company_tier?: CompanyTier | null;
+}
+
+export interface PbOutcomeFeature {
+  id: string;
+  project_id: string | null;
+  project_name: string | null;
+  project_key: string | null;
+  name: string;
+  description: string | null;
+  status: 'launched';
+  owner_id: string | null;
+  owner_name: string | null;
+  launched_at: string;
+  days_since_launch: number;
+  outcome: PbFeatureOutcome | null;
+  needs_outcome_metric: boolean;
+  post_launch_insight_count: number;
+  post_launch_insights: PbPostLaunchInsight[];
+  review_due: boolean;
+}
+
+export interface PbOutcomesResponse {
+  review_after_days: number;
+  features: PbOutcomeFeature[];
 }
 
 export interface PbFeatureInsight {

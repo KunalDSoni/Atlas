@@ -447,7 +447,21 @@ const SCHEMA_SQL = [
     confidence INTEGER,
     release_id TEXT REFERENCES versions(id),
     spec_page_id TEXT,
+    launched_at TEXT,
     created_by TEXT REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS pb_feature_outcomes (
+    feature_id TEXT PRIMARY KEY REFERENCES pb_features(id),
+    metric TEXT,
+    target TEXT,
+    baseline TEXT,
+    measured TEXT,
+    verdict TEXT CHECK(verdict IS NULL OR verdict IN ('achieved','partial','missed','too_early')),
+    reviewed_at TEXT,
+    reviewed_by TEXT REFERENCES users(id),
+    notes TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   )`,
@@ -992,9 +1006,23 @@ const MYSQL_SCHEMA_SQL = [
     confidence INT,
     release_id VARCHAR(36),
     spec_page_id VARCHAR(36),
+    launched_at DATETIME(3) NULL,
     created_by VARCHAR(36),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS pb_feature_outcomes (
+    feature_id VARCHAR(36) PRIMARY KEY,
+    metric TEXT,
+    target TEXT,
+    baseline TEXT,
+    measured TEXT,
+    verdict VARCHAR(20) NULL,
+    reviewed_at DATETIME(3) NULL,
+    reviewed_by VARCHAR(36) NULL,
+    notes TEXT,
+    created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
   ) DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS pb_insight_links (
     id VARCHAR(36) PRIMARY KEY,
@@ -2052,6 +2080,34 @@ function seedDemoData() {
     });
   });
 
+  // ===== Product discovery slice 3 (epic 51) — shipped =====
+  // Epic 46 remains an intentionally unused/reserved ordinal, so this is the
+  // 50th seeded epic while retaining its stable roadmap name, Epic 51.
+  {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(50);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, 50)`,
+      [eid, projId3, `ATLAS-${num}`, num, 'Product: Outcome tracking',
+       'Close the loop after launch with declared success measures, durable launch dates, post-launch feedback signals, and a review queue that makes unexamined launches visible.',
+       userIds[0], 'green', startDate, dueDate]);
+    [
+      { title: 'Migration 019: feature outcomes and durable launch timestamps', type: 'task' },
+      { title: 'Outcome API with validated review lifecycle', type: 'story' },
+      { title: 'Batched post-launch insight signals and overdue review rules', type: 'task' },
+      { title: 'Outcomes screen and non-blocking launch metric prompt', type: 'story' },
+    ].forEach((child, ci) => {
+      const childNum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${childNum}`, childNum, child.title, child.type,
+         userIds[0], userIds[0], eid, ci]);
+    });
+  }
+
   // ===== DEMO SERVICE DESK =====
   // Gives the help center shape on a fresh database. Dana (userIds[5]) is the
   // only seeded client, so the requests must be hers — seeding them against a
@@ -2323,9 +2379,11 @@ function seedProductDemoData() {
   // Features across statuses/timeframes (portal_status on the public ones)
   const mkFeature = (name, description, status, timeframe, portalStatus, effort, value, reach, impact, confidence) => {
     const id = uuid();
-    db.run(`INSERT INTO pb_features (id, project_id, name, description, status, timeframe, portal_status, owner_id, effort, value, reach, impact, confidence, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, projectId, name, description, status, timeframe, portalStatus, pmId, effort, value, reach, impact, confidence, adminId]);
+    const launchedAt = status === 'launched' ? '2026-05-01 09:00:00' : null;
+    db.run(`INSERT INTO pb_features (id, project_id, name, description, status, timeframe, portal_status, owner_id, effort, value, reach, impact, confidence, launched_at, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, projectId, name, description, status, timeframe, portalStatus, pmId,
+       effort, value, reach, impact, confidence, launchedAt, adminId]);
     return id;
   };
   const fSso = mkFeature('SAML single sign-on', 'Enterprise SSO via SAML 2.0 for large accounts.', 'planned', 'now', 'planned', 5, 9, 400, 3, 80);
@@ -2348,6 +2406,8 @@ function seedProductDemoData() {
   const iSso2 = mkInsight('SSO needed for compliance', 'SOC2 audit flagged shared passwords. We need SSO by end of quarter.', 'email', custTom, 1);
   const iApi = mkInsight('Wants Zapier-style integration', 'Team asked to sync issues into their data warehouse. An API with tokens would unblock them.', 'interview', custLena, 1);
   const iCsv = mkInsight('Migration from spreadsheet is painful', 'Onboarding took two days of copy-paste. CSV import would have made it an hour.', 'support', custLena, 1);
+  const iAudit = mkInsight('Scheduled audit exports still need a date filter', 'The export shipped, but compliance still trims each file by hand before uploading it.', 'support', custMaya, 1);
+  db.run('UPDATE pb_insights SET created_at = ? WHERE id = ?', ['2026-06-15 10:00:00', iAudit]);
   mkInsight('Portal is blinding at night', 'Any chance of a dark theme on the ideas portal?', 'portal', custTom, 0);
   mkInsight('Search misses synonyms', 'Searching "login" does not find "sign-in" issues. Smarter search would help a lot.', 'portal', null, 0);
 
@@ -2381,11 +2441,21 @@ function seedProductDemoData() {
   link(iSso2, fSso, 3, 'We need SSO by end of quarter.');
   link(iApi, fApi, 2, 'An API with tokens would unblock them.');
   link(iCsv, fCsv, 2, 'CSV import would have made it an hour.');
+  link(iAudit, fAudit, 2, 'compliance still trims each file by hand');
   // Initech (strategic, $18k) and Acme (strategic, $250k) both weigh 3 under
   // user_impact. Linking each to CSV import makes the two numbers disagree on
   // screen, which is what epic 48 exists to show.
   link(iLaptop, fMobile, 2, 'New starters lose their first day waiting on a replacement.');
   link(iExport, fCsv, 3, 'exporting to CSV by hand every Monday morning');
+
+  // ===== Launch outcome (epic 51) =====
+  // Metric-only on purpose: the seeded launch is old enough to appear as due
+  // in the review queue, giving the screen a real next action instead of a
+  // collection of already-finished examples.
+  db.run(`INSERT INTO pb_feature_outcomes (feature_id, metric, target, baseline, notes)
+          VALUES (?, ?, ?, ?, ?)`,
+    [fAudit, 'Weekly time spent preparing audit exports', 'Under 1 hour per week',
+     '6 hours per week', 'Review after the compliance team completes one full reporting cycle.']);
 
   // ===== Demo theme (epic 49) =====
   // Two insights that are plainly the same ask, grouped so the Themes tab has
