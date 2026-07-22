@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLiveEvents } from '@/hooks/use-live-events';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { issueUrl } from '@/lib/urls';
 import { Plus, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -12,7 +14,6 @@ import type { EpicSummary } from '@/lib/types';
 import {
   EmptyState, ErrorState, PageHeader, RowsSkeleton, StatusPill, UserAvatar,
 } from '@/components/app/primitives';
-import { IssueDetailSheet } from '@/components/app/issue-detail-sheet';
 import { CreateIssueDialog } from '@/components/app/create-issue-dialog';
 import { cn } from '@/lib/utils';
 
@@ -52,26 +53,18 @@ function EpicRow({ epic, onOpen }: { epic: EpicSummary; onOpen: () => void }) {
 export default function EpicsScreen() {
   const { user } = useAuth();
   const { currentProject, currentProjectId, loading: projectsLoading } = useProjects();
+
+  // Opening an issue is a navigation now — see ProjectScope for how the
+  // `background` location decides drawer versus full page.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const openIssue = (issueKey: string) =>
+    navigate(issueUrl(issueKey), { state: { background: location } });
+
   const [epics, setEpics] = useState<EpicSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [openIssueId, setOpenIssueId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [searchParams, setSearchParams] = useSearchParams();
-
-  // ?issue=<id> deep-links an epic open (used by the command palette).
-  useEffect(() => {
-    const target = searchParams.get('issue');
-    if (target) setOpenIssueId(target);
-  }, [searchParams]);
-
-  function closeIssue() {
-    setOpenIssueId(null);
-    if (searchParams.has('issue')) {
-      searchParams.delete('issue');
-      setSearchParams(searchParams, { replace: true });
-    }
-  }
 
   const load = useCallback(async () => {
     if (!currentProjectId) return;
@@ -85,6 +78,13 @@ export default function EpicsScreen() {
       setLoading(false);
     }
   }, [currentProjectId]);
+
+  // The drawer no longer belongs to this screen, so it can no longer hand back
+  // an onChanged. Live events cover the same ground and also pick up a
+  // teammate's edits, which onChanged never did.
+  useLiveEvents((e) => {
+    if (e.type === 'issue' && e.projectId === currentProjectId) void load();
+  });
 
   useEffect(() => {
     void load();
@@ -142,19 +142,13 @@ export default function EpicsScreen() {
           <ul className="divide-y divide-border-light">
             {epics.map((epic) => (
               <li key={epic.id}>
-                <EpicRow epic={epic} onOpen={() => setOpenIssueId(epic.id)} />
+                <EpicRow epic={epic} onOpen={() => openIssue(epic.issue_key)} />
               </li>
             ))}
           </ul>
         </Card>
       )}
 
-      <IssueDetailSheet
-        issueId={openIssueId}
-        onOpenChange={(o) => !o && closeIssue()}
-        onChanged={load}
-        onOpenIssue={setOpenIssueId}
-      />
       <CreateIssueDialog
         open={createOpen}
         onOpenChange={setCreateOpen}

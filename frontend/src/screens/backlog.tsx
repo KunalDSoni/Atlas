@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLiveEvents } from '@/hooks/use-live-events';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { issueUrl } from '@/lib/urls';
 import { BookmarkPlus, ListTodo, Plus, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -18,7 +21,6 @@ import type { Issue, IssueType, SavedFilter, Sprint } from '@/lib/types';
 import {
   EmptyState, EpicBadge, ErrorState, LabelChip, PageHeader, PriorityIcon, RowsSkeleton, StatusPill, SubtaskProgress, TypeIcon, UserAvatar,
 } from '@/components/app/primitives';
-import { IssueDetailSheet } from '@/components/app/issue-detail-sheet';
 import { CreateIssueDialog } from '@/components/app/create-issue-dialog';
 import { cn } from '@/lib/utils';
 
@@ -26,6 +28,14 @@ export default function BacklogScreen() {
   const { user } = useAuth();
   const { compact } = useSettings();
   const { currentProject, currentProjectId, loading: projectsLoading } = useProjects();
+
+  // Opening an issue is a navigation now — see ProjectScope for how the
+  // `background` location decides drawer versus full page.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const openIssue = (issueKey: string) =>
+    navigate(issueUrl(issueKey), { state: { background: location } });
+
   const [issues, setIssues] = useState<Issue[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [query, setQuery] = useState('');
@@ -39,7 +49,6 @@ export default function BacklogScreen() {
   const [saveName, setSaveName] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [openIssueId, setOpenIssueId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const workflow = useWorkflow(currentProjectId);
 
@@ -62,6 +71,13 @@ export default function BacklogScreen() {
       setLoading(false);
     }
   }, [currentProjectId]);
+
+  // The drawer no longer belongs to this screen, so it can no longer hand back
+  // an onChanged. Live events cover the same ground and also pick up a
+  // teammate's edits, which onChanged never did.
+  useLiveEvents((e) => {
+    if (e.type === 'issue' && e.projectId === currentProjectId) void load();
+  });
 
   useEffect(() => {
     void load();
@@ -306,7 +322,7 @@ export default function BacklogScreen() {
             {backlog.map((issue) => (
               <li key={issue.id}>
                 <button
-                  onClick={() => setOpenIssueId(issue.id)}
+                  onClick={() => openIssue(issue.issue_key)}
                   className={cn('flex w-full items-center gap-3 px-4 text-left transition-colors hover:bg-muted/60', compact ? 'py-1.5' : 'py-2.5')}
                 >
                   <TypeIcon type={issue.type} />
@@ -342,12 +358,6 @@ export default function BacklogScreen() {
         </Card>
       )}
 
-      <IssueDetailSheet
-        issueId={openIssueId}
-        onOpenChange={(o) => !o && setOpenIssueId(null)}
-        onChanged={load}
-        onOpenIssue={setOpenIssueId}
-      />
       <CreateIssueDialog
         open={createOpen}
         onOpenChange={setCreateOpen}

@@ -1,8 +1,13 @@
-import { Suspense, lazy } from 'react';
-import { Navigate, Route, Routes, useParams } from 'react-router-dom';
+import { Suspense, lazy, useEffect, useState } from 'react';
+import {
+  Navigate, Route, Routes, useLocation, useNavigate, useParams, type Location,
+} from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
+import { api } from '@/lib/api';
 import { useProjects } from '@/hooks/use-projects';
 import { ProjectNotFound } from '@/screens/not-found';
+import { IssueDetailSheet } from '@/components/app/issue-detail-sheet';
+import { isIssueKey, issueUrl } from '@/lib/urls';
 
 const Board = lazy(() => import('@/screens/board'));
 const Backlog = lazy(() => import('@/screens/backlog'));
@@ -26,12 +31,49 @@ function Spinner() {
 }
 
 /**
+ * The drawer, driven by the URL. Resolves the key the same way the full page
+ * does — the two differ only in what surrounds the body.
+ */
+function IssueSheetRoute({ issueKey, onClose }: { issueKey: string; onClose: () => void }) {
+  const navigate = useNavigate();
+  const [issueId, setIssueId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    setIssueId(null);
+    api.issues.getByKey(issueKey)
+      .then((issue) => { if (live) setIssueId(issue.id); })
+      .catch(() => { if (live) onClose(); });
+    return () => { live = false; };
+    // onClose is a fresh closure each render; re-running on it would loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [issueKey]);
+
+  return (
+    <IssueDetailSheet
+      issueId={issueId}
+      onOpenChange={(open) => { if (!open) onClose(); }}
+      onOpenIssue={(key) => navigate(issueUrl(key))}
+    />
+  );
+}
+
+/**
  * Everything under /:projectKey. The key is resolved once, here, and every
  * screen below reads it through useProjects() exactly as it always did.
  */
 export function ProjectScope() {
   const { projectKey = '' } = useParams<{ projectKey: string }>();
   const { projects, loading } = useProjects();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Pushed by every issue link that had a screen underneath it. Its ABSENCE is
+  // what a pasted link looks like: same route, nothing to layer over, so the
+  // route resolves to the full page instead.
+  const background = (location.state as { background?: Location } | null)?.background;
+  const segment = location.pathname.split('/').filter(Boolean)[1] ?? '';
+  const asDrawer = Boolean(background) && isIssueKey(segment);
 
   const known = projects.some((p) => p.key.toLowerCase() === projectKey.toLowerCase());
   if (loading && projects.length === 0) return <Spinner />;
@@ -44,7 +86,7 @@ export function ProjectScope() {
         React Router ranks static segments above dynamic ones, so `board` always
         wins over `:issueKey` — no reserved-word list to maintain.
       */}
-      <Routes>
+      <Routes location={asDrawer ? background : location}>
         <Route path="" element={<Navigate to="board" replace />} />
         <Route path="board" element={<Board />} />
         <Route path="backlog" element={<Backlog />} />
@@ -59,6 +101,9 @@ export function ProjectScope() {
         <Route path="servicedesk/report" element={<ServiceDeskReport />} />
         <Route path=":issueKey" element={<IssuePage />} />
       </Routes>
+      {asDrawer && (
+        <IssueSheetRoute issueKey={segment} onClose={() => navigate(-1)} />
+      )}
     </Suspense>
   );
 }

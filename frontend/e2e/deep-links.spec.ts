@@ -25,7 +25,12 @@ test.describe('project-scoped URLs', () => {
 test.describe('legacy URLs keep working', () => {
   test('a bare legacy screen redirects to the remembered project', async ({ page }) => {
     await login(page);
-    await page.goto('/atlas/board');       // establishes the remembered project
+    await page.goto('/atlas/board');
+    // goto() resolves on load, but the project is remembered in an effect after
+    // the project list arrives. Wait for the sidebar to prove ATLAS is current,
+    // or this races the fallback to the first project.
+    await expect(page.getByRole('link', { name: 'Backlog' })).toHaveAttribute('href', '/atlas/backlog');
+
     await page.goto('/backlog');
     await expect(page).toHaveURL(/\/atlas\/backlog/);
   });
@@ -50,5 +55,53 @@ test.describe('navigation carries the project', () => {
     await page.getByRole('menuitem').filter({ hasNotText: /atlas development/i }).first().click();
     await expect(page).toHaveURL(/\/[a-z0-9-]+\/backlog/);
     await expect(page).not.toHaveURL(/\/atlas\/backlog/);
+  });
+});
+
+test.describe('an issue is a place', () => {
+  test('clicking a card pushes its URL and opens the drawer', async ({ page }) => {
+    await login(page);
+    await page.goto('/atlas/board');
+    const card = page.locator('[data-issue-key]').first();
+    const key = await card.getAttribute('data-issue-key');
+    await card.click();
+    await expect(page).toHaveURL(new RegExp(`/atlas/${key}$`));
+    await expect(page.getByRole('dialog')).toBeVisible();
+  });
+
+  test('back closes the drawer and returns to the board', async ({ page }) => {
+    await login(page);
+    await page.goto('/atlas/board');
+    await page.locator('[data-issue-key]').first().click();
+    await page.goBack();
+    await expect(page).toHaveURL(/\/atlas\/board/);
+    await expect(page.getByRole('dialog')).toBeHidden();
+  });
+
+  test('the same URL opened cold renders a full page, not a drawer', async ({ page }) => {
+    await login(page);
+    await page.goto('/atlas/board');
+    const key = await page.locator('[data-issue-key]').first().getAttribute('data-issue-key');
+    await page.goto(`/atlas/${key}`);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByText(key!, { exact: false }).first()).toBeVisible();
+    await assertNoCrash(page);
+  });
+
+  test('an unknown issue key says so', async ({ page }) => {
+    await login(page);
+    await page.goto('/atlas/ATLAS-999999');
+    await expect(page.getByText(/issue not found/i)).toBeVisible();
+  });
+
+  // Deferred from the legacy-redirect task: needs data-issue-id on the card.
+  test('an old ?issue=<uuid> link resolves to the permanent URL', async ({ page }) => {
+    await login(page);
+    await page.goto('/atlas/board');
+    const card = page.locator('[data-issue-key]').first();
+    const key = await card.getAttribute('data-issue-key');
+    const id = await card.getAttribute('data-issue-id');
+    await page.goto(`/board?issue=${id}`);
+    await expect(page).toHaveURL(new RegExp(`/atlas/${key}`));
   });
 });

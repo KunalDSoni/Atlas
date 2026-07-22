@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLiveEvents } from '@/hooks/use-live-events';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { issueUrl } from '@/lib/urls';
 import { CalendarRange } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { api } from '@/lib/api';
@@ -6,7 +9,6 @@ import { useProjects } from '@/hooks/use-projects';
 import { epicColor } from '@/lib/domain';
 import type { EpicSummary, Sprint } from '@/lib/types';
 import { EmptyState, ErrorState, PageHeader, RowsSkeleton } from '@/components/app/primitives';
-import { IssueDetailSheet } from '@/components/app/issue-detail-sheet';
 import { cn } from '@/lib/utils';
 
 const DAY = 86_400_000;
@@ -35,11 +37,18 @@ function monthsBetween(min: number, max: number) {
 
 export default function RoadmapScreen() {
   const { currentProject, currentProjectId, loading: projectsLoading } = useProjects();
+
+  // Opening an issue is a navigation now — see ProjectScope for how the
+  // `background` location decides drawer versus full page.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const openIssue = (issueKey: string) =>
+    navigate(issueUrl(issueKey), { state: { background: location } });
+
   const [epics, setEpics] = useState<EpicSummary[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [openIssueId, setOpenIssueId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!currentProjectId) return;
@@ -58,6 +67,13 @@ export default function RoadmapScreen() {
       setLoading(false);
     }
   }, [currentProjectId]);
+
+  // The drawer no longer belongs to this screen, so it can no longer hand back
+  // an onChanged. Live events cover the same ground and also pick up a
+  // teammate's edits, which onChanged never did.
+  useLiveEvents((e) => {
+    if (e.type === 'issue' && e.projectId === currentProjectId) void load();
+  });
 
   useEffect(() => {
     void load();
@@ -165,7 +181,7 @@ export default function RoadmapScreen() {
             {rows.map(({ epic, start, end }) => (
               <div key={epic.id} className="flex items-center gap-0">
                 <button
-                  onClick={() => setOpenIssueId(epic.id)}
+                  onClick={() => openIssue(epic.issue_key)}
                   className="flex w-48 shrink-0 items-center gap-2 truncate pr-3 text-left text-sm hover:text-primary"
                   title={epic.title}
                 >
@@ -181,7 +197,7 @@ export default function RoadmapScreen() {
                     />
                   )}
                   <button
-                    onClick={() => setOpenIssueId(epic.id)}
+                    onClick={() => openIssue(epic.issue_key)}
                     className={cn(
                       'absolute inset-y-1 rounded-md transition-opacity hover:opacity-80',
                       epicColor(epic.epic_color).swatch,
@@ -226,12 +242,6 @@ export default function RoadmapScreen() {
         </div>
       </Card>
 
-      <IssueDetailSheet
-        issueId={openIssueId}
-        onOpenChange={(o) => !o && setOpenIssueId(null)}
-        onChanged={load}
-        onOpenIssue={setOpenIssueId}
-      />
     </>
   );
 }

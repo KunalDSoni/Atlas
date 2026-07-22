@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { issueUrl } from '@/lib/urls';
 import { useLiveEvents } from '@/hooks/use-live-events';
 import { ArrowDown, ArrowUp, Check, Columns3, Plus, Rows3, Search, SlidersHorizontal, Trash2, Workflow, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -20,7 +21,6 @@ import { STATUSES, canCreateIssues, canDragIssues, canManageSprints, statusTone 
 import type { Issue, IssueStatus, Sprint, StatusCategory } from '@/lib/types';
 import { EmptyState, EpicBadge, ErrorState, LabelChip, PageHeader, PriorityIcon, SubtaskProgress, TypeIcon, UserAvatar } from '@/components/app/primitives';
 import { cn } from '@/lib/utils';
-import { IssueDetailSheet } from '@/components/app/issue-detail-sheet';
 import { CreateIssueDialog } from '@/components/app/create-issue-dialog';
 
 const NO_SWIMLANE = 'none';
@@ -64,6 +64,8 @@ function IssueCard({
       }}
       role="button"
       tabIndex={0}
+      data-issue-key={issue.issue_key}
+      data-issue-id={issue.id}
       aria-label={`${issue.issue_key}: ${issue.title}`}
       className={cn(
         'group relative cursor-pointer rounded-md border border-border bg-card shadow-card transition-all',
@@ -135,7 +137,6 @@ export default function BoardScreen() {
   const [error, setError] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<IssueStatus | null>(null);
-  const [openIssueId, setOpenIssueId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -145,25 +146,18 @@ export default function BoardScreen() {
   const [workflowOpen, setWorkflowOpen] = useState(false);
   const [newStatusLabel, setNewStatusLabel] = useState('');
   const [newStatusCategory, setNewStatusCategory] = useState<StatusCategory>('in_progress');
-  const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const workflow = useWorkflow(currentProjectId);
 
   const canDrag = canDragIssues(user?.role);
   const canAdmin = canManageSprints(user?.role);
 
-  // ?issue=<id> deep-links an issue open (used by the command palette).
-  useEffect(() => {
-    const target = searchParams.get('issue');
-    if (target) setOpenIssueId(target);
-  }, [searchParams]);
-
-  function closeIssue() {
-    setOpenIssueId(null);
-    if (searchParams.has('issue')) {
-      searchParams.delete('issue');
-      setSearchParams(searchParams, { replace: true });
-    }
-  }
+  // Opening an issue is a navigation now. `background` is what tells
+  // ProjectScope there is a board underneath to layer the drawer over; a
+  // pasted link has no such state and renders the full page instead.
+  const openIssue = (issue: Issue) =>
+    navigate(issueUrl(issue.issue_key), { state: { background: location } });
 
   const load = useCallback(async () => {
     if (!currentProjectId) return;
@@ -556,7 +550,7 @@ export default function BoardScreen() {
                             issue={issue}
                             draggable={canDrag}
                             dragging={draggingId === issue.id}
-                            onOpen={() => (selectMode ? toggleSelected(issue.id) : setOpenIssueId(issue.id))}
+                            onOpen={() => (selectMode ? toggleSelected(issue.id) : openIssue(issue))}
                             onDragStart={() => setDraggingId(issue.id)}
                             onDragEnd={() => setDraggingId(null)}
                             compact={compact}
@@ -717,12 +711,6 @@ export default function BoardScreen() {
         </DialogContent>
       </Dialog>
 
-      <IssueDetailSheet
-        issueId={openIssueId}
-        onOpenChange={(open) => !open && closeIssue()}
-        onChanged={load}
-        onOpenIssue={setOpenIssueId}
-      />
       <CreateIssueDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
