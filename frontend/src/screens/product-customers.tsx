@@ -13,13 +13,8 @@ import { api } from '@/lib/api';
 import type { PbCompany, PbCustomer } from '@/lib/types';
 import { EmptyState, ErrorState, PageHeader, RowsSkeleton } from '@/components/app/primitives';
 import { TIER_CLASS, TIER_LABELS, TIER_OPTIONS, TIER_WEIGHT } from '@/lib/product';
+import { formatArr } from '@/lib/format';
 import { cn } from '@/lib/utils';
-
-function formatArr(arr: number | null): string {
-  if (arr == null) return '—';
-  if (arr >= 1000) return `$${(arr / 1000).toFixed(arr % 1000 === 0 ? 0 : 1)}k`;
-  return `$${arr}`;
-}
 
 export default function ProductCustomersScreen() {
   const [companies, setCompanies] = useState<PbCompany[]>([]);

@@ -400,11 +400,21 @@ export const api = {
     removeCustomer: (id: string) => del<{ ok: boolean }>(`/product/customers/${id}`),
 
     // Insights (feedback)
-    insights: (params: { processed?: 0 | 1; source?: string; customer_id?: string } = {}) => {
+    insights: (params: { processed?: 0 | 1; dismissed?: 0 | 1; source?: string; customer_id?: string } = {}) => {
       const qs = new URLSearchParams();
       Object.entries(params).forEach(([k, v]) => v !== undefined && qs.set(k, String(v)));
       return get<PbInsight[]>(`/product/insights${qs.toString() ? `?${qs}` : ''}`);
     },
+    // Capture turns text that already exists in Atlas into a triageable
+    // insight. The server snapshots the excerpt and verifies the caller may
+    // see the source, so the client only names it.
+    captureInsight: (body: {
+      origin_kind: 'request' | 'comment' | 'wiki';
+      origin_id: string;
+      title?: string;
+      customer_id?: string;
+    }) => post<PbInsight>('/product/insights/capture', body),
+    dismissInsight: (id: string) => post<{ ok: boolean }>(`/product/insights/${id}/dismiss`, {}),
     insight: (id: string) => get<PbInsight>(`/product/insights/${id}`),
     createInsight: (body: { title: string; content?: string; source?: string; customer_id?: string | null }) =>
       post<PbInsight>('/product/insights', body),

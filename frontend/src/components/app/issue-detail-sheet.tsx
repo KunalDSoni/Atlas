@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Clock, Eye, EyeOff, FileText, Loader2, Paperclip, Plus, Send, Trash2 } from 'lucide-react';
+import { Clock, Eye, EyeOff, FileText, Lightbulb, Loader2, Paperclip, Plus, Send, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
@@ -62,6 +62,7 @@ export function IssueDetailSheet({
   const [candidates, setCandidates] = useState<Issue[]>([]);
   const [mentioningPages, setMentioningPages] = useState<MentioningPage[]>([]);
   const [loading, setLoading] = useState(false);
+  const [capturing, setCapturing] = useState(false);
   const [commentBody, setCommentBody] = useState('');
   const [posting, setPosting] = useState(false);
   const [subtaskTitle, setSubtaskTitle] = useState('');
@@ -242,6 +243,24 @@ export function IssueDetailSheet({
     }
   }
 
+  // Capturing a request as a product insight. Only offered on service desk
+  // requests: this is the moment a customer's own words become evidence, and
+  // the server snapshots the text so it survives the request being edited or
+  // resolved. Clients never reach this component, but the role guard on the
+  // control below costs one condition and states the intent.
+  async function captureAsInsight() {
+    if (!issue) return;
+    setCapturing(true);
+    try {
+      await api.product.captureInsight({ origin_kind: 'request', origin_id: issue.id });
+      toast.success('Captured as an insight', { description: 'Find it in the Product → Insights inbox.' });
+    } catch (e) {
+      toast.error('Capture failed', { description: e instanceof Error ? e.message : undefined });
+    } finally {
+      setCapturing(false);
+    }
+  }
+
   const watching = watchers.some((w) => w.id === user?.id);
 
   return (
@@ -261,6 +280,18 @@ export function IssueDetailSheet({
                 <span className="font-mono text-xs text-muted-foreground">{issue.issue_key}</span>
                 <span className="text-xs text-muted-foreground">· {TYPE_LABEL[issue.type]}</span>
                 <span className="flex-1" />
+                {issue.type === 'request' && user?.role !== 'client' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={captureAsInsight}
+                    disabled={capturing}
+                    className="gap-1.5 text-xs"
+                  >
+                    <Lightbulb className="size-3.5" />
+                    {capturing ? 'Capturing…' : 'Capture as insight'}
+                  </Button>
+                )}
                 <Button variant="ghost" size="sm" onClick={toggleWatch} className="gap-1.5 text-xs">
                   {watching ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
                   {watchers.length}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Lightbulb, Plus, Users2, Vote, TrendingUp } from 'lucide-react';
+import { DollarSign, Lightbulb, Plus, Users2, Vote, TrendingUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -21,9 +21,10 @@ import {
   FEATURE_STATUS_CLASS, FEATURE_STATUS_LABELS, FEATURE_STATUS_OPTIONS,
   TIMEFRAME_LABELS, TIMEFRAME_OPTIONS,
 } from '@/lib/product';
+import { formatArr } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
-type SortKey = 'user_impact' | 'rice' | 'vote_count';
+type SortKey = 'user_impact' | 'demand' | 'rice' | 'vote_count';
 
 export default function ProductFeaturesScreen() {
   const { projects } = useProjects();
@@ -109,6 +110,7 @@ export default function ProductFeaturesScreen() {
           <SelectTrigger className="h-9 w-44"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="user_impact">Sort: User impact</SelectItem>
+            <SelectItem value="demand">Sort: Demand (ARR)</SelectItem>
             <SelectItem value="rice">Sort: RICE</SelectItem>
             <SelectItem value="vote_count">Sort: Votes</SelectItem>
           </SelectContent>
@@ -127,6 +129,7 @@ export default function ProductFeaturesScreen() {
                 <TableHead>Status</TableHead>
                 <TableHead>Timeframe</TableHead>
                 <TableHead className="text-right"><span className="inline-flex items-center gap-1"><Users2 className="size-3.5" /> Impact</span></TableHead>
+                <TableHead className="text-right"><span className="inline-flex items-center gap-1"><DollarSign className="size-3.5" /> Demand</span></TableHead>
                 <TableHead className="text-right"><span className="inline-flex items-center gap-1"><TrendingUp className="size-3.5" /> RICE</span></TableHead>
                 <TableHead className="text-right"><span className="inline-flex items-center gap-1"><Vote className="size-3.5" /> Votes</span></TableHead>
                 <TableHead className="text-right">Delivery</TableHead>
@@ -142,6 +145,7 @@ export default function ProductFeaturesScreen() {
                   <TableCell><Badge className={cn('font-medium', FEATURE_STATUS_CLASS[f.status])}>{FEATURE_STATUS_LABELS[f.status]}</Badge></TableCell>
                   <TableCell>{f.timeframe ? <Badge variant="outline">{TIMEFRAME_LABELS[f.timeframe]}</Badge> : <span className="text-muted-foreground">—</span>}</TableCell>
                   <TableCell className="text-right font-semibold tabular-nums">{f.user_impact}</TableCell>
+                  <TableCell className="text-right tabular-nums">{f.demand > 0 ? formatArr(f.demand) : '—'}</TableCell>
                   <TableCell className="text-right tabular-nums">{f.rice ?? '—'}</TableCell>
                   <TableCell className="text-right tabular-nums">{f.vote_count}</TableCell>
                   <TableCell className="text-right tabular-nums text-muted-foreground">{f.delivery_total > 0 ? `${f.delivery_done}/${f.delivery_total}` : '—'}</TableCell>

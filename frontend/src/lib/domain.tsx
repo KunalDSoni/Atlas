@@ -2,7 +2,7 @@
 // Every screen renders status/type/priority through here so they never drift apart.
 
 import {
-  ArrowDown, ArrowUp, Bug, ChevronsUp, Bookmark, CheckSquare, ListChecks, Minus, Zap,
+  ArrowDown, ArrowUp, Bug, ChevronsUp, Bookmark, CheckSquare, LifeBuoy, ListChecks, Minus, Zap,
 } from 'lucide-react';
 import type { IssueStatus, IssueType, LinkType, Priority, Role, SprintStatus } from './types';
 
@@ -44,12 +44,17 @@ export function statusTone(status: string, custom?: { key: string; category: str
   return (hit && CATEGORY_TONE[hit.category]) || 'bg-muted text-muted-foreground';
 }
 
+// 'request' is a service desk request (epic 40 added it to issues.type). It is
+// created through the help center rather than the issue composer, so it never
+// appears in a type picker — but it does reach every surface that renders an
+// issue, which is why it needs a label, icon and colour like any other type.
 export const TYPE_LABEL: Record<IssueType, string> = {
   story: 'Story',
   bug: 'Bug',
   task: 'Task',
   epic: 'Epic',
   subtask: 'Subtask',
+  request: 'Request',
 };
 
 export const TYPE_ICON: Record<IssueType, typeof Bug> = {
@@ -58,6 +63,7 @@ export const TYPE_ICON: Record<IssueType, typeof Bug> = {
   task: CheckSquare,
   epic: Zap,
   subtask: ListChecks,
+  request: LifeBuoy,
 };
 
 export const TYPE_COLOR: Record<IssueType, string> = {
@@ -66,6 +72,7 @@ export const TYPE_COLOR: Record<IssueType, string> = {
   task: 'text-primary',
   epic: 'text-purple-500',
   subtask: 'text-sky-500',
+  request: 'text-amber-500',
 };
 
 export const PRIORITIES: Priority[] = ['highest', 'high', 'medium', 'low'];

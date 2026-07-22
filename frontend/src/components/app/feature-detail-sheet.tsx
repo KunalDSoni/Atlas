@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link2, MessageSquareQuote, Rocket, Target, Trash2, TrendingUp, Users2, Vote } from 'lucide-react';
+import { DollarSign, MessageSquareQuote, Rocket, Target, Trash2, TrendingUp, Users2, Vote } from 'lucide-react';
 import { toast } from 'sonner';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
@@ -12,8 +12,9 @@ import { useProjects } from '@/hooks/use-projects';
 import type { PbFeature } from '@/lib/types';
 import {
   FEATURE_STATUS_CLASS, FEATURE_STATUS_LABELS, FEATURE_STATUS_OPTIONS,
-  TIMEFRAME_LABELS, TIMEFRAME_OPTIONS, computeRice,
+  TIMEFRAME_LABELS, TIMEFRAME_OPTIONS, TIER_CLASS, TIER_LABELS, computeRice,
 } from '@/lib/product';
+import { formatArr } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 const NONE = '__none__';
@@ -125,10 +126,43 @@ export function FeatureDetailSheet({
               {/* Scores */}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <ScoreTile icon={Users2} label="User impact" value={feature.user_impact} />
+                <ScoreTile icon={DollarSign} label="Demand" value={feature.demand > 0 ? formatArr(feature.demand) : '—'} />
                 <ScoreTile icon={TrendingUp} label="RICE" value={rice ?? '—'} />
                 <ScoreTile icon={Vote} label="Votes" value={feature.vote_count} />
-                <ScoreTile icon={Link2} label="Insights" value={feature.insight_count} />
               </div>
+
+              {/* Who asked for this — the evidence behind the demand number, so
+                  the score can be argued with rather than just trusted. */}
+              {(feature.demand_breakdown?.length || feature.demand_unattributed) ? (
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Who asked for this
+                  </p>
+                  <div className="space-y-1.5">
+                    {feature.demand_breakdown?.map((row) => (
+                      <div key={row.company_id} className="flex items-center gap-2 rounded-md border border-border bg-muted/30 p-2">
+                        <span className="truncate text-sm">{row.company_name ?? 'Unknown company'}</span>
+                        {row.tier && <Badge className={cn('font-medium', TIER_CLASS[row.tier])}>{TIER_LABELS[row.tier]}</Badge>}
+                        <span className="text-xs text-muted-foreground">
+                          {row.insight_count} {row.insight_count === 1 ? 'insight' : 'insights'}
+                        </span>
+                        <span className="ml-auto shrink-0 text-sm font-semibold tabular-nums">
+                          {formatArr(row.contribution)}
+                          {/* An estimated row used the tier median because the
+                              company has no ARR recorded — never presented as
+                              measured revenue. */}
+                          {row.estimated && <span className="ml-1 text-xs font-normal text-muted-foreground">est.</span>}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  {(feature.demand_unattributed ?? 0) > 0 && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {feature.demand_unattributed} insight{feature.demand_unattributed === 1 ? '' : 's'} with no company attached — not counted.
+                    </p>
+                  )}
+                </div>
+              ) : null}
 
               {/* Editable fields */}
               <div className="grid grid-cols-2 gap-3">
