@@ -8,17 +8,10 @@ import { ProjectsProvider } from '@/hooks/use-projects';
 import { SettingsProvider } from '@/hooks/use-settings';
 import { FocusModeProvider } from '@/context/focus-mode';
 import { AppShell } from '@/components/app/app-shell';
+import { ProjectScope } from '@/components/app/project-scope';
 import LoginScreen from '@/screens/login';
 
 const Dashboard = lazy(() => import('@/screens/dashboard'));
-const Board = lazy(() => import('@/screens/board'));
-const Backlog = lazy(() => import('@/screens/backlog'));
-const Epics = lazy(() => import('@/screens/epics'));
-const Sprints = lazy(() => import('@/screens/sprints'));
-const Releases = lazy(() => import('@/screens/releases'));
-const Roadmap = lazy(() => import('@/screens/roadmap'));
-const Automation = lazy(() => import('@/screens/automation'));
-const Reports = lazy(() => import('@/screens/reports'));
 const Profile = lazy(() => import('@/screens/profile'));
 const Settings = lazy(() => import('@/screens/settings'));
 const AdminOverview = lazy(() => import('@/screens/admin-overview'));
@@ -37,9 +30,6 @@ const ProductCustomers = lazy(() => import('@/screens/product-customers'));
 const Portal = lazy(() => import('@/screens/portal'));
 const HelpCenter = lazy(() => import('@/screens/help-center'));
 const HelpRequests = lazy(() => import('@/screens/help-requests'));
-const ServiceDeskQueues = lazy(() => import('@/screens/servicedesk-queues'));
-const ServiceDeskSettings = lazy(() => import('@/screens/servicedesk-settings'));
-const ServiceDeskReport = lazy(() => import('@/screens/servicedesk-report'));
 
 function FullPageSpinner() {
   return (
@@ -103,15 +93,8 @@ function ProtectedLayout() {
         <AppShell>
           <Suspense fallback={<div className="grid h-64 place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>}>
             <Routes>
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/board" element={<Board />} />
-              <Route path="/backlog" element={<Backlog />} />
-              <Route path="/epics" element={<Epics />} />
-              <Route path="/sprints" element={<Sprints />} />
-              <Route path="/releases" element={<Releases />} />
-              <Route path="/roadmap" element={<Roadmap />} />
-              <Route path="/automation" element={<Automation />} />
-              <Route path="/reports" element={<Reports />} />
               <Route path="/wiki" element={<WikiHome />} />
               <Route path="/wiki/space/:spaceId" element={<WikiSpace />} />
               <Route path="/wiki/page/:pageId" element={<WikiPage />} />
@@ -121,9 +104,6 @@ function ProtectedLayout() {
               <Route path="/product/roadmap" element={<ProductRoadmap />} />
               <Route path="/product/objectives" element={<ProductObjectives />} />
               <Route path="/product/customers" element={<ProductCustomers />} />
-              <Route path="/servicedesk" element={<ServiceDeskQueues />} />
-              <Route path="/servicedesk/settings" element={<ServiceDeskSettings />} />
-              <Route path="/servicedesk/report" element={<ServiceDeskReport />} />
               <Route path="/portal" element={<Portal />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/settings" element={<Settings />} />
@@ -131,6 +111,12 @@ function ProtectedLayout() {
               <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
               <Route path="/admin/projects" element={<RequireAdmin><AdminProjects /></RequireAdmin>} />
               <Route path="/admin/audit-log" element={<RequireAdmin><AuditLog /></RequireAdmin>} />
+              {/*
+                Declared after every static path. React Router ranks static
+                segments above dynamic ones, so /dashboard and /wiki/... are
+                never swallowed by :projectKey.
+              */}
+              <Route path="/:projectKey/*" element={<ProjectScope />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </Suspense>
