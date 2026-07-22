@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Inbox, Plus, Link2, Trash2, CheckCircle2, MessageSquareQuote } from 'lucide-react';
+import { Inbox, Plus, Link2, Trash2, CheckCircle2, MessageSquareQuote, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { api } from '@/lib/api';
 import type { PbCustomer, PbFeature, PbInsight } from '@/lib/types';
 import { EmptyState, ErrorState, PageHeader, RowsSkeleton } from '@/components/app/primitives';
-import { INSIGHT_SOURCE_LABELS, INSIGHT_SOURCE_OPTIONS, TIER_CLASS } from '@/lib/product';
+import { INSIGHT_ORIGIN_LABELS, INSIGHT_SOURCE_LABELS, INSIGHT_SOURCE_OPTIONS, TIER_CLASS } from '@/lib/product';
 import { formatDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -24,7 +24,7 @@ export default function ProductInsightsScreen() {
   const [features, setFeatures] = useState<PbFeature[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'inbox' | 'processed'>('inbox');
+  const [tab, setTab] = useState<'inbox' | 'processed' | 'dismissed'>('inbox');
   const [selected, setSelected] = useState<PbInsight | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -54,7 +54,13 @@ export default function ProductInsightsScreen() {
 
   useEffect(() => { void load(); }, [load]);
 
-  const shown = insights.filter((i) => (tab === 'inbox' ? !i.processed : i.processed));
+  // Dismissed is its own bucket rather than a flavour of processed: a dismissed
+  // insight was judged not actionable, which is a different fact from having
+  // been triaged into a feature. It stays visible so the judgement can be undone.
+  const active = insights.filter((i) => !i.dismissed_at);
+  const shown = tab === 'dismissed'
+    ? insights.filter((i) => i.dismissed_at)
+    : active.filter((i) => (tab === 'inbox' ? !i.processed : i.processed));
 
   async function create() {
     if (!form.title.trim()) return;
@@ -90,6 +96,17 @@ export default function ProductInsightsScreen() {
       if (selected?.id === insight.id) setSelected(null);
     } catch (e) {
       toast.error('Update failed', { description: e instanceof Error ? e.message : undefined });
+    }
+  }
+
+  async function dismiss(insight: PbInsight) {
+    try {
+      await api.product.dismissInsight(insight.id);
+      toast.success('Dismissed', { description: 'Kept as evidence — find it under Dismissed.' });
+      if (selected?.id === insight.id) setSelected(null);
+      void load();
+    } catch (e) {
+      toast.error('Dismiss failed', { description: e instanceof Error ? e.message : undefined });
     }
   }
 
@@ -137,18 +154,28 @@ export default function ProductInsightsScreen() {
         actions={<Button onClick={() => setCreateOpen(true)}><Plus className="size-4" /> Add feedback</Button>}
       />
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as 'inbox' | 'processed')} className="mb-4">
+      <Tabs value={tab} onValueChange={(v) => setTab(v as 'inbox' | 'processed' | 'dismissed')} className="mb-4">
         <TabsList>
-          <TabsTrigger value="inbox">Inbox ({insights.filter((i) => !i.processed).length})</TabsTrigger>
-          <TabsTrigger value="processed">Processed ({insights.filter((i) => i.processed).length})</TabsTrigger>
+          <TabsTrigger value="inbox">Inbox ({active.filter((i) => !i.processed).length})</TabsTrigger>
+          <TabsTrigger value="processed">Processed ({active.filter((i) => i.processed).length})</TabsTrigger>
+          <TabsTrigger value="dismissed">Dismissed ({insights.filter((i) => i.dismissed_at).length})</TabsTrigger>
         </TabsList>
       </Tabs>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_minmax(320px,420px)]">
         <div className="space-y-2">
           {shown.length === 0 ? (
-            <EmptyState icon={Inbox} title={tab === 'inbox' ? 'Inbox zero' : 'Nothing processed yet'}
-              description={tab === 'inbox' ? 'New feedback will appear here.' : 'Triaged feedback shows up here.'} />
+            <EmptyState
+              icon={Inbox}
+              title={tab === 'inbox' ? 'Inbox zero' : tab === 'processed' ? 'Nothing processed yet' : 'Nothing dismissed'}
+              description={
+                tab === 'inbox'
+                  ? 'New feedback appears here — captured from a request, a comment, the portal, or added by hand.'
+                  : tab === 'processed'
+                    ? 'Triaged feedback shows up here.'
+                    : 'Feedback you judge not actionable is kept here rather than deleted.'
+              }
+            />
           ) : (
             shown.map((i) => (
               <button key={i.id} onClick={() => void openDetail(i)}
@@ -156,9 +183,18 @@ export default function ProductInsightsScreen() {
                   selected?.id === i.id && 'border-primary/60 ring-1 ring-primary/30')}>
                 <div className="flex items-start justify-between gap-3">
                   <p className="min-w-0 flex-1 truncate text-sm font-medium">{i.title}</p>
-                  <Badge variant="outline" className="shrink-0">{INSIGHT_SOURCE_LABELS[i.source]}</Badge>
+                  <div className="flex shrink-0 items-center gap-1">
+                    {i.origin_kind && i.origin_kind !== 'manual' && (
+                      <Badge variant="secondary">{INSIGHT_ORIGIN_LABELS[i.origin_kind]}</Badge>
+                    )}
+                    <Badge variant="outline">{INSIGHT_SOURCE_LABELS[i.source]}</Badge>
+                  </div>
                 </div>
-                {i.content && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{i.content}</p>}
+                {/* The captured excerpt is what a customer actually said, so it
+                    outranks the hand-written content field when both exist. */}
+                {(i.origin_excerpt || i.content) && (
+                  <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{i.origin_excerpt || i.content}</p>
+                )}
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   {i.customer_name && <span>{i.customer_name}</span>}
                   {i.company_name && (
@@ -179,6 +215,15 @@ export default function ProductInsightsScreen() {
                 <h2 className="text-base font-semibold leading-snug">{selected.title}</h2>
                 <Badge variant="outline">{INSIGHT_SOURCE_LABELS[selected.source]}</Badge>
               </div>
+              {selected.origin_excerpt && (
+                <blockquote className="mt-2 border-l-2 border-primary/40 pl-3 text-sm italic text-muted-foreground">
+                  “{selected.origin_excerpt}”
+                  <span className="mt-1 block not-italic text-xs">
+                    Captured from {selected.origin_kind ? INSIGHT_ORIGIN_LABELS[selected.origin_kind].toLowerCase() : 'a source'}
+                    {' — snapshotted, so it survives the original being edited or deleted.'}
+                  </span>
+                </blockquote>
+              )}
               {selected.content && <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{selected.content}</p>}
               <div className="mt-3 space-y-1 text-xs text-muted-foreground">
                 {selected.customer_name && <p>Customer: <span className="text-foreground">{selected.customer_name}</span></p>}
@@ -216,6 +261,11 @@ export default function ProductInsightsScreen() {
                 <Button size="sm" variant="outline" onClick={() => void toggleProcessed(selected)}>
                   <CheckCircle2 className="size-3.5" /> {selected.processed ? 'Reopen' : 'Mark processed'}
                 </Button>
+                {!selected.dismissed_at && (
+                  <Button size="sm" variant="ghost" onClick={() => void dismiss(selected)}>
+                    <XCircle className="size-3.5" /> Dismiss
+                  </Button>
+                )}
                 <Button size="sm" variant="ghost" className="ml-auto text-destructive" onClick={() => void remove(selected)}>
                   <Trash2 className="size-3.5" /> Delete
                 </Button>

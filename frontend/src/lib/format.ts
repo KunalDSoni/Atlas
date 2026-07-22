@@ -42,3 +42,15 @@ export function formatDuration(minutes: number | null | undefined): string {
   if (m === 0) return `${h}h`;
   return `${h}h ${m}m`;
 }
+
+/**
+ * Currency for ARR and revenue-weighted demand. Demand is a sum of
+ * ARR x importance, so it runs into millions where a single company's ARR
+ * usually does not — hence the extra magnitude.
+ */
+export function formatArr(arr: number | null | undefined): string {
+  if (arr == null) return '—';
+  if (arr >= 1_000_000) return `$${(arr / 1_000_000).toFixed(arr % 1_000_000 === 0 ? 0 : 1)}M`;
+  if (arr >= 1000) return `$${(arr / 1000).toFixed(arr % 1000 === 0 ? 0 : 1)}k`;
+  return `$${arr}`;
+}
