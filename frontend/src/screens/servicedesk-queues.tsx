@@ -3,6 +3,7 @@ import { AlertTriangle, Headphones, Inbox, Pencil, Plus, Trash2, X } from 'lucid
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -73,8 +74,12 @@ function QueueDialog({ open, draft, onOpenChange, onSaved, projectId }: {
 }) {
   const [form, setForm] = useState<QueueDraft>(draft);
   const [saving, setSaving] = useState(false);
+  const [jqlError, setJqlError] = useState<string | null>(null);
 
-  useEffect(() => { setForm(draft); }, [draft, open]);
+  useEffect(() => {
+    setForm(draft);
+    setJqlError(null);
+  }, [draft, open]);
 
   function toggleColumn(key: QueueColumn) {
     setForm((f) => ({
@@ -85,6 +90,7 @@ function QueueDialog({ open, draft, onOpenChange, onSaved, projectId }: {
 
   async function save() {
     setSaving(true);
+    setJqlError(null);
     try {
       const body = { name: form.name, jql: form.jql, order_by: form.order_by, columns: form.columns };
       if (form.id) await api.queues.update(form.id, body);
@@ -93,9 +99,9 @@ function QueueDialog({ open, draft, onOpenChange, onSaved, projectId }: {
       onOpenChange(false);
       onSaved();
     } catch (e) {
-      // The server validates the JQL, so an unparseable query surfaces here as
-      // the same message an agent would see anywhere else.
-      toast.error('Could not save the queue', { description: e instanceof Error ? e.message : undefined });
+      // Keep the server as the parser authority, but put its offset-aware error
+      // beside the query that needs fixing instead of hiding it in a toast.
+      setJqlError(e instanceof Error ? e.message : 'Could not validate this query');
     } finally {
       setSaving(false);
     }
@@ -124,15 +130,28 @@ function QueueDialog({ open, draft, onOpenChange, onSaved, projectId }: {
 
           <div className="space-y-1.5">
             <Label htmlFor="queue-jql">Query</Label>
-            <Input
+            <Textarea
               id="queue-jql"
               value={form.jql}
-              onChange={(e) => setForm((f) => ({ ...f, jql: e.target.value }))}
-              className="font-mono text-xs"
+              onChange={(e) => {
+                setForm((f) => ({ ...f, jql: e.target.value }));
+                setJqlError(null);
+              }}
+              rows={3}
+              aria-invalid={!!jqlError}
+              aria-describedby={jqlError ? 'queue-jql-error queue-jql-help' : 'queue-jql-help'}
+              className="min-h-20 resize-y font-mono text-xs"
               placeholder="type = request AND assignee = unassigned"
             />
-            <p className="text-xs text-muted-foreground">
-              Fields: project, status, type, priority, assignee, reporter, label. Combine with AND.
+            {jqlError && (
+              <p id="queue-jql-error" role="alert" className="text-xs text-destructive">
+                {jqlError}
+              </p>
+            )}
+            <p id="queue-jql-help" className="text-xs leading-relaxed text-muted-foreground">
+              Fields: project, status, type, priority, assignee, reporter, label, sla,
+              first_response, resolution, request_type, category, waiting_for_customer.
+              Operators: =, !=, IN, NOT IN, IS EMPTY, AND, OR, NOT, and parentheses.
             </p>
           </div>
 

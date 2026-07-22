@@ -163,6 +163,14 @@ describe('015_insight_origins', () => {
     expect(await queryOne(db, 'SELECT id FROM schema_migrations WHERE id = ?', ['020_portal_followers'])).toBeTruthy();
   });
 
+  test('021 stores both SLA query boundaries', async () => {
+    const db = await getDb();
+    const columns = (await queryAll(db, 'PRAGMA table_info(sd_sla_clocks)')).map((c) => c.name);
+    expect(columns).toEqual(expect.arrayContaining(['due_at', 'at_risk_at']));
+    expect(await queryOne(db, 'SELECT id FROM schema_migrations WHERE id = ?',
+      ['021_sla_query_boundaries'])).toBeTruthy();
+  });
+
   test('existing insights survive with null origins rather than being rewritten', async () => {
     // The columns are additive: a pre-existing insight keeps its row and simply
     // has no origin, which the inbox renders as a manual capture.

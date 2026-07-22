@@ -19,6 +19,35 @@ function parseTime(s) {
   return Number.isNaN(t) ? null : t;
 }
 
+/** Epoch ms/Date -> the UTC timestamp shape shared by SQLite and MySQL. */
+function sqlTimestamp(value) {
+  const ms = value instanceof Date ? value.getTime() : Number(value);
+  if (!Number.isFinite(ms)) return null;
+  return new Date(ms).toISOString().replace('T', ' ').slice(0, 19);
+}
+
+/**
+ * Computes the two persisted boundaries used by SLA-aware JQL.
+ *
+ * `paused_total_minutes` is already banked time. An in-flight pause does not
+ * move the boundaries until resume; SQL freezes its comparison clock at
+ * `paused_at`, exactly as slaState() does.
+ */
+function slaBoundaries(clock) {
+  if (!clock) return { due_at: null, at_risk_at: null };
+  const target = Number(clock.target_minutes);
+  const started = parseTime(clock.started_at);
+  if (!Number.isFinite(target) || target <= 0 || started === null) {
+    return { due_at: null, at_risk_at: null };
+  }
+
+  const paused = Math.max(0, Number(clock.paused_total_minutes) || 0);
+  return {
+    due_at: sqlTimestamp(started + (target + paused) * 60_000),
+    at_risk_at: sqlTimestamp(started + (target * AT_RISK_RATIO + paused) * 60_000),
+  };
+}
+
 /**
  * Derives the live state of one SLA clock against its goal.
  *
@@ -49,14 +78,17 @@ function slaState(clock, goal, now = new Date()) {
   // Clamped at zero: paused_total is accumulated from real intervals, but a
   // clock started and paused inside the same minute can round below zero, and
   // negative elapsed would read as time not yet spent.
-  const elapsed = Math.max(0, Math.round((until - started) / 60_000) - pausedTotal);
+  const exactElapsed = Math.max(0, (until - started) / 60_000 - pausedTotal);
+  const elapsed = Math.round(exactElapsed);
 
   let status;
-  if (elapsed > target) status = 'breached';
+  // Compare the unrounded duration so the badge flips at the exact same stored
+  // timestamp that SQL uses for `due_at <= now` and `at_risk_at <= now`.
+  if (exactElapsed >= target) status = 'breached';
   // A finished clock either met the goal or did not — "at risk" describes time
   // still running out, which a stopped clock no longer is.
   else if (stopped !== null) status = 'ok';
-  else status = elapsed >= target * AT_RISK_RATIO ? 'at_risk' : 'ok';
+  else status = exactElapsed >= target * AT_RISK_RATIO ? 'at_risk' : 'ok';
 
   return {
     elapsed_minutes: elapsed,
@@ -68,4 +100,4 @@ function slaState(clock, goal, now = new Date()) {
   };
 }
 
-module.exports = { slaState, parseTime, AT_RISK_RATIO };
+module.exports = { slaState, slaBoundaries, sqlTimestamp, parseTime, AT_RISK_RATIO };

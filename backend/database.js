@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const config = require('./config');
 const { hashPasswordSync } = require('./utils/password');
+const { slaBoundaries } = require('./utils/sla');
 const { runMigrations, sqliteAdapter, mysqlAdapter } = require('./migrations');
 
 const DB_PATH = config.db.sqlitePath;
@@ -364,6 +365,8 @@ const SCHEMA_SQL = [
     paused_at TEXT,
     paused_total_minutes INTEGER DEFAULT 0,
     breached_at TEXT,
+    due_at TEXT,
+    at_risk_at TEXT,
     UNIQUE(issue_id, metric)
   )`,
   `CREATE TABLE IF NOT EXISTS wiki_page_restrictions (
@@ -930,6 +933,8 @@ const MYSQL_SCHEMA_SQL = [
     paused_at DATETIME(3) NULL,
     paused_total_minutes INT DEFAULT 0,
     breached_at DATETIME(3) NULL,
+    due_at DATETIME(3) NULL,
+    at_risk_at DATETIME(3) NULL,
     UNIQUE KEY uniq_issue_metric (issue_id, metric)
   ) DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS wiki_page_restrictions (
@@ -2021,8 +2026,8 @@ function seedDemoData() {
   });
 
   // ===== Product discovery wave (epics 47-48) — shipped =====
-  // Numbered from 47: 42-46 are reserved for the rest of the service desk wave
-  // (queues, SLAs, deflection, CSAT), which is designed but not built.
+  // Numbered from 47 to preserve the service-desk numbering decisions. Epic 46
+  // remains the one reserved ordinal; queues through CSAT shipped as 42–45.
   const discoveryEpics = [
     { title: 'Insight capture', color: 'teal',
       desc: 'Turn text that already exists in Atlas — a service desk request, an issue comment, a wiki passage — into a triageable insight. The excerpt is snapshotted rather than joined, so evidence survives its source being edited or deleted.',
@@ -2146,6 +2151,37 @@ function seedDemoData() {
     });
   }
 
+  // ===== JQL v2 and SLA-aware queues (epic 53) — shipped =====
+  // The design first called this Epic 51, but Outcome tracking and Portal v2
+  // were already seeded as 51–52 on this branch. Roadmap ordinals are stable,
+  // so the integrated feature takes the next append-only number.
+  {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(52);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, 52)`,
+      [eid, projId3, `ATLAS-${num}`, num, 'JQL v2 and SLA-aware queues',
+       'A real query parser with grouping, OR, NOT, IN and EMPTY operators, plus persisted SLA boundaries that make breached and at-risk work queues fast, portable and consistent with every SLA badge.',
+       userIds[0], 'blue', startDate, dueDate]);
+    [
+      { title: 'Migration 021: stored SLA due and at-risk boundaries', type: 'task' },
+      { title: 'Tokenizer and recursive-descent parser with useful error offsets', type: 'story' },
+      { title: 'AST-to-SQL compiler and declarative field registry', type: 'story' },
+      { title: 'SLA, request type, category and waiting JQL fields', type: 'story' },
+      { title: 'Queue editor inline validation and field help', type: 'story' },
+      { title: 'Needs-attention queue with live count parity', type: 'task' },
+    ].forEach((child, ci) => {
+      const childNum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${childNum}`, childNum, child.title, child.type,
+         userIds[0], userIds[0], eid, ci]);
+    });
+  }
+
   // ===== DEMO SERVICE DESK =====
   // Gives the help center shape on a fresh database. Dana (userIds[5]) is the
   // only seeded client, so the requests must be hers — seeding them against a
@@ -2217,6 +2253,9 @@ function seedDemoData() {
       cols: ['key', 'summary', 'status', 'priority', 'sla'] },
     { name: 'Resolved', jql: 'type = request AND status = done', order: 'updated_at',
       cols: ['key', 'summary', 'request_type', 'updated'] },
+    { name: 'Needs attention',
+      jql: 'sla = breached OR (sla = at_risk AND priority IN (high, urgent))',
+      order: 'priority', cols: ['key', 'summary', 'request_type', 'priority', 'sla'] },
   ].forEach((q, i) => {
     db.run('INSERT INTO sd_queues (id, project_id, name, jql, column_keys, order_by, position) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [uuid(), projId4, q.name, q.jql, JSON.stringify(q.cols), q.order, i]);
@@ -2238,8 +2277,8 @@ function seedDemoData() {
 
   // Clocks for the seeded requests. Backdated deliberately: HD-1 breached its
   // 60-minute first response two hours ago, HD-2 is comfortably inside its
-  // window, and HD-3 was resolved within target. Nothing here is computed —
-  // these are the timestamps, and every badge derives itself from them.
+  // window, and HD-3 was resolved within target. Boundaries come from the same
+  // helper as lifecycle writes, so the seeded queue and badge cannot disagree.
   const clocks = [
     { req: 0, metric: 'first_response', target: 60, startedMinsAgo: 180, stopped: null },
     { req: 0, metric: 'resolution', target: 480, startedMinsAgo: 180, stopped: null },
@@ -2249,10 +2288,17 @@ function seedDemoData() {
   ];
   const ago = (mins) => new Date(Date.now() - mins * 60_000).toISOString().replace('T', ' ').slice(0, 19);
   clocks.forEach((c) => {
-    db.run(`INSERT INTO sd_sla_clocks (id, issue_id, metric, target_minutes, started_at, stopped_at)
-      VALUES (?, ?, ?, ?, ?, ?)`,
-      [uuid(), demoRequestIds[c.req], c.metric, c.target, ago(c.startedMinsAgo),
-        c.stopped === null ? null : ago(c.stopped)]);
+    const clock = {
+      target_minutes: c.target,
+      started_at: ago(c.startedMinsAgo),
+      paused_total_minutes: 0,
+    };
+    const boundaries = slaBoundaries(clock);
+    db.run(`INSERT INTO sd_sla_clocks
+      (id, issue_id, metric, target_minutes, started_at, stopped_at, due_at, at_risk_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [uuid(), demoRequestIds[c.req], c.metric, c.target, clock.started_at,
+        c.stopped === null ? null : ago(c.stopped), boundaries.due_at, boundaries.at_risk_at]);
   });
 
   // Deflection + CSAT demo rows are seeded AFTER the wiki below, which is where

@@ -14,8 +14,8 @@ const { parseJql, isJqlLike } = require('../utils/jql');
 const router = express.Router();
 
 // GET /api/search?q=&project_id=
-// Two modes: a plain-text LIKE search, or a JQL-lite structured query when the
-// text contains an operator (e.g. `status = done AND assignee = me`). JQL-lite
+// Two modes: a plain-text LIKE search, or a JQL v2 structured query when the
+// text contains an operator (e.g. `status = done OR assignee IS EMPTY`). JQL
 // searches issues only; wiki pages are returned only for text queries.
 router.get('/search', requireAuth, async (req, res) => {
   try {

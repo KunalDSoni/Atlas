@@ -17,10 +17,28 @@
 
 const { v4: uuidv4 } = require('uuid');
 const { queryOne, queryAll, run } = require('../database');
-const { slaState, parseTime } = require('./sla');
+const { slaState, slaBoundaries, sqlTimestamp, parseTime } = require('./sla');
 
 const METRICS = ['first_response', 'resolution'];
-const NOW = "datetime('now')";
+
+/** Persist the same boundaries slaState() derives, without dialect date math. */
+async function refreshClockBoundaries(db, clock) {
+  const boundaries = slaBoundaries(clock);
+  if ((clock.due_at || null) !== boundaries.due_at ||
+      (clock.at_risk_at || null) !== boundaries.at_risk_at) {
+    await run(db, 'UPDATE sd_sla_clocks SET due_at = ?, at_risk_at = ? WHERE id = ?',
+      [boundaries.due_at, boundaries.at_risk_at, clock.id]);
+  }
+  return { ...clock, ...boundaries };
+}
+
+async function refreshBoundaries(db, issueId, metric = null) {
+  const params = [issueId];
+  let sql = 'SELECT * FROM sd_sla_clocks WHERE issue_id = ?';
+  if (metric) { sql += ' AND metric = ?'; params.push(metric); }
+  const clocks = await queryAll(db, sql, params);
+  return Promise.all(clocks.map((clock) => refreshClockBoundaries(db, clock)));
+}
 
 /**
  * The goals that apply to a request, one per metric.
@@ -48,10 +66,18 @@ async function onRequestRaised(db, issue) {
     const existing = await queryOne(db,
       'SELECT id FROM sd_sla_clocks WHERE issue_id = ? AND metric = ?', [issue.id, goal.metric]);
     if (existing) continue;
+    const startedAt = sqlTimestamp(Date.now());
+    const boundaries = slaBoundaries({
+      started_at: startedAt,
+      target_minutes: goal.target_minutes,
+      paused_total_minutes: 0,
+    });
     await run(db,
-      `INSERT INTO sd_sla_clocks (id, issue_id, metric, goal_id, target_minutes, started_at)
-       VALUES (?, ?, ?, ?, ?, ${NOW})`,
-      [uuidv4(), issue.id, goal.metric, goal.id, goal.target_minutes]);
+      `INSERT INTO sd_sla_clocks
+        (id, issue_id, metric, goal_id, target_minutes, started_at, due_at, at_risk_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [uuidv4(), issue.id, goal.metric, goal.id, goal.target_minutes, startedAt,
+        boundaries.due_at, boundaries.at_risk_at]);
   }
 }
 
@@ -62,9 +88,10 @@ async function clocksOf(db, issueId) {
 /** Stops a running clock. A clock already stopped keeps its original time. */
 async function stopMetric(db, issueId, metric) {
   await run(db,
-    `UPDATE sd_sla_clocks SET stopped_at = ${NOW}
+    `UPDATE sd_sla_clocks SET stopped_at = ?
       WHERE issue_id = ? AND metric = ? AND stopped_at IS NULL`,
-    [issueId, metric]);
+    [sqlTimestamp(Date.now()), issueId, metric]);
+  await refreshBoundaries(db, issueId, metric);
 }
 
 /**
@@ -76,14 +103,16 @@ async function restartMetric(db, issueId, metric) {
   await run(db,
     'UPDATE sd_sla_clocks SET stopped_at = NULL WHERE issue_id = ? AND metric = ?',
     [issueId, metric]);
+  await refreshBoundaries(db, issueId, metric);
 }
 
 /** Freezes every still-running clock at now. */
 async function pauseClocks(db, issueId) {
   await run(db,
-    `UPDATE sd_sla_clocks SET paused_at = ${NOW}
+    `UPDATE sd_sla_clocks SET paused_at = ?
       WHERE issue_id = ? AND stopped_at IS NULL AND paused_at IS NULL`,
-    [issueId]);
+    [sqlTimestamp(Date.now()), issueId]);
+  await refreshBoundaries(db, issueId);
 }
 
 /**
@@ -98,9 +127,13 @@ async function resumeClocks(db, issueId) {
   for (const clock of rows) {
     const pausedAt = parseTime(clock.paused_at);
     const banked = pausedAt === null ? 0 : Math.max(0, Math.round((now - pausedAt) / 60_000));
+    const pausedTotal = (Number(clock.paused_total_minutes) || 0) + banked;
+    const boundaries = slaBoundaries({ ...clock, paused_total_minutes: pausedTotal });
     await run(db,
-      'UPDATE sd_sla_clocks SET paused_at = NULL, paused_total_minutes = ? WHERE id = ?',
-      [(Number(clock.paused_total_minutes) || 0) + banked, clock.id]);
+      `UPDATE sd_sla_clocks
+          SET paused_at = NULL, paused_total_minutes = ?, due_at = ?, at_risk_at = ?
+        WHERE id = ?`,
+      [pausedTotal, boundaries.due_at, boundaries.at_risk_at, clock.id]);
   }
 }
 
@@ -165,19 +198,24 @@ async function onStatusChange(db, issue, newStatus) {
  * or missing it changes nothing about what this returns.
  */
 async function readClocks(db, issueId) {
-  const clocks = await clocksOf(db, issueId);
+  // This also repairs a row imported or edited outside the lifecycle hooks.
+  // Normal reads are a no-op because the persisted values already agree.
+  const clocks = await refreshBoundaries(db, issueId);
   const out = [];
   for (const clock of clocks) {
     const state = slaState(clock, { target_minutes: clock.target_minutes });
     if (!state) continue;
     if (state.status === 'breached' && !clock.breached_at) {
-      await run(db, `UPDATE sd_sla_clocks SET breached_at = ${NOW} WHERE id = ?`, [clock.id]);
+      await run(db, 'UPDATE sd_sla_clocks SET breached_at = ? WHERE id = ?',
+        [sqlTimestamp(Date.now()), clock.id]);
     }
     out.push({
       metric: clock.metric,
       started_at: clock.started_at,
       stopped_at: clock.stopped_at,
       breached_at: clock.breached_at,
+      due_at: clock.due_at,
+      at_risk_at: clock.at_risk_at,
       ...state,
     });
   }
@@ -202,6 +240,7 @@ module.exports = {
   METRICS,
   goalsFor,
   readClocks,
+  refreshBoundaries,
   onRequestRaised: safely(onRequestRaised),
   onComment: safely(onComment),
   onStatusChange: safely(onStatusChange),

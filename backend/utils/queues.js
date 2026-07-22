@@ -2,8 +2,8 @@
 // No HTTP, no database. A queue is a stored JQL string plus presentation
 // (which columns, what order), so everything a queue can carry has to be
 // validated against an allow-list before it is written: the query goes through
-// parseJql, and `order_by` is interpolated into SQL rather than bound, so it
-// can only ever be a key of ORDER_BY.
+// the JQL v2 parser, and `order_by` is interpolated into SQL rather than bound,
+// so it can only ever be a key of ORDER_BY.
 
 const { parseJql } = require('./jql');
 

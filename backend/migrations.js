@@ -795,6 +795,60 @@ const MIGRATIONS = [
       },
     }],
   },
+  {
+    // Designed as migration 018 before stable entity URLs and the product
+    // loop-closing slices landed. Append-only history makes this 021 here.
+    id: '021_sla_query_boundaries',
+    description: 'Stored SLA due and at-risk boundaries for JQL v2',
+    steps: [
+      {
+        addColumn: {
+          table: 'sd_sla_clocks', column: 'due_at',
+          sqlite: 'ALTER TABLE sd_sla_clocks ADD COLUMN due_at TEXT',
+          mysql: 'ALTER TABLE sd_sla_clocks ADD COLUMN due_at DATETIME(3) NULL',
+        },
+      },
+      {
+        addColumn: {
+          table: 'sd_sla_clocks', column: 'at_risk_at',
+          sqlite: 'ALTER TABLE sd_sla_clocks ADD COLUMN at_risk_at TEXT',
+          mysql: 'ALTER TABLE sd_sla_clocks ADD COLUMN at_risk_at DATETIME(3) NULL',
+        },
+      },
+      {
+        // Backfill with the same pure helper lifecycle writes use. SQL only
+        // compares timestamps; it never reimplements SLA arithmetic per dialect.
+        run: async (adapter) => {
+          if (!['sqlite', 'mysql'].includes(adapter.driver)) {
+            throw new Error(`021: unsupported driver ${adapter.driver}`);
+          }
+          const { slaBoundaries } = require('./utils/sla');
+          const clocks = await adapter.all(
+            `SELECT id, started_at, target_minutes, paused_total_minutes,
+                    due_at, at_risk_at
+               FROM sd_sla_clocks`);
+          for (const clock of clocks) {
+            const boundaries = slaBoundaries(clock);
+            await adapter.exec(
+              'UPDATE sd_sla_clocks SET due_at = ?, at_risk_at = ? WHERE id = ?',
+              [boundaries.due_at, boundaries.at_risk_at, clock.id]);
+          }
+        },
+      },
+      {
+        sql: {
+          sqlite: 'CREATE INDEX IF NOT EXISTS idx_sla_clocks_due ON sd_sla_clocks(due_at)',
+          mysql: 'CREATE INDEX idx_sla_clocks_due ON sd_sla_clocks(due_at)',
+        },
+      },
+      {
+        sql: {
+          sqlite: 'CREATE INDEX IF NOT EXISTS idx_sla_clocks_at_risk ON sd_sla_clocks(at_risk_at)',
+          mysql: 'CREATE INDEX idx_sla_clocks_at_risk ON sd_sla_clocks(at_risk_at)',
+        },
+      },
+    ],
+  },
 ];
 
 const LEDGER_SQL = {

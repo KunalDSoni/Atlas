@@ -117,6 +117,8 @@ describeMysql('migration runner against real MySQL', () => {
     expect(await hasColumn('projects', 'is_service_desk')).toBe(true);
     expect(await hasColumn('comments', 'visibility')).toBe(true);
     expect(await hasColumn('project_statuses', 'waiting_for_customer')).toBe(true);
+    expect(await hasColumn('sd_sla_clocks', 'due_at')).toBe(true);
+    expect(await hasColumn('sd_sla_clocks', 'at_risk_at')).toBe(true);
 
     const [t] = await pool.query("SHOW TABLES LIKE 'sd_request_types'");
     expect(t.length).toBe(1);

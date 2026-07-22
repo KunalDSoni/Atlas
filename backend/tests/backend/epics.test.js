@@ -208,7 +208,7 @@ describe('epic rollup + children endpoints', () => {
 });
 
 describe('Atlas Development dogfood seed', () => {
-  test('seeds the ATLAS project with 51 roadmap epics, Epic support done', async () => {
+  test('seeds the ATLAS project with 52 roadmap epics, Epic support done', async () => {
     const projects = await request(app).get('/api/projects').set(headers);
     const atlas = projects.body.find((p) => p.key === 'ATLAS');
     expect(atlas).toBeDefined();
@@ -221,9 +221,10 @@ describe('Atlas Development dogfood seed', () => {
     // + 1 wiki focus mode + 6 service desk (foundation, help center, queues, SLAs,
     // deflection, CSAT + report)
     // + 4 product discovery (capture, demand, themes, spec drafting)
-    // + 2 loop-closing epics (outcome tracking, Portal v2). Epic 46 is a
-    // reserved ordinal, not a seeded epic.
-    expect(epics.body.length).toBe(51);
+    // + 2 loop-closing epics (outcome tracking, Portal v2)
+    // + 1 JQL v2/SLA-aware queues epic. Epic 46 is a reserved ordinal, not a
+    // seeded epic, so 52 rows carry roadmap ordinals through Epic 53.
+    expect(epics.body.length).toBe(52);
 
     const first = epics.body.find((e) => e.issue_key === 'ATLAS-1');
     expect(first.title).toBe('Epic support');
@@ -232,7 +233,7 @@ describe('Atlas Development dogfood seed', () => {
     expect(second.title).toBe('Subtasks');
     expect(second.status).toBe('done');
     // Every roadmap epic is seeded done.
-    expect(epics.body.filter((e) => e.status === 'done').length).toBe(51);
+    expect(epics.body.filter((e) => e.status === 'done').length).toBe(52);
     expect(epics.body.some((e) => e.title === 'Product: Insights inbox')).toBe(true);
     expect(epics.body.some((e) => e.title === 'Wiki AI assistant')).toBe(true);
     expect(epics.body.some((e) => e.title === 'Custom fields')).toBe(true);
@@ -242,6 +243,7 @@ describe('Atlas Development dogfood seed', () => {
     expect(epics.body.some((e) => e.title === 'Flow metrics')).toBe(true);
     expect(epics.body.some((e) => e.title === 'Product: Outcome tracking')).toBe(true);
     expect(epics.body.some((e) => e.title === 'Product: Portal v2')).toBe(true);
+    expect(epics.body.some((e) => e.title === 'JQL v2 and SLA-aware queues')).toBe(true);
     expect(epics.body.some((e) => e.title === 'Page approvals')).toBe(true);
     expect(epics.body.some((e) => e.title === 'Wiki task lists')).toBe(true);
   });

@@ -19,6 +19,7 @@ test.describe('every main screen renders without crashing', () => {
     // Canonical, project-scoped.
     '/atlas', '/atlas/board', '/atlas/backlog', '/atlas/epics', '/atlas/roadmap',
     '/atlas/sprints', '/atlas/releases', '/atlas/reports', '/atlas/automation',
+    '/hd/servicedesk', '/hd/servicedesk/report', '/hd/servicedesk/settings',
     // Pre-scheme paths, kept so the redirects stay covered too.
     '/dashboard', '/board', '/backlog', '/epics', '/roadmap', '/sprints',
     '/releases', '/reports', '/automation',

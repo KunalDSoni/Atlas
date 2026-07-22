@@ -38,8 +38,8 @@ describe('slaState — a running clock', () => {
     expect(s.remaining_minutes).toBe(-15);
   });
 
-  test('exactly on the target is not yet breached', () => {
-    expect(slaState({ started_at: T0 }, GOAL, at(60)).status).toBe('at_risk');
+  test('exactly on the target is breached, matching due_at <= now in JQL', () => {
+    expect(slaState({ started_at: T0 }, GOAL, at(60)).status).toBe('breached');
   });
 });
 

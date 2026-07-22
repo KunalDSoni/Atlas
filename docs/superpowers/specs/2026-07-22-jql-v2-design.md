@@ -1,6 +1,6 @@
-# JQL v2 and SLA-aware queues — epic 51
+# JQL v2 and SLA-aware queues — epic 53
 
-Status: designed 2026-07-22. Closes the largest hole left by the service desk
+Status: implemented 2026-07-22. Closes the largest hole left by the service desk
 wave, recorded in `2026-07-21-service-desk-design.md` under "Slice 2 — what
 actually shipped":
 
@@ -12,7 +12,13 @@ An agent cannot build the one queue SLAs exist to justify — the breached one.
 The four seeded queues (`All open`, `Unassigned`, `Assigned to me`, `Resolved`)
 are exactly the four expressible in v1, which is the tell.
 
-## What exists today
+> Integration note: this was originally designed on `main` as Epic 51 and
+> migration 018. The implementation branch had already shipped stable entity
+> URLs plus Outcome tracking and Portal v2 as migrations 018–020 and roadmap
+> Epics 51–52. Append-only history wins: the implementation is Epic 53 and
+> migration 021; no shipped migration or seeded roadmap ordinal was rewritten.
+
+## What existed before this epic
 
 `utils/jql.js` (104 lines) splits on `\s+AND\s+`, regex-matches each clause as
 `field op value`, and returns `{ where, params }` — SQL fragments against the
@@ -141,7 +147,7 @@ So `sla = paused AND sla = breached` is a legitimate query — a request parked
 waiting on a customer that was already late when it was parked — and it is the
 one an agent chasing stalled work actually wants.
 
-## Migration 018
+## Migration 021
 
 Adds `due_at` and `at_risk_at` to `sd_sla_clocks` (nullable), both dialects, and
 backfills every existing clock by running the same JS that writes them going
@@ -174,7 +180,7 @@ toast, with the registered field list beside it.
 | v1 parity | every seeded query and the v1 corpus produce identical SQL |
 | `sla-clocks.test.js` | stored `due_at`/`at_risk_at` agree with `slaState()` across start, pause, resume, stop, restart — including a clock that breached before it was paused, which must stay breached and not drift |
 | route tests | `/api/search` and `/api/queues` with v2 queries, counts equal rows |
-| MySQL job | migration 018 on both dialects |
+| MySQL job | migration 021 on both dialects |
 | e2e | queue editor shows an inline parse error |
 
 ## Seeding
@@ -192,12 +198,12 @@ empty in the demo data and the sidebar count is visibly non-zero. Behind
 
 ## Stories
 
-1. Migration 018 + `due_at`/`at_risk_at` computed on every clock transition
+1. Migration 021 + `due_at`/`at_risk_at` computed on every clock transition
 2. Tokenizer and recursive-descent parser → AST
 3. AST → SQL compiler and the `FIELDS` registry refactor, at v1 parity
 4. Register `sla`, `first_response`, `resolution`, `request_type`, `category`, `waiting_for_customer`
 5. Queue editor inline parse errors and field help
-6. Seeded `Breached` queue and the demo clock behind it
+6. Seeded `Needs attention` queue and the demo clock behind it
 
 ## Out of scope (YAGNI)
 

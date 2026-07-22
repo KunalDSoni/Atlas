@@ -1009,7 +1009,7 @@ export interface Queue {
   id: string;
   project_id: string;
   name: string;
-  /** JQL-lite, evaluated server-side by utils/jql.js. */
+  /** JQL v2, parsed and evaluated server-side by utils/jql/. */
   jql: string;
   columns: QueueColumn[];
   order_by: string;
@@ -1046,6 +1046,8 @@ export interface SlaState {
   started_at?: string;
   stopped_at?: string | null;
   breached_at?: string | null;
+  due_at?: string | null;
+  at_risk_at?: string | null;
 }
 
 /** A row in a queue table. Lean by design — not a full enriched issue. */

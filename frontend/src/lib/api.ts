@@ -310,7 +310,7 @@ export const api = {
   search: {
     query: (q: string, projectId?: string) =>
       get<SearchResults>(`/search?q=${encodeURIComponent(q)}${projectId ? `&project_id=${encodeURIComponent(projectId)}` : ''}`),
-    /** JQL-lite evaluation for the wiki [jql:] macro. 400s carry the parse error. */
+    /** JQL v2 evaluation for the wiki [jql:] macro. 400s carry the parse error. */
     jql: (q: string) => get<{ issues: JqlSearchIssue[]; jql?: boolean }>(`/search?q=${encodeURIComponent(q)}`),
   },
 
