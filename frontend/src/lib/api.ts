@@ -172,8 +172,14 @@ export const api = {
     get: (id: string) => get<User>(`/users/${id}`),
     create: (body: { name: string; email: string; role?: string; avatar_color?: string }) =>
       post<User & { initial_password: string }>('/users', body),
-    update: (id: string, body: Partial<Pick<User, 'name' | 'email' | 'role' | 'avatar_color' | 'is_active'>>) =>
-      put<User>(`/users/${id}`, body),
+    // An admin may edit every field on the account, profile fields included —
+    // the person it describes may never log in to set them themselves.
+    update: (
+      id: string,
+      body: Partial<Pick<User,
+        'name' | 'email' | 'role' | 'avatar_color' | 'is_active'
+        | 'phone' | 'department' | 'job_title' | 'bio' | 'timezone'>>,
+    ) => put<User>(`/users/${id}`, body),
     deactivate: (id: string) => del<{ ok: boolean }>(`/users/${id}`),
   },
 
