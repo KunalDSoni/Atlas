@@ -80,8 +80,13 @@ to lowercase for display.
 
 `GET /api/issues/by-key/:key` returns the same shape as `GET /api/issues/:id`
 so a page can boot straight from the URL. UUIDs remain the primary key
-internally; they just stop appearing in URLs. An issue whose project the caller
-cannot see returns 404, not 403 — a 403 would confirm the key exists.
+internally; they just stop appearing in URLs.
+
+Its authorisation is deliberate parity with `GET /api/issues/:id`: `requireAuth`,
+and clients never reach it because `middleware/servicedesk.blockClients` is
+mounted ahead of the issues router. There is no per-project membership filter on
+issue reads today, and this endpoint does not invent one — adding project-level
+read scoping is a separate piece of work. A missing key returns 404.
 
 ### Drawer and page
 
@@ -154,11 +159,11 @@ from the accepted fields and rendered read-only in `admin-projects.tsx`.
 
 | Case | Behaviour |
 |---|---|
-| Unknown project key | "Project not found" screen, link to last known project |
-| Project exists, caller not a member | same screen — do not distinguish |
+| Unknown project key | "Project not found" screen, link to the last known project |
+| Key not in the caller's project list | same screen — the client cannot distinguish |
 | Unknown issue key | "Issue not found" screen inside the project shell |
-| Issue in an invisible project | 404 from the API, same screen |
 | Malformed key (`/atlas/foo-bar`) | does not match the issue pattern → falls through to not-found |
+| Client role anywhere under `/:projectKey` | already redirected to `/help` by `ProtectedLayout` |
 
 ## Testing
 
