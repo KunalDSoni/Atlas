@@ -26,7 +26,8 @@ export function LinkedIssues({
   issueId: string;
   projectId: string;
   canEdit: boolean;
-  onOpenIssue?: (id: string) => void;
+  /** By KEY — the caller turns it into a URL. */
+  onOpenIssue?: (issueKey: string) => void;
 }) {
   const [links, setLinks] = useState<IssueLink[]>([]);
   const [candidates, setCandidates] = useState<Issue[]>([]);
@@ -93,7 +94,7 @@ export function LinkedIssues({
                 </span>
                 <TypeIcon type={other.type} />
                 <button
-                  onClick={() => onOpenIssue?.(other.id)}
+                  onClick={() => onOpenIssue?.(other.key)}
                   className="min-w-0 flex-1 truncate text-left text-sm hover:underline"
                 >
                   <span className="font-mono text-xs text-muted-foreground">{other.key}</span>{' '}
