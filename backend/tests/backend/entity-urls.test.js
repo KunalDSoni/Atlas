@@ -50,3 +50,43 @@ describe('GET /api/issues/by-key/:key', () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe('issueLink', () => {
+  const { issueLink } = require('../../utils/links');
+
+  test('builds the permanent path for an issue key', () => {
+    expect(issueLink('ATLAS-3')).toBe('/atlas/ATLAS-3');
+  });
+
+  test('splits on the last hyphen so hyphenated project keys survive', () => {
+    expect(issueLink('MY-TEAM-42')).toBe('/my-team/MY-TEAM-42');
+  });
+
+  test('tolerates a key with no number suffix rather than throwing', () => {
+    expect(issueLink('WEIRD')).toBe('/weird/WEIRD');
+  });
+});
+
+describe('notification links', () => {
+  test('an assignment notification links to the permanent issue URL', async () => {
+    const { userHeaders } = require('./setup');
+    const assigneeHeaders = await userHeaders();
+    const me = await request(app).get('/api/auth/me').set(assigneeHeaders);
+
+    const created = await request(app)
+      .post(`/api/projects/${projectId}/issues`)
+      .set(headers)
+      .send({ title: 'Notify me', type: 'task' });
+
+    await request(app)
+      .put(`/api/issues/${created.body.id}`)
+      .set(headers)
+      .send({ assignee_id: me.body.id });
+
+    const notifications = await request(app).get('/api/notifications').set(assigneeHeaders);
+    const hit = notifications.body.find((n) => n.issue_id === created.body.id);
+    expect(hit).toBeDefined();
+    expect(hit.link).toBe(`/${created.body.issue_key.split('-')[0].toLowerCase()}/${created.body.issue_key}`);
+    expect(hit.link).not.toContain('?issue=');
+  });
+});

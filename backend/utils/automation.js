@@ -4,6 +4,7 @@
 
 const { queryOne, queryAll, run } = require('../database');
 const { notify } = require('./notify');
+const { issueLink } = require('./links');
 
 function parse(json, fallback) {
   try { return JSON.parse(json) ?? fallback; } catch { return fallback; }
@@ -46,7 +47,7 @@ async function applyActions(db, rule, issue, actorId) {
             actorId,
             type: 'automation',
             message: `Rule "${rule.name}" matched ${issue.issue_key}`,
-            link: `/board?issue=${issue.id}`,
+            link: issueLink(issue.issue_key),
             issueId: issue.id,
           });
           break;

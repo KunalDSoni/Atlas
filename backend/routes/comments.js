@@ -11,6 +11,7 @@ const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
 const { notify, mentionedUserIds } = require('../utils/notify');
 const sla = require('../utils/sla-clocks');
+const { issueLink } = require('../utils/links');
 
 const router = express.Router();
 
@@ -78,7 +79,7 @@ router.post('/issues/:issueId/comments', requireAuth, async (req, res) => {
         await notify(db, {
           userId: uid, actorId: authorId, type: 'mention',
           message: `${actorName} mentioned you on ${issue.issue_key}`,
-          link: `/board?issue=${issue.id}`, issueId: issue.id,
+          link: issueLink(issue.issue_key), issueId: issue.id,
         });
       }
       const watchers = await queryAll(db, 'SELECT user_id FROM issue_watchers WHERE issue_id = ?', [req.params.issueId]);
@@ -87,7 +88,7 @@ router.post('/issues/:issueId/comments', requireAuth, async (req, res) => {
         await notify(db, {
           userId: w.user_id, actorId: authorId, type: 'comment',
           message: `${actorName} commented on ${issue.issue_key}`,
-          link: `/board?issue=${issue.id}`, issueId: issue.id,
+          link: issueLink(issue.issue_key), issueId: issue.id,
         });
       }
     }

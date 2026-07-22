@@ -20,6 +20,7 @@ const { publish } = require('../utils/events');
 const { issueCustomFieldsBatch } = require('./custom-fields');
 const { placeholders, indexBy, countsBy } = require('../utils/sql');
 const sla = require('../utils/sla-clocks');
+const { issueLink } = require('../utils/links');
 
 const requireBoardAdmin = requireRole('admin', 'board_admin');
 
@@ -427,7 +428,7 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
         actorId: req.userId,
         type: 'assigned',
         message: `${actor?.name || 'Someone'} assigned ${issue.issue_key} to you`,
-        link: `/board?issue=${issue.id}`,
+        link: issueLink(issue.issue_key),
         issueId: issue.id,
       });
     }
