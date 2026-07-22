@@ -221,6 +221,8 @@ describe('queue evaluation', () => {
 });
 
 describe('migration 012/013 on a database that predates them', () => {
+  const UNDER_TEST = ['012_sd_queues', '013_sd_slas'];
+
   // The deployment path, not the fresh-install path. A fresh database gets
   // these tables from database.js and would prove nothing about upgrading.
   async function preSliceTwoDb() {
@@ -230,10 +232,12 @@ describe('migration 012/013 on a database that predates them', () => {
     db.run("CREATE TABLE issues (id TEXT PRIMARY KEY, project_id TEXT, issue_key TEXT, type TEXT CHECK(type IN ('story','task','bug','epic','subtask','request')))");
     db.run("CREATE TABLE sd_request_types (id TEXT PRIMARY KEY, project_id TEXT, name TEXT)");
     db.run(`CREATE TABLE schema_migrations (id TEXT PRIMARY KEY, applied_at TEXT DEFAULT (datetime('now')))`);
-    // Everything up to and including slice 1 has already run. The ids come from
-    // MIGRATIONS itself, so this stays honest if a migration is inserted later.
+    // Stamp every migration EXCEPT the two under test, so this fixture stays
+    // about 012/013 no matter what later waves append. Stamping "everything
+    // below 012" instead would drag in whatever 014+ becomes, against a
+    // deliberately minimal schema that has none of the tables those touch.
     for (const m of MIGRATIONS) {
-      if (m.id >= '012') break;
+      if (UNDER_TEST.includes(m.id)) continue;
       db.run('INSERT INTO schema_migrations (id) VALUES (?)', [m.id]);
     }
     return db;
@@ -244,7 +248,7 @@ describe('migration 012/013 on a database that predates them', () => {
     db.run("INSERT INTO projects (id, name, key) VALUES ('p1', 'Legacy desk', 'LEG')");
 
     const applied = await runMigrations(sqliteAdapter(db));
-    expect(applied).toEqual(expect.arrayContaining(['012_sd_queues', '013_sd_slas']));
+    expect(applied).toEqual(UNDER_TEST);
 
     const tables = [];
     const stmt = db.prepare("SELECT name FROM sqlite_master WHERE type='table'");

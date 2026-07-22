@@ -400,6 +400,10 @@ const SCHEMA_SQL = [
     customer_id TEXT REFERENCES pb_customers(id),
     created_by TEXT REFERENCES users(id),
     processed INTEGER DEFAULT 0,
+    origin_kind TEXT,
+    origin_id TEXT,
+    origin_excerpt TEXT,
+    dismissed_at TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   )`,
   `CREATE TABLE IF NOT EXISTS pb_features (
@@ -902,6 +906,10 @@ const MYSQL_SCHEMA_SQL = [
     customer_id VARCHAR(36),
     created_by VARCHAR(36),
     processed TINYINT DEFAULT 0,
+    origin_kind VARCHAR(20),
+    origin_id VARCHAR(36),
+    origin_excerpt TEXT,
+    dismissed_at DATETIME(3) NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   ) DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS pb_features (

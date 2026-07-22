@@ -12,6 +12,7 @@ const { v4: uuidv4 } = require('uuid');
 const { getDb, queryAll, queryOne, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
+const { resolveOrigin } = require('../utils/insight-origin');
 
 const router = express.Router();
 
@@ -36,6 +37,9 @@ router.get('/product/insights', requireAuth, async (req, res) => {
     if (req.query.processed !== undefined) { clauses.push('ins.processed = ?'); params.push(Number(req.query.processed)); }
     if (req.query.source) { clauses.push('ins.source = ?'); params.push(req.query.source); }
     if (req.query.customer_id) { clauses.push('ins.customer_id = ?'); params.push(req.query.customer_id); }
+    if (req.query.dismissed !== undefined) {
+      clauses.push(Number(req.query.dismissed) ? 'ins.dismissed_at IS NOT NULL' : 'ins.dismissed_at IS NULL');
+    }
     const where = clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '';
     const insights = await queryAll(db, `${ENRICHED_SELECT}${where} ORDER BY ins.created_at DESC`, params);
     res.json(insights);
@@ -57,6 +61,44 @@ router.post('/product/insights', requireAuth, async (req, res) => {
     const id = uuidv4();
     await run(db, 'INSERT INTO pb_insights (id, title, content, source, customer_id, created_by) VALUES (?, ?, ?, ?, ?, ?)',
       [id, title.trim(), content || '', source || 'other', customer_id || null, req.userId]);
+    const insight = await queryOne(db, `${ENRICHED_SELECT} WHERE ins.id = ?`, [id]);
+    res.status(201).json(insight);
+  } catch (e) { serverError(res, e); }
+});
+
+// POST /api/product/insights/capture — turn text that already exists in Atlas
+// into a triageable insight. Declared before the '/:id' routes below, which
+// would otherwise match 'capture' as an id.
+//
+// The excerpt is snapshotted at capture time; origin_id is a backlink that may
+// dangle if the source is later deleted. resolveOrigin() is the security
+// boundary — it confirms the caller may see the source before anything is read
+// out of it.
+router.post('/product/insights/capture', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const { origin_kind, origin_id, title, customer_id } = req.body;
+
+    const origin = await resolveOrigin(db, origin_kind, origin_id, req.userId, req.userRole);
+    if (!origin.ok) return res.status(origin.status).json({ error: origin.error });
+
+    if (customer_id) {
+      const customer = await queryOne(db, 'SELECT id FROM pb_customers WHERE id = ?', [customer_id]);
+      if (!customer) return res.status(404).json({ error: 'Customer not found' });
+    }
+
+    // A request or comment is support feedback; a wiki capture is research
+    // somebody wrote up. Neither is 'other', which is the manual form's default.
+    const source = origin_kind === 'wiki' ? 'interview' : 'support';
+    const id = uuidv4();
+    await run(db,
+      `INSERT INTO pb_insights
+         (id, title, content, source, customer_id, created_by, origin_kind, origin_id, origin_excerpt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, (title || origin.title || 'Captured feedback').trim(), '', source,
+       customer_id || origin.customer_id || null, req.userId,
+       origin_kind, origin_id, origin.excerpt]);
+
     const insight = await queryOne(db, `${ENRICHED_SELECT} WHERE ins.id = ?`, [id]);
     res.status(201).json(insight);
   } catch (e) { serverError(res, e); }
@@ -97,6 +139,19 @@ router.put('/product/insights/:id', requireAuth, async (req, res) => {
        req.params.id]);
     const insight = await queryOne(db, `${ENRICHED_SELECT} WHERE ins.id = ?`, [req.params.id]);
     res.json(insight);
+  } catch (e) { serverError(res, e); }
+});
+
+// POST /api/product/insights/:id/dismiss — triaged as not actionable. Kept
+// rather than deleted: a dismissed insight is still evidence of what somebody
+// asked for, and the inbox filters on dismissed_at rather than losing the row.
+router.post('/product/insights/:id/dismiss', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const existing = await queryOne(db, 'SELECT id FROM pb_insights WHERE id = ?', [req.params.id]);
+    if (!existing) return res.status(404).json({ error: 'Insight not found' });
+    await run(db, "UPDATE pb_insights SET dismissed_at = datetime('now') WHERE id = ?", [req.params.id]);
+    res.json({ ok: true });
   } catch (e) { serverError(res, e); }
 });
 
