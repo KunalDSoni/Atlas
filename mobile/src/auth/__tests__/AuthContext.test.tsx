@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, waitFor, fireEvent, screen } from '@testing-library/react-native';
+import { render, fireEvent } from '@testing-library/react-native';
 import { Text, Button } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { AuthProvider, useAuth } from '../AuthContext';
@@ -27,19 +27,19 @@ beforeEach(() => {
 });
 
 test('starts logged out when no stored session exists', async () => {
-  render(<AuthProvider><TestConsumer /></AuthProvider>);
-  await waitFor(() => screen.getByText('logged-out'));
+  const { findByText } = await render(<AuthProvider><TestConsumer /></AuthProvider>);
+  await findByText('logged-out');
 });
 
 test('signIn stores session and updates user', async () => {
   (authApi.login as jest.Mock).mockResolvedValue({ id: '1', email: 'a@b.com', name: 'A', role: 'member', avatar_color: null, avatar_url: null, token: 'tok123' });
 
-  render(<AuthProvider><TestConsumer /></AuthProvider>);
-  await waitFor(() => screen.getByText('logged-out'));
+  const { findByText, getByText } = await render(<AuthProvider><TestConsumer /></AuthProvider>);
+  await findByText('logged-out');
 
-  fireEvent.press(screen.getByText('login'));
+  fireEvent.press(getByText('login'));
 
-  await waitFor(() => screen.getByText('logged-in:a@b.com'));
+  await findByText('logged-in:a@b.com');
   expect(SecureStore.setItemAsync).toHaveBeenCalledWith('atlas_token', 'tok123');
 });
 
@@ -47,13 +47,13 @@ test('signOut clears stored session', async () => {
   (authApi.login as jest.Mock).mockResolvedValue({ id: '1', email: 'a@b.com', name: 'A', role: 'member', avatar_color: null, avatar_url: null, token: 'tok123' });
   (authApi.logout as jest.Mock).mockResolvedValue({ ok: true });
 
-  render(<AuthProvider><TestConsumer /></AuthProvider>);
-  await waitFor(() => screen.getByText('logged-out'));
-  fireEvent.press(screen.getByText('login'));
-  await waitFor(() => screen.getByText('logged-in:a@b.com'));
+  const { findByText, getByText } = await render(<AuthProvider><TestConsumer /></AuthProvider>);
+  await findByText('logged-out');
+  fireEvent.press(getByText('login'));
+  await findByText('logged-in:a@b.com');
 
-  fireEvent.press(screen.getByText('logout'));
+  fireEvent.press(getByText('logout'));
 
-  await waitFor(() => screen.getByText('logged-out'));
+  await findByText('logged-out');
   expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith('atlas_token');
 });
