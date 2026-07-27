@@ -17,7 +17,7 @@ test('renders fetched projects and navigates on press', async () => {
   ]);
   const navigate = jest.fn();
 
-  const { findByText } = await renderWithClient(<ProjectListScreen navigation={{ navigate }} />);
+  const { findByText } = await renderWithClient(<ProjectListScreen navigation={{ navigate } as any} route={{} as any} />);
 
   const item = await findByText('Atlas Core');
   await fireEvent.press(item);

@@ -17,7 +17,7 @@ const route = { params: { projectId: 'p1' } };
 test('does not submit without a title', async () => {
   const navigate = jest.fn();
   const goBack = jest.fn();
-  const screen = await renderWithClient(<CreateIssueScreen route={route} navigation={{ navigate, goBack }} />);
+  const screen = await renderWithClient(<CreateIssueScreen route={route as any} navigation={{ navigate, goBack } as any} />);
   const { getByText } = screen;
 
   await fireEvent.press(getByText('Create'));
@@ -29,7 +29,7 @@ test('submits title and navigates back on success', async () => {
   (issuesApi.createIssue as jest.Mock).mockResolvedValue({ id: 'i2', issue_key: 'ATLAS-2' });
   const navigate = jest.fn();
   const goBack = jest.fn();
-  const screen = await renderWithClient(<CreateIssueScreen route={route} navigation={{ navigate, goBack }} />);
+  const screen = await renderWithClient(<CreateIssueScreen route={route as any} navigation={{ navigate, goBack } as any} />);
   const { getByPlaceholderText, getByText } = screen;
 
   await fireEvent.changeText(getByPlaceholderText('Title'), 'New issue');
@@ -43,7 +43,7 @@ test('shows permission error on 403', async () => {
   (issuesApi.createIssue as jest.Mock).mockRejectedValue(new ApiError(403, { error: 'Insufficient permissions' }));
   const navigate = jest.fn();
   const goBack = jest.fn();
-  const screen = await renderWithClient(<CreateIssueScreen route={route} navigation={{ navigate, goBack }} />);
+  const screen = await renderWithClient(<CreateIssueScreen route={route as any} navigation={{ navigate, goBack } as any} />);
   const { getByPlaceholderText, getByText, findByText } = screen;
 
   await fireEvent.changeText(getByPlaceholderText('Title'), 'New issue');

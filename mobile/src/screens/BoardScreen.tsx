@@ -1,14 +1,13 @@
 import React from 'react';
-import { ScrollView, View, Text, StyleSheet, ActivityIndicator, Pressable } from 'react-native';
+import { ScrollView, View, Text, StyleSheet, ActivityIndicator, Pressable, Button } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { fetchProjectStatuses } from '../api/statuses';
 import { fetchProjectIssues, Issue } from '../api/issues';
 import { IssueCard } from '../components/IssueCard';
+import { MainStackParamList } from '../navigation/MainStack';
 
-type Props = {
-  route: { params: { projectId: string; projectName: string } };
-  navigation: { navigate: (screen: string, params: any) => void };
-};
+type Props = NativeStackScreenProps<MainStackParamList, 'Board'>;
 
 export function BoardScreen({ route, navigation }: Props) {
   const { projectId } = route.params;
@@ -17,6 +16,21 @@ export function BoardScreen({ route, navigation }: Props) {
   const issuesQuery = useQuery({ queryKey: ['issues', projectId], queryFn: () => fetchProjectIssues(projectId) });
 
   if (statusesQuery.isLoading || issuesQuery.isLoading) return <ActivityIndicator style={styles.center} />;
+
+  if (statusesQuery.isError || issuesQuery.isError) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.errorText}>Failed to load board.</Text>
+        <Button
+          title="Retry"
+          onPress={() => {
+            statusesQuery.refetch();
+            issuesQuery.refetch();
+          }}
+        />
+      </View>
+    );
+  }
 
   const statuses = [...(statusesQuery.data ?? [])].sort((a, b) => a.position - b.position);
   const issues = issuesQuery.data ?? [];
@@ -49,4 +63,5 @@ const styles = StyleSheet.create({
   createButtonText: { color: '#fff', fontWeight: '600' },
   column: { width: 260, padding: 8, borderRightWidth: 1, borderRightColor: '#eee' },
   columnTitle: { fontWeight: '700', marginBottom: 8 },
+  errorText: { marginBottom: 12, color: '#b91c1c' },
 });

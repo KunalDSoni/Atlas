@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
 import { View, TextInput, Button, Text, StyleSheet } from 'react-native';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { createIssue } from '../api/issues';
 import { ApiError } from '../api/client';
+import { MainStackParamList } from '../navigation/MainStack';
 
-type Props = {
-  route: { params: { projectId: string } };
-  navigation: { goBack: () => void };
-};
+type Props = NativeStackScreenProps<MainStackParamList, 'CreateIssue'>;
 
 export function CreateIssueScreen({ route, navigation }: Props) {
   const { projectId } = route.params;
@@ -32,8 +31,11 @@ export function CreateIssueScreen({ route, navigation }: Props) {
   });
 
   const onSubmit = () => {
+    if (!title.trim()) {
+      setError('Title is required.');
+      return;
+    }
     setError(null);
-    if (!title.trim()) return;
     mutation.mutate();
   };
 

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import * as SecureStore from 'expo-secure-store';
+import { useQueryClient } from '@tanstack/react-query';
 import { login as apiLogin, logout as apiLogout, LoginResponse } from '../api/auth';
 import { setAuthToken, setUnauthorizedHandler } from '../api/client';
 
@@ -20,6 +21,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     (async () => {
@@ -52,7 +54,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       SecureStore.deleteItemAsync(USER_KEY),
     ]);
     setUser(null);
-  }, []);
+    queryClient.clear();
+  }, [queryClient]);
 
   const signOut = useCallback(async () => {
     try {

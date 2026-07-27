@@ -1,14 +1,25 @@
 import React from 'react';
-import { FlatList, Pressable, Text, View, StyleSheet, ActivityIndicator } from 'react-native';
+import { FlatList, Pressable, Text, StyleSheet, ActivityIndicator, Button } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { fetchProjects, Project } from '../api/projects';
+import { MainStackParamList } from '../navigation/MainStack';
 
-type Props = { navigation: { navigate: (screen: string, params: { projectId: string; projectName: string }) => void } };
+type Props = NativeStackScreenProps<MainStackParamList, 'Projects'>;
 
 export function ProjectListScreen({ navigation }: Props) {
-  const { data, isLoading, refetch, isRefetching } = useQuery({ queryKey: ['projects'], queryFn: fetchProjects });
+  const { data, isLoading, isError, refetch, isRefetching } = useQuery({ queryKey: ['projects'], queryFn: fetchProjects });
 
   if (isLoading) return <ActivityIndicator style={styles.center} />;
+
+  if (isError) {
+    return (
+      <>
+        <Text style={styles.errorText}>Failed to load projects.</Text>
+        <Button title="Retry" onPress={() => refetch()} />
+      </>
+    );
+  }
 
   return (
     <FlatList
@@ -33,4 +44,5 @@ const styles = StyleSheet.create({
   key: { fontSize: 12, color: '#666' },
   name: { fontSize: 18, fontWeight: '600' },
   meta: { fontSize: 12, color: '#999' },
+  errorText: { padding: 16, textAlign: 'center', color: '#b91c1c' },
 });

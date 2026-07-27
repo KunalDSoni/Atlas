@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, Pressable, Text, StyleSheet } from 'react-native';
+import { View, Pressable, Text } from 'react-native';
 import { ProjectStatus } from '../api/statuses';
+import { chipStyles as styles } from './chipStyles';
 
 export function StatusPicker({ statuses, value, onChange }: { statuses: ProjectStatus[]; value: string; onChange: (key: string) => void }) {
   return (
@@ -17,11 +18,3 @@ export function StatusPicker({ statuses, value, onChange }: { statuses: ProjectS
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, borderColor: '#ccc' },
-  chipActive: { backgroundColor: '#2563eb', borderColor: '#2563eb' },
-  chipText: { color: '#333' },
-  chipTextActive: { color: '#fff', fontWeight: '600' },
-});

@@ -25,7 +25,9 @@ test('groups issues into status columns and navigates to detail on press', async
   ]);
   const navigate = jest.fn();
 
-  const { findByText } = await renderWithClient(<BoardScreen route={route} navigation={{ navigate }} />);
+  const { findByText } = await renderWithClient(
+    <BoardScreen route={route as any} navigation={{ navigate } as any} />
+  );
 
   await findByText('To Do');
   await findByText('Done');

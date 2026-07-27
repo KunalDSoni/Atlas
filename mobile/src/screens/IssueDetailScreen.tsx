@@ -1,13 +1,15 @@
 import React from 'react';
-import { ScrollView, Text, View, StyleSheet, ActivityIndicator } from 'react-native';
+import { ScrollView, Text, StyleSheet, ActivityIndicator, Button } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { fetchIssue, updateIssue } from '../api/issues';
 import { fetchProjectStatuses } from '../api/statuses';
 import { fetchProjectMembers } from '../api/members';
 import { StatusPicker } from '../components/StatusPicker';
 import { AssigneePicker } from '../components/AssigneePicker';
+import { MainStackParamList } from '../navigation/MainStack';
 
-type Props = { route: { params: { issueId: string } } };
+type Props = NativeStackScreenProps<MainStackParamList, 'IssueDetail'>;
 
 export function IssueDetailScreen({ route }: Props) {
   const { issueId } = route.params;
@@ -34,6 +36,15 @@ export function IssueDetailScreen({ route }: Props) {
       queryClient.invalidateQueries({ queryKey: ['issues', projectId] });
     },
   });
+
+  if (issueQuery.isError) {
+    return (
+      <>
+        <Text style={styles.errorText}>Failed to load issue.</Text>
+        <Button title="Retry" onPress={() => issueQuery.refetch()} />
+      </>
+    );
+  }
 
   if (issueQuery.isLoading || !issueQuery.data) return <ActivityIndicator style={styles.center} />;
 
@@ -69,4 +80,5 @@ const styles = StyleSheet.create({
   title: { fontSize: 22, fontWeight: '700', marginTop: 4, marginBottom: 12 },
   description: { fontSize: 14, color: '#333', marginBottom: 20 },
   sectionLabel: { fontSize: 13, fontWeight: '600', color: '#666', marginTop: 16, marginBottom: 8 },
+  errorText: { padding: 16, textAlign: 'center', color: '#b91c1c' },
 });
