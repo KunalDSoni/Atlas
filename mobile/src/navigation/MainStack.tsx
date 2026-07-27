@@ -2,6 +2,7 @@ import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ProjectListScreen } from '../screens/ProjectListScreen';
 import { BoardScreen } from '../screens/BoardScreen';
+import { IssueDetailScreen } from '../screens/IssueDetailScreen';
 
 export type MainStackParamList = {
   Projects: undefined;
@@ -21,6 +22,7 @@ export function MainStack() {
         component={BoardScreen}
         options={({ route }) => ({ title: route.params.projectName })}
       />
+      <Stack.Screen name="IssueDetail" component={IssueDetailScreen} options={{ title: 'Issue' }} />
     </Stack.Navigator>
   );
 }
