@@ -145,6 +145,32 @@ describe('015_insight_origins', () => {
     expect(row).toBeTruthy();
   });
 
+  test('019 creates feature outcomes and the durable launch timestamp', async () => {
+    const db = await getDb();
+    const featureColumns = (await queryAll(db, 'PRAGMA table_info(pb_features)')).map((c) => c.name);
+    const outcomeColumns = (await queryAll(db, 'PRAGMA table_info(pb_feature_outcomes)')).map((c) => c.name);
+    expect(featureColumns).toContain('launched_at');
+    expect(outcomeColumns).toEqual(expect.arrayContaining([
+      'feature_id', 'metric', 'target', 'baseline', 'measured', 'verdict', 'reviewed_at', 'reviewed_by', 'notes',
+    ]));
+    expect(await queryOne(db, 'SELECT id FROM schema_migrations WHERE id = ?', ['019_feature_outcomes'])).toBeTruthy();
+  });
+
+  test('020 creates the portal followers table', async () => {
+    const db = await getDb();
+    const columns = (await queryAll(db, 'PRAGMA table_info(pb_portal_followers)')).map((c) => c.name);
+    expect(columns).toEqual(expect.arrayContaining(['feature_id', 'user_id', 'created_at']));
+    expect(await queryOne(db, 'SELECT id FROM schema_migrations WHERE id = ?', ['020_portal_followers'])).toBeTruthy();
+  });
+
+  test('021 stores both SLA query boundaries', async () => {
+    const db = await getDb();
+    const columns = (await queryAll(db, 'PRAGMA table_info(sd_sla_clocks)')).map((c) => c.name);
+    expect(columns).toEqual(expect.arrayContaining(['due_at', 'at_risk_at']));
+    expect(await queryOne(db, 'SELECT id FROM schema_migrations WHERE id = ?',
+      ['021_sla_query_boundaries'])).toBeTruthy();
+  });
+
   test('existing insights survive with null origins rather than being rewritten', async () => {
     // The columns are additive: a pre-existing insight keeps its row and simply
     // has no origin, which the inbox renders as a manual capture.

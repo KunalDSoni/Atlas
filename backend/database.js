@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const config = require('./config');
 const { hashPasswordSync } = require('./utils/password');
+const { slaBoundaries } = require('./utils/sla');
 const { runMigrations, sqliteAdapter, mysqlAdapter } = require('./migrations');
 
 const DB_PATH = config.db.sqlitePath;
@@ -76,11 +77,13 @@ const SCHEMA_SQL = [
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL REFERENCES projects(id),
     name TEXT NOT NULL,
+    slug TEXT,
     goal TEXT,
     status TEXT DEFAULT 'planning' CHECK(status IN ('planning','active','completed')),
     start_date TEXT,
     end_date TEXT,
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(project_id, slug)
   )`,
   `CREATE TABLE IF NOT EXISTS issues (
     id TEXT PRIMARY KEY,
@@ -362,6 +365,8 @@ const SCHEMA_SQL = [
     paused_at TEXT,
     paused_total_minutes INTEGER DEFAULT 0,
     breached_at TEXT,
+    due_at TEXT,
+    at_risk_at TEXT,
     UNIQUE(issue_id, metric)
   )`,
   `CREATE TABLE IF NOT EXISTS wiki_page_restrictions (
@@ -385,10 +390,12 @@ const SCHEMA_SQL = [
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL REFERENCES projects(id),
     name TEXT NOT NULL,
+    slug TEXT,
     description TEXT,
     status TEXT DEFAULT 'unreleased' CHECK(status IN ('unreleased','released')),
     release_date TEXT,
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(project_id, slug)
   )`,
   `CREATE TABLE IF NOT EXISTS components (
     id TEXT PRIMARY KEY,
@@ -443,7 +450,21 @@ const SCHEMA_SQL = [
     confidence INTEGER,
     release_id TEXT REFERENCES versions(id),
     spec_page_id TEXT,
+    launched_at TEXT,
     created_by TEXT REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS pb_feature_outcomes (
+    feature_id TEXT PRIMARY KEY REFERENCES pb_features(id),
+    metric TEXT,
+    target TEXT,
+    baseline TEXT,
+    measured TEXT,
+    verdict TEXT CHECK(verdict IS NULL OR verdict IN ('achieved','partial','missed','too_early')),
+    reviewed_at TEXT,
+    reviewed_by TEXT REFERENCES users(id),
+    notes TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   )`,
@@ -498,6 +519,12 @@ const SCHEMA_SQL = [
     user_id TEXT NOT NULL REFERENCES users(id),
     created_at TEXT DEFAULT (datetime('now')),
     UNIQUE(feature_id, user_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS pb_portal_followers (
+    feature_id TEXT NOT NULL REFERENCES pb_features(id),
+    user_id TEXT NOT NULL REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (feature_id, user_id)
   )`,
   `CREATE TABLE IF NOT EXISTS wiki_attachments (
     id TEXT PRIMARY KEY,
@@ -618,11 +645,13 @@ const MYSQL_SCHEMA_SQL = [
     id VARCHAR(36) PRIMARY KEY,
     project_id VARCHAR(36) NOT NULL,
     name VARCHAR(255) NOT NULL,
+    slug VARCHAR(255),
     goal TEXT,
     status VARCHAR(20) DEFAULT 'planning' CHECK(status IN ('planning','active','completed')),
     start_date DATETIME NULL,
     end_date DATETIME NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_sprints_project_slug (project_id, slug)
   ) DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS issues (
     id VARCHAR(36) PRIMARY KEY,
@@ -904,6 +933,8 @@ const MYSQL_SCHEMA_SQL = [
     paused_at DATETIME(3) NULL,
     paused_total_minutes INT DEFAULT 0,
     breached_at DATETIME(3) NULL,
+    due_at DATETIME(3) NULL,
+    at_risk_at DATETIME(3) NULL,
     UNIQUE KEY uniq_issue_metric (issue_id, metric)
   ) DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS wiki_page_restrictions (
@@ -927,10 +958,12 @@ const MYSQL_SCHEMA_SQL = [
     id VARCHAR(36) PRIMARY KEY,
     project_id VARCHAR(36) NOT NULL,
     name VARCHAR(255) NOT NULL,
+    slug VARCHAR(255),
     description TEXT,
     status VARCHAR(20) DEFAULT 'unreleased' CHECK(status IN ('unreleased','released')),
     release_date DATETIME NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_versions_project_slug (project_id, slug)
   ) DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS components (
     id VARCHAR(36) PRIMARY KEY,
@@ -984,9 +1017,23 @@ const MYSQL_SCHEMA_SQL = [
     confidence INT,
     release_id VARCHAR(36),
     spec_page_id VARCHAR(36),
+    launched_at DATETIME(3) NULL,
     created_by VARCHAR(36),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS pb_feature_outcomes (
+    feature_id VARCHAR(36) PRIMARY KEY,
+    metric TEXT,
+    target TEXT,
+    baseline TEXT,
+    measured TEXT,
+    verdict VARCHAR(20) NULL,
+    reviewed_at DATETIME(3) NULL,
+    reviewed_by VARCHAR(36) NULL,
+    notes TEXT,
+    created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
   ) DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS pb_insight_links (
     id VARCHAR(36) PRIMARY KEY,
@@ -1039,6 +1086,12 @@ const MYSQL_SCHEMA_SQL = [
     user_id VARCHAR(36) NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_feature_vote (feature_id, user_id)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS pb_portal_followers (
+    feature_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(36) NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (feature_id, user_id)
   ) DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS wiki_attachments (
     id VARCHAR(36) PRIMARY KEY,
@@ -1326,11 +1379,11 @@ function seedDemoData() {
 
   // Seed sprints
   const sprintId = uuid();
-  db.run("INSERT INTO sprints (id, project_id, name, goal, status, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    [sprintId, projId1, 'Sprint 12', 'Complete auth module and API refactor', 'active', '2026-04-06', '2026-04-20']);
+  db.run("INSERT INTO sprints (id, project_id, name, slug, goal, status, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    [sprintId, projId1, 'Sprint 12', 'sprint-12', 'Complete auth module and API refactor', 'active', '2026-04-06', '2026-04-20']);
   const sprintId2 = uuid();
-  db.run("INSERT INTO sprints (id, project_id, name, goal, status, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    [sprintId2, projId2, 'Sprint 5', 'Push notification system', 'active', '2026-04-06', '2026-04-20']);
+  db.run("INSERT INTO sprints (id, project_id, name, slug, goal, status, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    [sprintId2, projId2, 'Sprint 5', 'sprint-5', 'Push notification system', 'active', '2026-04-06', '2026-04-20']);
 
   // Seed issues for Atlas Platform
   const issueData = [
@@ -1973,8 +2026,8 @@ function seedDemoData() {
   });
 
   // ===== Product discovery wave (epics 47-48) — shipped =====
-  // Numbered from 47: 42-46 are reserved for the rest of the service desk wave
-  // (queues, SLAs, deflection, CSAT), which is designed but not built.
+  // Numbered from 47 to preserve the service-desk numbering decisions. Epic 46
+  // remains the one reserved ordinal; queues through CSAT shipped as 42–45.
   const discoveryEpics = [
     { title: 'Insight capture', color: 'teal',
       desc: 'Turn text that already exists in Atlas — a service desk request, an issue comment, a wiki passage — into a triageable insight. The excerpt is snapshotted rather than joined, so evidence survives its source being edited or deleted.',
@@ -2043,6 +2096,91 @@ function seedDemoData() {
         [uuid(), projId3, `ATLAS-${cnum}`, cnum, c.title, c.type, userIds[0], userIds[0], eid, ci]);
     });
   });
+
+  // ===== Product discovery slice 3 (epic 51) — shipped =====
+  // Epic 46 remains an intentionally unused/reserved ordinal, so this is the
+  // 50th seeded epic while retaining its stable roadmap name, Epic 51.
+  {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(50);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, 50)`,
+      [eid, projId3, `ATLAS-${num}`, num, 'Product: Outcome tracking',
+       'Close the loop after launch with declared success measures, durable launch dates, post-launch feedback signals, and a review queue that makes unexamined launches visible.',
+       userIds[0], 'green', startDate, dueDate]);
+    [
+      { title: 'Migration 019: feature outcomes and durable launch timestamps', type: 'task' },
+      { title: 'Outcome API with validated review lifecycle', type: 'story' },
+      { title: 'Batched post-launch insight signals and overdue review rules', type: 'task' },
+      { title: 'Outcomes screen and non-blocking launch metric prompt', type: 'story' },
+    ].forEach((child, ci) => {
+      const childNum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${childNum}`, childNum, child.title, child.type,
+         userIds[0], userIds[0], eid, ci]);
+    });
+  }
+
+  // ===== Product discovery slice 4 (epic 52) — shipped =====
+  {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(51);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, 51)`,
+      [eid, projId3, `ATLAS-${num}`, num, 'Product: Portal v2',
+       'Close the customer feedback loop with an anonymous public roadmap, safe feature detail, follows, a personal submissions view, and status-change notifications through the existing in-app and email delivery path.',
+       userIds[0], 'teal', startDate, dueDate]);
+    [
+      { title: 'Migration 020: portal followers', type: 'task' },
+      { title: 'Single allow-list projection for every public feature response', type: 'task' },
+      { title: 'Follow, vote, idea detail, and My ideas APIs', type: 'story' },
+      { title: 'Public Portal v2 screens and follower status notifications', type: 'story' },
+    ].forEach((child, ci) => {
+      const childNum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${childNum}`, childNum, child.title, child.type,
+         userIds[0], userIds[0], eid, ci]);
+    });
+  }
+
+  // ===== JQL v2 and SLA-aware queues (epic 53) — shipped =====
+  // The design first called this Epic 51, but Outcome tracking and Portal v2
+  // were already seeded as 51–52 on this branch. Roadmap ordinals are stable,
+  // so the integrated feature takes the next append-only number.
+  {
+    const eid = uuid();
+    const num = atlasIssueNumber;
+    atlasIssueNumber += 1;
+    const [startDate, dueDate] = epicWindow(52);
+    db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, description, type, status, priority, reporter_id, epic_color, start_date, due_date, board_order)
+      VALUES (?, ?, ?, ?, ?, ?, 'epic', 'done', 'high', ?, ?, ?, ?, 52)`,
+      [eid, projId3, `ATLAS-${num}`, num, 'JQL v2 and SLA-aware queues',
+       'A real query parser with grouping, OR, NOT, IN and EMPTY operators, plus persisted SLA boundaries that make breached and at-risk work queues fast, portable and consistent with every SLA badge.',
+       userIds[0], 'blue', startDate, dueDate]);
+    [
+      { title: 'Migration 021: stored SLA due and at-risk boundaries', type: 'task' },
+      { title: 'Tokenizer and recursive-descent parser with useful error offsets', type: 'story' },
+      { title: 'AST-to-SQL compiler and declarative field registry', type: 'story' },
+      { title: 'SLA, request type, category and waiting JQL fields', type: 'story' },
+      { title: 'Queue editor inline validation and field help', type: 'story' },
+      { title: 'Needs-attention queue with live count parity', type: 'task' },
+    ].forEach((child, ci) => {
+      const childNum = atlasIssueNumber;
+      atlasIssueNumber += 1;
+      db.run(`INSERT INTO issues (id, project_id, issue_key, issue_number, title, type, status, priority, assignee_id, reporter_id, parent_id, board_order)
+        VALUES (?, ?, ?, ?, ?, ?, 'done', 'high', ?, ?, ?, ?)`,
+        [uuid(), projId3, `ATLAS-${childNum}`, childNum, child.title, child.type,
+         userIds[0], userIds[0], eid, ci]);
+    });
+  }
 
   // ===== DEMO SERVICE DESK =====
   // Gives the help center shape on a fresh database. Dana (userIds[5]) is the
@@ -2115,6 +2253,9 @@ function seedDemoData() {
       cols: ['key', 'summary', 'status', 'priority', 'sla'] },
     { name: 'Resolved', jql: 'type = request AND status = done', order: 'updated_at',
       cols: ['key', 'summary', 'request_type', 'updated'] },
+    { name: 'Needs attention',
+      jql: 'sla = breached OR (sla = at_risk AND priority IN (high, urgent))',
+      order: 'priority', cols: ['key', 'summary', 'request_type', 'priority', 'sla'] },
   ].forEach((q, i) => {
     db.run('INSERT INTO sd_queues (id, project_id, name, jql, column_keys, order_by, position) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [uuid(), projId4, q.name, q.jql, JSON.stringify(q.cols), q.order, i]);
@@ -2136,8 +2277,8 @@ function seedDemoData() {
 
   // Clocks for the seeded requests. Backdated deliberately: HD-1 breached its
   // 60-minute first response two hours ago, HD-2 is comfortably inside its
-  // window, and HD-3 was resolved within target. Nothing here is computed —
-  // these are the timestamps, and every badge derives itself from them.
+  // window, and HD-3 was resolved within target. Boundaries come from the same
+  // helper as lifecycle writes, so the seeded queue and badge cannot disagree.
   const clocks = [
     { req: 0, metric: 'first_response', target: 60, startedMinsAgo: 180, stopped: null },
     { req: 0, metric: 'resolution', target: 480, startedMinsAgo: 180, stopped: null },
@@ -2147,10 +2288,17 @@ function seedDemoData() {
   ];
   const ago = (mins) => new Date(Date.now() - mins * 60_000).toISOString().replace('T', ' ').slice(0, 19);
   clocks.forEach((c) => {
-    db.run(`INSERT INTO sd_sla_clocks (id, issue_id, metric, target_minutes, started_at, stopped_at)
-      VALUES (?, ?, ?, ?, ?, ?)`,
-      [uuid(), demoRequestIds[c.req], c.metric, c.target, ago(c.startedMinsAgo),
-        c.stopped === null ? null : ago(c.stopped)]);
+    const clock = {
+      target_minutes: c.target,
+      started_at: ago(c.startedMinsAgo),
+      paused_total_minutes: 0,
+    };
+    const boundaries = slaBoundaries(clock);
+    db.run(`INSERT INTO sd_sla_clocks
+      (id, issue_id, metric, target_minutes, started_at, stopped_at, due_at, at_risk_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [uuid(), demoRequestIds[c.req], c.metric, c.target, clock.started_at,
+        c.stopped === null ? null : ago(c.stopped), boundaries.due_at, boundaries.at_risk_at]);
   });
 
   // Deflection + CSAT demo rows are seeded AFTER the wiki below, which is where
@@ -2315,9 +2463,11 @@ function seedProductDemoData() {
   // Features across statuses/timeframes (portal_status on the public ones)
   const mkFeature = (name, description, status, timeframe, portalStatus, effort, value, reach, impact, confidence) => {
     const id = uuid();
-    db.run(`INSERT INTO pb_features (id, project_id, name, description, status, timeframe, portal_status, owner_id, effort, value, reach, impact, confidence, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, projectId, name, description, status, timeframe, portalStatus, pmId, effort, value, reach, impact, confidence, adminId]);
+    const launchedAt = status === 'launched' ? '2026-05-01 09:00:00' : null;
+    db.run(`INSERT INTO pb_features (id, project_id, name, description, status, timeframe, portal_status, owner_id, effort, value, reach, impact, confidence, launched_at, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, projectId, name, description, status, timeframe, portalStatus, pmId,
+       effort, value, reach, impact, confidence, launchedAt, adminId]);
     return id;
   };
   const fSso = mkFeature('SAML single sign-on', 'Enterprise SSO via SAML 2.0 for large accounts.', 'planned', 'now', 'planned', 5, 9, 400, 3, 80);
@@ -2340,6 +2490,8 @@ function seedProductDemoData() {
   const iSso2 = mkInsight('SSO needed for compliance', 'SOC2 audit flagged shared passwords. We need SSO by end of quarter.', 'email', custTom, 1);
   const iApi = mkInsight('Wants Zapier-style integration', 'Team asked to sync issues into their data warehouse. An API with tokens would unblock them.', 'interview', custLena, 1);
   const iCsv = mkInsight('Migration from spreadsheet is painful', 'Onboarding took two days of copy-paste. CSV import would have made it an hour.', 'support', custLena, 1);
+  const iAudit = mkInsight('Scheduled audit exports still need a date filter', 'The export shipped, but compliance still trims each file by hand before uploading it.', 'support', custMaya, 1);
+  db.run('UPDATE pb_insights SET created_at = ? WHERE id = ?', ['2026-06-15 10:00:00', iAudit]);
   mkInsight('Portal is blinding at night', 'Any chance of a dark theme on the ideas portal?', 'portal', custTom, 0);
   mkInsight('Search misses synonyms', 'Searching "login" does not find "sign-in" issues. Smarter search would help a lot.', 'portal', null, 0);
 
@@ -2373,11 +2525,21 @@ function seedProductDemoData() {
   link(iSso2, fSso, 3, 'We need SSO by end of quarter.');
   link(iApi, fApi, 2, 'An API with tokens would unblock them.');
   link(iCsv, fCsv, 2, 'CSV import would have made it an hour.');
+  link(iAudit, fAudit, 2, 'compliance still trims each file by hand');
   // Initech (strategic, $18k) and Acme (strategic, $250k) both weigh 3 under
   // user_impact. Linking each to CSV import makes the two numbers disagree on
   // screen, which is what epic 48 exists to show.
   link(iLaptop, fMobile, 2, 'New starters lose their first day waiting on a replacement.');
   link(iExport, fCsv, 3, 'exporting to CSV by hand every Monday morning');
+
+  // ===== Launch outcome (epic 51) =====
+  // Metric-only on purpose: the seeded launch is old enough to appear as due
+  // in the review queue, giving the screen a real next action instead of a
+  // collection of already-finished examples.
+  db.run(`INSERT INTO pb_feature_outcomes (feature_id, metric, target, baseline, notes)
+          VALUES (?, ?, ?, ?, ?)`,
+    [fAudit, 'Weekly time spent preparing audit exports', 'Under 1 hour per week',
+     '6 hours per week', 'Review after the compliance team completes one full reporting cycle.']);
 
   // ===== Demo theme (epic 49) =====
   // Two insights that are plainly the same ask, grouped so the Themes tab has
@@ -2410,6 +2572,9 @@ function seedProductDemoData() {
       db.run("INSERT OR IGNORE INTO pb_votes (id, feature_id, user_id) VALUES (?, ?, ?)", [uuid(), fid, uid]));
   });
   db.run("INSERT OR IGNORE INTO pb_votes (id, feature_id, user_id) VALUES (?, ?, ?)", [uuid(), fDark, clientId]);
+  // The seeded customer follows SSO so My ideas is useful on first login and a
+  // future status change has a real notification recipient.
+  db.run('INSERT INTO pb_portal_followers (feature_id, user_id) VALUES (?, ?)', [fSso, clientId]);
 
   saveDb();
   console.log('  ✓ Product module demo data seeded');

@@ -9,6 +9,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { slugify, uniqueSlug } = require('../utils/slug');
 
 const requireBoardAdmin = requireRole('admin', 'board_admin');
 const { auditLog } = require('../middleware/logger');
@@ -44,8 +45,11 @@ router.post('/projects/:projectId/sprints', requireAuth, requireBoardAdmin, asyn
 
     const db = await getDb();
     const id = uuidv4();
-    await run(db, 'INSERT INTO sprints (id, project_id, name, goal, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?)',
-      [id, req.params.projectId, name, goal || '', start_date || null, end_date || null]);
+    const taken = (await queryAll(db, 'SELECT slug FROM sprints WHERE project_id = ?', [req.params.projectId]))
+      .map((row) => row.slug).filter(Boolean);
+    const slug = uniqueSlug(slugify(name), taken);
+    await run(db, 'INSERT INTO sprints (id, project_id, name, slug, goal, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [id, req.params.projectId, name, slug, goal || '', start_date || null, end_date || null]);
 
     const sprint = await queryOne(db, 'SELECT * FROM sprints WHERE id = ?', [id]);
     auditLog({ userId: req.userId, action: 'Created sprint', category: 'sprints', entityType: 'sprint', entityId: id, entityName: name });

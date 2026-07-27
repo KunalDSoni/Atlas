@@ -63,11 +63,12 @@ async function createTestApp() {
   testApp.use(requestLogger);
 
   testApp.use('/api/auth', require('../../routes/auth'));
-  // Mirrors server.js: profile, settings and the help center stay open to
-  // clients; everything mounted after blockClients is staff-only.
+  // Mirrors server.js: profile, settings, help center and the narrow portal
+  // stay open to clients; everything after blockClients is staff-only.
   testApp.use('/api/profile', require('../../routes/profile'));
   testApp.use('/api/settings', require('../../routes/settings'));
   testApp.use('/api', require('../../routes/help'));
+  testApp.use('/api', require('../../routes/portal'));
   testApp.use('/api', require('../../middleware/servicedesk').blockClients);
   testApp.use('/api/users', require('../../routes/users'));
   testApp.use('/api/projects', require('../../routes/projects'));
@@ -91,9 +92,9 @@ async function createTestApp() {
   testApp.use('/api', require('../../routes/product-companies'));
   testApp.use('/api', require('../../routes/product-insights'));
   testApp.use('/api', require('../../routes/product-features'));
+  testApp.use('/api', require('../../routes/product-outcomes'));
   testApp.use('/api', require('../../routes/product-objectives'));
   testApp.use('/api', require('../../routes/product-themes'));
-  testApp.use('/api', require('../../routes/portal'));
   testApp.use('/api', require('../../routes/ai'));
   testApp.use('/api', require('../../routes/wiki-attachments'));
   testApp.use('/api', require('../../routes/tokens'));

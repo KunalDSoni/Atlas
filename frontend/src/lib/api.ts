@@ -13,7 +13,8 @@ import type {
   PageApproval, PageApprovalEntry, PageTask,
   WikiAttachment, ApiToken, Webhook, CustomField,
   WorkLog, WorkflowStatus,
-  PbCompany, PbCustomer, PbInsight, PbFeature, PbObjective, PbTheme, PbThemeSuggestion, PortalFeature,
+  PbCompany, PbCustomer, PbInsight, PbFeature, PbFeatureOutcome, PbObjective,
+  PbOutcomesResponse, PbTheme, PbThemeSuggestion, PortalFeature, PortalMe, PortalSubmission,
   PublicRequest, RequestType, Queue, QueueIssue, SlaGoal, SlaState,
   ArticleSuggestion, CuratedArticle, ServiceDeskReport,
 } from './types';
@@ -309,7 +310,7 @@ export const api = {
   search: {
     query: (q: string, projectId?: string) =>
       get<SearchResults>(`/search?q=${encodeURIComponent(q)}${projectId ? `&project_id=${encodeURIComponent(projectId)}` : ''}`),
-    /** JQL-lite evaluation for the wiki [jql:] macro. 400s carry the parse error. */
+    /** JQL v2 evaluation for the wiki [jql:] macro. 400s carry the parse error. */
     jql: (q: string) => get<{ issues: JqlSearchIssue[]; jql?: boolean }>(`/search?q=${encodeURIComponent(q)}`),
   },
 
@@ -497,6 +498,15 @@ export const api = {
     voteFeature: (featureId: string) =>
       post<{ voted: boolean; vote_count: number }>(`/product/features/${featureId}/vote`),
 
+    // Outcomes — the metric can be set before launch; measured/verdict records
+    // the later review. The queue window is caller-configurable and defaults to
+    // the deployment setting on the server.
+    outcomes: (reviewAfterDays?: number) =>
+      get<PbOutcomesResponse>(`/product/outcomes${reviewAfterDays ? `?review_after_days=${reviewAfterDays}` : ''}`),
+    saveOutcome: (featureId: string, body: Partial<Pick<PbFeatureOutcome,
+      'metric' | 'target' | 'baseline' | 'measured' | 'verdict' | 'notes'>>) =>
+      put<PbFeatureOutcome>(`/product/features/${featureId}/outcome`, body),
+
     // Objectives
     objectives: () => get<PbObjective[]>('/product/objectives'),
     objective: (id: string) => get<PbObjective>(`/product/objectives/${id}`),
@@ -512,8 +522,13 @@ export const api = {
 
   portal: {
     features: () => get<PortalFeature[]>('/portal/features'),
-    submitIdea: (body: { title: string; content?: string }) => post<{ ok: boolean; id: string }>('/portal/ideas', body),
-    vote: (featureId: string) => post<{ voted: boolean; vote_count: number }>(`/product/features/${featureId}/vote`),
+    feature: (featureId: string) => get<PortalFeature>(`/portal/features/${featureId}`),
+    submitIdea: (body: { title: string; content?: string }) =>
+      post<PortalSubmission & { ok: true }>('/portal/ideas', body),
+    vote: (featureId: string) => post<PortalFeature>(`/portal/features/${featureId}/vote`),
+    follow: (featureId: string) => post<PortalFeature>(`/portal/features/${featureId}/follow`),
+    unfollow: (featureId: string) => del<PortalFeature>(`/portal/features/${featureId}/follow`),
+    mine: () => get<PortalMe>('/portal/me'),
   },
 
   customFields: {

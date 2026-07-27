@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Bell, CalendarRange, ChevronsUpDown, Columns3, FileClock, Gauge, LayoutDashboard, ListTodo, LogOut, Menu, Package,
   Rocket, Search, Settings as SettingsIcon, Shield, User as UserIcon, Users, BookOpen, Zap,
-  Inbox, Lightbulb, Target, Map as MapIcon, Building2, MessagesSquare, Plus,
+  Activity, Inbox, Lightbulb, Target, Map as MapIcon, Building2, MessagesSquare, Plus,
   Headphones, SlidersHorizontal,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -57,6 +57,7 @@ const PRODUCT_NAV: NavItem[] = [
   { to: '/product/prioritize', label: 'Prioritize', icon: Target },
   { to: '/product/roadmap', label: 'Product roadmap', icon: MapIcon },
   { to: '/product/objectives', label: 'Objectives', icon: Target },
+  { to: '/product/outcomes', label: 'Outcomes', icon: Activity },
   { to: '/product/customers', label: 'Customers', icon: Building2 },
   { to: '/portal', label: 'Ideas portal', icon: MessagesSquare },
 ];

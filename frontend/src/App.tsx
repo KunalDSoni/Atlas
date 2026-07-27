@@ -10,6 +10,7 @@ import { FocusModeProvider } from '@/context/focus-mode';
 import { AppShell } from '@/components/app/app-shell';
 import { ProjectScope } from '@/components/app/project-scope';
 import { LegacyProjectRedirect } from '@/components/app/legacy-redirect';
+import { PortalShell } from '@/components/app/portal-shell';
 import { PROJECT_SCREENS } from '@/lib/urls';
 import LoginScreen from '@/screens/login';
 
@@ -28,8 +29,11 @@ const ProductFeatures = lazy(() => import('@/screens/product-features'));
 const ProductPrioritize = lazy(() => import('@/screens/product-prioritize'));
 const ProductRoadmap = lazy(() => import('@/screens/product-roadmap'));
 const ProductObjectives = lazy(() => import('@/screens/product-objectives'));
+const ProductOutcomes = lazy(() => import('@/screens/product-outcomes'));
 const ProductCustomers = lazy(() => import('@/screens/product-customers'));
 const Portal = lazy(() => import('@/screens/portal'));
+const PortalFeature = lazy(() => import('@/screens/portal-feature'));
+const PortalMine = lazy(() => import('@/screens/portal-mine'));
 const HelpCenter = lazy(() => import('@/screens/help-center'));
 const HelpRequests = lazy(() => import('@/screens/help-requests'));
 
@@ -105,8 +109,8 @@ function ProtectedLayout() {
               <Route path="/product/prioritize" element={<ProductPrioritize />} />
               <Route path="/product/roadmap" element={<ProductRoadmap />} />
               <Route path="/product/objectives" element={<ProductObjectives />} />
+              <Route path="/product/outcomes" element={<ProductOutcomes />} />
               <Route path="/product/customers" element={<ProductCustomers />} />
-              <Route path="/portal" element={<Portal />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/admin" element={<RequireAdmin><AdminOverview /></RequireAdmin>} />
@@ -148,6 +152,12 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<LoginScreen />} />
             <Route path="/help/*" element={<HelpLayout />} />
+            <Route path="/portal" element={<PortalShell />}>
+              <Route index element={<Suspense fallback={<FullPageSpinner />}><Portal /></Suspense>} />
+              <Route path="features/:featureId" element={<Suspense fallback={<FullPageSpinner />}><PortalFeature /></Suspense>} />
+              <Route path="mine" element={<Suspense fallback={<FullPageSpinner />}><PortalMine /></Suspense>} />
+              <Route path="*" element={<Navigate to="/portal" replace />} />
+            </Route>
             <Route path="*" element={<ProtectedLayout />} />
           </Routes>
           <Toaster richColors closeButton position="bottom-right" />

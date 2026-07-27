@@ -23,12 +23,19 @@ const { demandForFeatures } = require('../utils/demand');
 const { buildSpecBody } = require('../utils/spec-draft');
 const { complete, aiEnabled, MODELS } = require('./ai');
 const { projectStatuses } = require('./workflows');
+const { outcomeDetailsForFeature, sqlTimestamp } = require('../utils/product-outcomes');
+const { notify } = require('../utils/notify');
 
 const router = express.Router();
 
 const FEATURE_STATUSES = ['idea', 'discovery', 'planned', 'in_progress', 'launched', 'archived'];
 const TIMEFRAMES = ['now', 'next', 'later'];
 const PORTAL_STATUSES = ['under_consideration', 'planned', 'launched'];
+const PORTAL_STATUS_LABELS = {
+  under_consideration: 'Under consideration',
+  planned: 'Planned',
+  launched: 'Launched',
+};
 
 // Tier-weighted sum of linked insight importance. ELSE 1 covers both 'standard'
 // and insights with no customer/company attached.
@@ -88,6 +95,12 @@ async function getEnrichedFeature(db, id) {
   return attachDemand(feature, map.get(id));
 }
 
+async function getFeatureWithOutcome(db, id) {
+  const feature = await getEnrichedFeature(db, id);
+  if (!feature) return null;
+  return { ...feature, ...await outcomeDetailsForFeature(db, feature) };
+}
+
 // One demand query for the whole list rather than one per feature.
 async function withDemand(db, features) {
   const map = await demandForFeatures(db, features.map((f) => f.id));
@@ -121,13 +134,14 @@ router.post('/product/features', requireAuth, async (req, res) => {
     if (portal_status && !PORTAL_STATUSES.includes(portal_status)) return res.status(400).json({ error: 'invalid portal_status' });
 
     const id = uuidv4();
-    await run(db, `INSERT INTO pb_features (id, project_id, name, description, status, timeframe, portal_status, owner_id, effort, value, reach, impact, confidence, release_id, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    const featureStatus = status || 'idea';
+    await run(db, `INSERT INTO pb_features (id, project_id, name, description, status, timeframe, portal_status, owner_id, effort, value, reach, impact, confidence, release_id, launched_at, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, project_id || null, name.trim(), description || '', status || 'idea',
        timeframe || null, portal_status || null, owner_id || null,
        effort ?? null, value ?? null, reach ?? null, impact ?? null, confidence ?? null,
-       release_id || null, req.userId]);
-    res.status(201).json(await getEnrichedFeature(db, id));
+       release_id || null, featureStatus === 'launched' ? sqlTimestamp() : null, req.userId]);
+    res.status(201).json(await getFeatureWithOutcome(db, id));
   } catch (e) { serverError(res, e); }
 });
 
@@ -163,6 +177,7 @@ router.get('/product/features/:id', requireAuth, async (req, res) => {
        JOIN pb_objectives o ON fo.objective_id = o.id
        WHERE fo.feature_id = ?
        ORDER BY o.name`, [req.params.id]);
+    Object.assign(feature, await outcomeDetailsForFeature(db, feature));
     res.json(feature);
   } catch (e) { serverError(res, e); }
 });
@@ -183,9 +198,31 @@ router.put('/product/features/:id', requireAuth, async (req, res) => {
                     'owner_id', 'effort', 'value', 'reach', 'impact', 'confidence', 'release_id'];
     const updated = {};
     fields.forEach(fld => { updated[fld] = body[fld] !== undefined ? body[fld] : existing[fld]; });
-    await run(db, `UPDATE pb_features SET project_id = ?, name = ?, description = ?, status = ?, timeframe = ?, portal_status = ?, owner_id = ?, effort = ?, value = ?, reach = ?, impact = ?, confidence = ?, release_id = ?, updated_at = datetime('now') WHERE id = ?`,
-      [...fields.map(fld => updated[fld]), req.params.id]);
-    res.json(await getEnrichedFeature(db, req.params.id));
+    const launchedAt = updated.status === 'launched' && !existing.launched_at
+      ? sqlTimestamp() : existing.launched_at;
+    await run(db, `UPDATE pb_features SET project_id = ?, name = ?, description = ?, status = ?, timeframe = ?, portal_status = ?, owner_id = ?, effort = ?, value = ?, reach = ?, impact = ?, confidence = ?, release_id = ?, launched_at = ?, updated_at = datetime('now') WHERE id = ?`,
+      [...fields.map(fld => updated[fld]), launchedAt, req.params.id]);
+
+    // A follower asked to hear when the public promise changes. Fan out only
+    // after the update succeeds, and use the existing notify helper so in-app,
+    // SSE, email, and user email preferences stay on one delivery path.
+    if (body.portal_status !== undefined && updated.portal_status !== existing.portal_status) {
+      const followers = await queryAll(db,
+        'SELECT user_id FROM pb_portal_followers WHERE feature_id = ?', [req.params.id]);
+      const statusText = updated.portal_status
+        ? `is now ${PORTAL_STATUS_LABELS[updated.portal_status]}`
+        : 'is no longer on the public roadmap';
+      for (const follower of followers) {
+        await notify(db, {
+          userId: follower.user_id,
+          actorId: req.userId,
+          type: 'portal_status_changed',
+          message: `${updated.name} ${statusText}`,
+          link: updated.portal_status ? `/portal/features/${req.params.id}` : '/portal',
+        });
+      }
+    }
+    res.json(await getFeatureWithOutcome(db, req.params.id));
   } catch (e) { serverError(res, e); }
 });
 
@@ -197,6 +234,8 @@ router.delete('/product/features/:id', requireAuth, async (req, res) => {
     await run(db, 'DELETE FROM pb_feature_issues WHERE feature_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM pb_feature_objectives WHERE feature_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM pb_votes WHERE feature_id = ?', [req.params.id]);
+    await run(db, 'DELETE FROM pb_portal_followers WHERE feature_id = ?', [req.params.id]);
+    await run(db, 'DELETE FROM pb_feature_outcomes WHERE feature_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM pb_features WHERE id = ?', [req.params.id]);
     res.json({ ok: true });
   } catch (e) { serverError(res, e); }

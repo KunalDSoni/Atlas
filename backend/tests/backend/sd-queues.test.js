@@ -1,7 +1,7 @@
 /**
  * AGENT QUEUES (ATLAS-42)
  *
- * A queue is a stored JQL string evaluated through utils/jql.js. These tests
+ * A queue is a stored JQL string evaluated through utils/jql/. These tests
  * pin the two things that could quietly rot: the stored query must be VALIDATED
  * at write time (a queue that cannot parse is a broken sidebar entry nobody
  * notices until an agent clicks it), and the sidebar counts must agree with the

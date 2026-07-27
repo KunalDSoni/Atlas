@@ -473,12 +473,10 @@ sidebar count equals the rows the queue returns. If `UNION ALL` is still wanted,
 it is a drop-in replacement in `routes/queues.js` — but the stated reason for it
 does not apply.
 
-**JQL v2 and the stored `due_at` are not built.** Queues run on JQL v1, so
-`sla = breached`, `waiting_for_customer` and `request_type` are not expressible
-and the seeded demo queues use only what v1 supports. Decisions 1 and 2 remain
-the right next step; nothing shipped here forecloses them, and `due_at` can be
-added to `sd_sla_clocks` alongside the existing lifecycle writes in
-`utils/sla-clocks.js`.
+**Follow-up shipped in Epic 53.** JQL v2 now provides `OR`, `IN`, `IS EMPTY`,
+`NOT` and grouping; `sla`, `waiting_for_customer` and `request_type` are
+filterable; and migration 021 stores `due_at` plus `at_risk_at` using the same
+JavaScript boundary helper as the lifecycle. See `2026-07-22-jql-v2-design.md`.
 
 **Epic numbering follows the original spec** (42 = queues, 43 = SLAs), not the
 unapproved restructure. Those two epics are now seeded, so renumbering is no

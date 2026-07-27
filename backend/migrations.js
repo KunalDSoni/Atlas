@@ -658,6 +658,197 @@ const MIGRATIONS = [
       },
     }],
   },
+  {
+    id: '018_sprint_release_slugs',
+    description: 'Stable URL slugs for sprints and releases',
+    steps: [
+      {
+        addColumn: {
+          table: 'sprints', column: 'slug',
+          sqlite: 'ALTER TABLE sprints ADD COLUMN slug TEXT',
+          mysql: 'ALTER TABLE sprints ADD COLUMN slug VARCHAR(255) NULL',
+        },
+      },
+      {
+        addColumn: {
+          table: 'versions', column: 'slug',
+          sqlite: 'ALTER TABLE versions ADD COLUMN slug TEXT',
+          mysql: 'ALTER TABLE versions ADD COLUMN slug VARCHAR(255) NULL',
+        },
+      },
+      {
+        run: async (adapter) => {
+          if (!['sqlite', 'mysql'].includes(adapter.driver)) {
+            throw new Error(`018: unsupported driver ${adapter.driver}`);
+          }
+          const { slugify, uniqueSlug } = require('./utils/slug');
+          for (const table of ['sprints', 'versions']) {
+            const rows = await adapter.all(
+              `SELECT id, project_id, name, slug FROM ${table} ORDER BY created_at, id`);
+            const seen = {};
+            for (const row of rows) {
+              seen[row.project_id] = seen[row.project_id] || [];
+              if (row.slug) {
+                seen[row.project_id].push(row.slug);
+                continue;
+              }
+              const slug = uniqueSlug(slugify(row.name), seen[row.project_id]);
+              seen[row.project_id].push(slug);
+              await adapter.exec(`UPDATE ${table} SET slug = ? WHERE id = ?`, [slug, row.id]);
+            }
+          }
+        },
+      },
+      {
+        sql: {
+          sqlite: 'CREATE UNIQUE INDEX IF NOT EXISTS idx_sprints_project_slug ON sprints(project_id, slug)',
+          mysql: 'CREATE UNIQUE INDEX idx_sprints_project_slug ON sprints(project_id, slug)',
+        },
+      },
+      {
+        sql: {
+          sqlite: 'CREATE UNIQUE INDEX IF NOT EXISTS idx_versions_project_slug ON versions(project_id, slug)',
+          mysql: 'CREATE UNIQUE INDEX idx_versions_project_slug ON versions(project_id, slug)',
+        },
+      },
+    ],
+  },
+  {
+    // The product-discovery design originally called this migration 018.
+    // Permanent entity URLs landed first and use 018 for sprint/release slugs,
+    // so outcome tracking takes the next append-only id instead of rewriting
+    // migration history.
+    id: '019_feature_outcomes',
+    description: 'Feature success measures, launch reviews, and a durable launch timestamp',
+    steps: [
+      {
+        addColumn: {
+          table: 'pb_features', column: 'launched_at',
+          sqlite: 'ALTER TABLE pb_features ADD COLUMN launched_at TEXT',
+          mysql: 'ALTER TABLE pb_features ADD COLUMN launched_at DATETIME(3) NULL',
+        },
+      },
+      {
+        sql: {
+          sqlite: `CREATE TABLE IF NOT EXISTS pb_feature_outcomes (
+            feature_id TEXT PRIMARY KEY REFERENCES pb_features(id),
+            metric TEXT,
+            target TEXT,
+            baseline TEXT,
+            measured TEXT,
+            verdict TEXT CHECK(verdict IS NULL OR verdict IN ('achieved','partial','missed','too_early')),
+            reviewed_at TEXT,
+            reviewed_by TEXT REFERENCES users(id),
+            notes TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+          )`,
+          mysql: `CREATE TABLE IF NOT EXISTS pb_feature_outcomes (
+            feature_id VARCHAR(36) PRIMARY KEY,
+            metric TEXT,
+            target TEXT,
+            baseline TEXT,
+            measured TEXT,
+            verdict VARCHAR(20) NULL,
+            reviewed_at DATETIME(3) NULL,
+            reviewed_by VARCHAR(36) NULL,
+            notes TEXT,
+            created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+            updated_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
+          ) DEFAULT CHARSET=utf8mb4`,
+        },
+      },
+      // Existing launched features predate launched_at. updated_at is the
+      // closest honest timestamp Atlas has for them; all future transitions
+      // write the exact first-launch time and never overwrite it on later edits.
+      {
+        sql: {
+          sqlite: `UPDATE pb_features
+                   SET launched_at = COALESCE(updated_at, created_at, datetime('now'))
+                   WHERE status = 'launched' AND launched_at IS NULL`,
+          mysql: `UPDATE pb_features
+                  SET launched_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP(3))
+                  WHERE status = 'launched' AND launched_at IS NULL`,
+        },
+      },
+    ],
+  },
+  {
+    // Portal v2 was numbered 019 in its design. Outcome tracking now owns 019,
+    // so this follows it without changing append-only migration history.
+    id: '020_portal_followers',
+    description: 'Customer follows for public product features',
+    steps: [{
+      sql: {
+        sqlite: `CREATE TABLE IF NOT EXISTS pb_portal_followers (
+          feature_id TEXT NOT NULL REFERENCES pb_features(id),
+          user_id TEXT NOT NULL REFERENCES users(id),
+          created_at TEXT DEFAULT (datetime('now')),
+          PRIMARY KEY (feature_id, user_id)
+        )`,
+        mysql: `CREATE TABLE IF NOT EXISTS pb_portal_followers (
+          feature_id VARCHAR(36) NOT NULL,
+          user_id VARCHAR(36) NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (feature_id, user_id)
+        ) DEFAULT CHARSET=utf8mb4`,
+      },
+    }],
+  },
+  {
+    // Designed as migration 018 before stable entity URLs and the product
+    // loop-closing slices landed. Append-only history makes this 021 here.
+    id: '021_sla_query_boundaries',
+    description: 'Stored SLA due and at-risk boundaries for JQL v2',
+    steps: [
+      {
+        addColumn: {
+          table: 'sd_sla_clocks', column: 'due_at',
+          sqlite: 'ALTER TABLE sd_sla_clocks ADD COLUMN due_at TEXT',
+          mysql: 'ALTER TABLE sd_sla_clocks ADD COLUMN due_at DATETIME(3) NULL',
+        },
+      },
+      {
+        addColumn: {
+          table: 'sd_sla_clocks', column: 'at_risk_at',
+          sqlite: 'ALTER TABLE sd_sla_clocks ADD COLUMN at_risk_at TEXT',
+          mysql: 'ALTER TABLE sd_sla_clocks ADD COLUMN at_risk_at DATETIME(3) NULL',
+        },
+      },
+      {
+        // Backfill with the same pure helper lifecycle writes use. SQL only
+        // compares timestamps; it never reimplements SLA arithmetic per dialect.
+        run: async (adapter) => {
+          if (!['sqlite', 'mysql'].includes(adapter.driver)) {
+            throw new Error(`021: unsupported driver ${adapter.driver}`);
+          }
+          const { slaBoundaries } = require('./utils/sla');
+          const clocks = await adapter.all(
+            `SELECT id, started_at, target_minutes, paused_total_minutes,
+                    due_at, at_risk_at
+               FROM sd_sla_clocks`);
+          for (const clock of clocks) {
+            const boundaries = slaBoundaries(clock);
+            await adapter.exec(
+              'UPDATE sd_sla_clocks SET due_at = ?, at_risk_at = ? WHERE id = ?',
+              [boundaries.due_at, boundaries.at_risk_at, clock.id]);
+          }
+        },
+      },
+      {
+        sql: {
+          sqlite: 'CREATE INDEX IF NOT EXISTS idx_sla_clocks_due ON sd_sla_clocks(due_at)',
+          mysql: 'CREATE INDEX idx_sla_clocks_due ON sd_sla_clocks(due_at)',
+        },
+      },
+      {
+        sql: {
+          sqlite: 'CREATE INDEX IF NOT EXISTS idx_sla_clocks_at_risk ON sd_sla_clocks(at_risk_at)',
+          mysql: 'CREATE INDEX idx_sla_clocks_at_risk ON sd_sla_clocks(at_risk_at)',
+        },
+      },
+    ],
+  },
 ];
 
 const LEDGER_SQL = {

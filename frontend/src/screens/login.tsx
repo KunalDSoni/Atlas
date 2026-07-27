@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,12 +9,16 @@ import { useAuth } from '@/context/auth-provider';
 export default function LoginScreen() {
   const { user, login } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  if (user) return <Navigate to="/dashboard" replace />;
+  const requested = searchParams.get('next');
+  const next = requested?.startsWith('/') && !requested.startsWith('//') ? requested : '/dashboard';
+
+  if (user) return <Navigate to={next} replace />;
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -22,7 +26,7 @@ export default function LoginScreen() {
     setSubmitting(true);
     try {
       await login(email.trim(), password);
-      navigate('/dashboard', { replace: true });
+      navigate(next, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to sign in');
     } finally {
