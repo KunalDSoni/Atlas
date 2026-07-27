@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ProjectListScreen } from '../screens/ProjectListScreen';
 import { BoardScreen } from '../screens/BoardScreen';
 import { IssueDetailScreen } from '../screens/IssueDetailScreen';
+import { CreateIssueScreen } from '../screens/CreateIssueScreen';
 
 export type MainStackParamList = {
   Projects: undefined;
@@ -23,6 +24,7 @@ export function MainStack() {
         options={({ route }) => ({ title: route.params.projectName })}
       />
       <Stack.Screen name="IssueDetail" component={IssueDetailScreen} options={{ title: 'Issue' }} />
+      <Stack.Screen name="CreateIssue" component={CreateIssueScreen} options={{ title: 'New Issue', presentation: 'modal' }} />
     </Stack.Navigator>
   );
 }
