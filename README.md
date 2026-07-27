@@ -20,6 +20,19 @@ cd ../backend && npm install && node server.js
 For frontend development with hot reload, run the backend and then
 `cd frontend && npm run dev` — Vite proxies `/api` to port 3001.
 
+## Mobile app
+
+The `mobile/` directory contains an Expo (React Native) app that talks to this repo's backend API. See `mobile/README.md` (or the phase 1 plan under `docs/superpowers/plans/`) for setup.
+
+To build an installable Android APK for testing:
+
+```bash
+cd mobile
+npx eas build --platform android --profile preview
+```
+
+This requires an Expo account (`npx eas login`) the first time it's run.
+
 ## Default Credentials
 
 ⚠️ **Demo data only.** These accounts are seeded when `SEED_DEMO_DATA=true` and all share
