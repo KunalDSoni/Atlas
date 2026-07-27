@@ -6,6 +6,12 @@ export function setAuthToken(token: string | null): void {
   authToken = token;
 }
 
+let unauthorizedHandler: (() => void) | null = null;
+
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  unauthorizedHandler = handler;
+}
+
 export class ApiError extends Error {
   status: number;
   body: unknown;
@@ -29,6 +35,7 @@ export async function apiFetch<T>(path: string, options: { method?: string; body
 
   const body = await response.json().catch(() => null);
   if (!response.ok) {
+    if (response.status === 401) unauthorizedHandler?.();
     throw new ApiError(response.status, body);
   }
   return body as T;

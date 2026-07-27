@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { login as apiLogin, logout as apiLogout, LoginResponse } from '../api/auth';
-import { setAuthToken } from '../api/client';
+import { setAuthToken, setUnauthorizedHandler } from '../api/client';
 
 export type AuthUser = LoginResponse;
 
@@ -45,12 +45,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(response);
   }, []);
 
-  const signOut = useCallback(async () => {
-    try {
-      await apiLogout();
-    } catch {
-      // Best effort — clear local session regardless of server response.
-    }
+  const clearSession = useCallback(async () => {
     setAuthToken(null);
     await Promise.all([
       SecureStore.deleteItemAsync(TOKEN_KEY),
@@ -58,6 +53,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     ]);
     setUser(null);
   }, []);
+
+  const signOut = useCallback(async () => {
+    try {
+      await apiLogout();
+    } catch {
+      // Best effort — clear local session regardless of server response.
+    }
+    await clearSession();
+  }, [clearSession]);
+
+  useEffect(() => {
+    setUnauthorizedHandler(clearSession);
+    return () => setUnauthorizedHandler(null);
+  }, [clearSession]);
 
   return (
     <AuthContext.Provider value={{ user, isLoading, signIn, signOut }}>

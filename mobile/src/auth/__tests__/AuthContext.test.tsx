@@ -4,6 +4,7 @@ import { Text, Button } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { AuthProvider, useAuth } from '../AuthContext';
 import * as authApi from '../../api/auth';
+import { apiFetch } from '../../api/client';
 
 jest.mock('../../api/auth');
 jest.mock('expo-secure-store');
@@ -21,6 +22,7 @@ function TestConsumer() {
 }
 
 beforeEach(() => {
+  jest.clearAllMocks();
   (SecureStore.getItemAsync as jest.Mock).mockResolvedValue(null);
   (SecureStore.setItemAsync as jest.Mock).mockResolvedValue(undefined);
   (SecureStore.deleteItemAsync as jest.Mock).mockResolvedValue(undefined);
@@ -56,4 +58,19 @@ test('signOut clears stored session', async () => {
 
   await findByText('logged-out');
   expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith('atlas_token');
+});
+
+test('a 401 from any request clears the session without calling logout API', async () => {
+  (authApi.login as jest.Mock).mockResolvedValue({ id: '1', email: 'a@b.com', name: 'A', role: 'member', avatar_color: null, avatar_url: null, token: 'tok123' });
+
+  const { findByText, getByText } = await render(<AuthProvider><TestConsumer /></AuthProvider>);
+  await findByText('logged-out');
+  fireEvent.press(getByText('login'));
+  await findByText('logged-in:a@b.com');
+
+  global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({ error: 'Not authenticated' }) }) as any;
+  await expect(apiFetch('/projects')).rejects.toMatchObject({ status: 401 });
+
+  await findByText('logged-out');
+  expect(authApi.logout).not.toHaveBeenCalled();
 });
