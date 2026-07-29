@@ -21,6 +21,8 @@ const { issueCustomFieldsBatch } = require('./custom-fields');
 const { placeholders, indexBy, countsBy } = require('../utils/sql');
 const sla = require('../utils/sla-clocks');
 const { issueLink } = require('../utils/links');
+const { applyAutoWorklog } = require('../utils/auto-worklog');
+const { categoryOf } = require('../utils/flow');
 
 const requireBoardAdmin = requireRole('admin', 'board_admin');
 
@@ -438,6 +440,15 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
       await sla.onStatusChange(db, updated, updated.status);
       await runAutomation(db, { type: 'status_changed', issue: updated, actorId: req.userId });
       await checkAllSubtasksDone(db, updated, req.userId);
+
+      const statuses = await projectStatuses(db, updated.project_id);
+      const newCategory = categoryOf(updated.status, statuses);
+      if (newCategory === 'done') {
+        await applyAutoWorklog(db, updated, statuses, req.userId);
+      } else if (newCategory === 'todo') {
+        await run(db, 'UPDATE issues SET auto_worklog_locked = 0 WHERE id = ?', [updated.id]);
+      }
+
       updated = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
     }
     dispatchWebhook(db, updated.project_id, 'issue.updated', { id: updated.id, issue_key: updated.issue_key, title: updated.title, type: updated.type, status: updated.status });
