@@ -224,6 +224,32 @@ describe('Wiki Page Numbers and Keys', () => {
     const res = await request(app).get(`/api/wiki/pages/${page.body.id}`).set(headers);
     expect(res.body.page_key).toBe(`${key}-WIKI-1`);
   });
+
+  test('GET /api/wiki/pages/by-key/:pageKey resolves case-insensitively', async () => {
+    const key = 'BK' + Date.now().toString(36).slice(-4).toUpperCase();
+    const space = await request(app)
+      .post('/api/wiki/spaces')
+      .set(headers)
+      .send({ name: 'By Key Docs', key });
+    const newSpaceId = space.body.id;
+
+    const page = await request(app)
+      .post(`/api/wiki/spaces/${newSpaceId}/pages`)
+      .set(headers)
+      .send({ title: 'One' });
+
+    const res = await request(app)
+      .get(`/api/wiki/pages/by-key/${key.toLowerCase()}-wiki-1`)
+      .set(headers);
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(page.body.id);
+    expect(res.body.page_key).toBe(`${key}-WIKI-1`);
+  });
+
+  test('GET /api/wiki/pages/by-key/:pageKey 404s for an unknown key', async () => {
+    const res = await request(app).get('/api/wiki/pages/by-key/NOPE-WIKI-99').set(headers);
+    expect(res.status).toBe(404);
+  });
 });
 
 describe('Wiki Space Cascade Delete', () => {

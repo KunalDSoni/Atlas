@@ -284,6 +284,25 @@ async function getPageDetail(db, req, whereClause, params) {
   return { status: 200, body: page };
 }
 
+// GET /api/wiki/pages/by-key/:pageKey — resolve a human-readable key
+// (DOCS-WIKI-1), the wiki mirror of GET /api/issues/by-key/:key.
+router.get('/wiki/pages/by-key/:pageKey', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const key = String(req.params.pageKey).toUpperCase();
+    const cut = key.lastIndexOf('-WIKI-');
+    if (cut < 0) return res.status(404).json({ error: 'Page not found' });
+    const spaceKey = key.slice(0, cut);
+    const pageNumber = Number(key.slice(cut + '-WIKI-'.length));
+    if (!Number.isInteger(pageNumber)) return res.status(404).json({ error: 'Page not found' });
+    const { status, body } = await getPageDetail(
+      db, req,
+      'UPPER(s.space_key) = ? AND p.page_number = ?',
+      [spaceKey, pageNumber]);
+    res.status(status).json(body);
+  } catch (e) { serverError(res, e); }
+});
+
 router.get('/wiki/pages/:id', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
