@@ -71,3 +71,20 @@ test('editing an auto work log locks the issue against future auto-recompute', a
   expect(log.source).toBe('manual');
   expect(Number(log.locked_from_auto)).toBe(1);
 });
+
+test('DELETE /api/worklogs/:id of an auto work log locks the issue against future auto-recompute', async () => {
+  const created = await request(getApp())
+    .post(`/api/projects/${projectId}/issues`).set(headers)
+    .send({ title: 'Auto delete lock test', type: 'task' });
+  const issueId = created.body.id;
+
+  const autoId = uuidv4();
+  await run(db, "INSERT INTO work_logs (id, issue_id, user_id, minutes, source) VALUES (?, ?, ?, ?, 'auto')",
+    [autoId, issueId, created.body.reporter_id, 60]);
+
+  const delRes = await request(getApp()).delete(`/api/worklogs/${autoId}`).set(headers);
+  expect(delRes.status).toBe(200);
+
+  const issue = await queryOne(db, 'SELECT auto_worklog_locked FROM issues WHERE id = ?', [issueId]);
+  expect(Number(issue.auto_worklog_locked)).toBe(1);
+});
