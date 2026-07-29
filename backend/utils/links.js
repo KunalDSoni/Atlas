@@ -17,4 +17,13 @@ function issueLink(issueKey) {
   return `/${projectKey.toLowerCase()}/${key}`;
 }
 
-module.exports = { issueLink };
+/**
+ * Permanent path for a wiki page: DOCS-WIKI-12 -> /wiki/DOCS-WIKI-12.
+ * Unlike issues, wiki pages are not scoped under a project-key path segment —
+ * mirrors frontend/src/lib/urls.ts's wikiPageUrl, which must stay in step.
+ */
+function wikiPageLink(pageKey) {
+  return `/wiki/${String(pageKey).toUpperCase()}`;
+}
+
+module.exports = { issueLink, wikiPageLink };

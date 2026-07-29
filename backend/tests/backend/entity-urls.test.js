@@ -67,6 +67,14 @@ describe('issueLink', () => {
   });
 });
 
+describe('wikiPageLink', () => {
+  const { wikiPageLink } = require('../../utils/links');
+
+  test('wikiPageLink builds a canonical wiki page path', () => {
+    expect(wikiPageLink('DOCS-WIKI-12')).toBe('/wiki/DOCS-WIKI-12');
+  });
+});
+
 describe('notification links', () => {
   test('an assignment notification links to the permanent issue URL', async () => {
     const { userHeaders } = require('./setup');
