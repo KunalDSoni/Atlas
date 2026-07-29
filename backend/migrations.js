@@ -873,6 +873,47 @@ const MIGRATIONS = [
       },
     }],
   },
+  {
+    id: '023_auto_time_tracking_business_hours',
+    description: 'Business-hours profiles for projects/users; work_logs source + lock; issue auto-worklog lock',
+    steps: [
+      {
+        addColumn: {
+          table: 'projects', column: 'business_hours',
+          sqlite: 'ALTER TABLE projects ADD COLUMN business_hours TEXT',
+          mysql: 'ALTER TABLE projects ADD COLUMN business_hours TEXT',
+        },
+      },
+      {
+        addColumn: {
+          table: 'users', column: 'business_hours',
+          sqlite: 'ALTER TABLE users ADD COLUMN business_hours TEXT',
+          mysql: 'ALTER TABLE users ADD COLUMN business_hours TEXT',
+        },
+      },
+      {
+        addColumn: {
+          table: 'work_logs', column: 'source',
+          sqlite: "ALTER TABLE work_logs ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'",
+          mysql: "ALTER TABLE work_logs ADD COLUMN source VARCHAR(20) NOT NULL DEFAULT 'manual'",
+        },
+      },
+      {
+        addColumn: {
+          table: 'work_logs', column: 'locked_from_auto',
+          sqlite: 'ALTER TABLE work_logs ADD COLUMN locked_from_auto INTEGER NOT NULL DEFAULT 0',
+          mysql: 'ALTER TABLE work_logs ADD COLUMN locked_from_auto TINYINT NOT NULL DEFAULT 0',
+        },
+      },
+      {
+        addColumn: {
+          table: 'issues', column: 'auto_worklog_locked',
+          sqlite: 'ALTER TABLE issues ADD COLUMN auto_worklog_locked INTEGER NOT NULL DEFAULT 0',
+          mysql: 'ALTER TABLE issues ADD COLUMN auto_worklog_locked TINYINT NOT NULL DEFAULT 0',
+        },
+      },
+    ],
+  },
 ];
 
 const LEDGER_SQL = {
