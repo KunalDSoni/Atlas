@@ -1,15 +1,23 @@
 // ===== TIME TRACKING MODULE =====
 // GET    /api/issues/:id/worklogs - Work log entries for an issue (newest first)
-// POST   /api/issues/:id/worklogs - Log work { minutes, comment? }; adds to issues.time_spent
-// DELETE /api/worklogs/:id - Remove a work log (author or admin); subtracts from time_spent
+// POST   /api/issues/:id/worklogs - Log work { minutes, comment? }; source='manual'
+// PATCH  /api/worklogs/:id - Edit a work log (author or admin); auto rows become
+//                            manual + locked, so a later auto-recompute won't
+//                            silently overwrite the correction (utils/auto-worklog.js)
+// DELETE /api/worklogs/:id - Remove a work log (author or admin)
 
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
+const { recomputeTimeSpent } = require('../utils/worklog-sync');
 
 const router = express.Router();
+
+function canEditWorklog(log, req) {
+  return log.user_id === req.userId || req.userRole === 'admin';
+}
 
 // GET /api/issues/:issueId/worklogs
 router.get('/issues/:issueId/worklogs', requireAuth, async (req, res) => {
@@ -31,19 +39,61 @@ router.post('/issues/:issueId/worklogs', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'minutes must be a positive number' });
     }
     const db = await getDb();
-    const issue = await queryOne(db, 'SELECT id, time_spent FROM issues WHERE id = ?', [req.params.issueId]);
+    const issue = await queryOne(db, 'SELECT id FROM issues WHERE id = ?', [req.params.issueId]);
     if (!issue) return res.status(404).json({ error: 'Issue not found' });
 
     const id = uuidv4();
-    await run(db, 'INSERT INTO work_logs (id, issue_id, user_id, minutes, comment) VALUES (?, ?, ?, ?, ?)',
+    await run(db, "INSERT INTO work_logs (id, issue_id, user_id, minutes, comment, source) VALUES (?, ?, ?, ?, ?, 'manual')",
       [id, req.params.issueId, req.userId, minutes, req.body.comment || null]);
-    await run(db, "UPDATE issues SET time_spent = ?, updated_at = datetime('now') WHERE id = ?",
-      [Number(issue.time_spent || 0) + minutes, req.params.issueId]);
+    await recomputeTimeSpent(db, req.params.issueId);
 
     const log = await queryOne(db, `
       SELECT w.*, u.name AS user_name, u.avatar_color AS user_color
       FROM work_logs w LEFT JOIN users u ON u.id = w.user_id WHERE w.id = ?`, [id]);
     res.status(201).json({ ...log, minutes: Number(log.minutes) });
+  } catch (e) { serverError(res, e); }
+});
+
+// PATCH /api/worklogs/:id
+router.patch('/worklogs/:id', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const log = await queryOne(db, 'SELECT * FROM work_logs WHERE id = ?', [req.params.id]);
+    if (!log) return res.status(404).json({ error: 'Work log not found' });
+    if (!canEditWorklog(log, req)) return res.status(403).json({ error: 'Not your work log' });
+
+    const updates = [];
+    const params = [];
+    if (req.body.minutes !== undefined) {
+      const minutes = Math.round(Number(req.body.minutes));
+      if (!Number.isFinite(minutes) || minutes <= 0) {
+        return res.status(400).json({ error: 'minutes must be a positive number' });
+      }
+      updates.push('minutes = ?');
+      params.push(minutes);
+    }
+    if (req.body.comment !== undefined) {
+      updates.push('comment = ?');
+      params.push(req.body.comment || null);
+    }
+    if (updates.length === 0) return res.status(400).json({ error: 'Nothing to update' });
+
+    // Editing an auto-generated entry converts it to a locked manual entry —
+    // see utils/auto-worklog.js: a locked issue is skipped on the next
+    // status-completion recompute, so the human correction sticks.
+    if (log.source === 'auto') {
+      updates.push("source = 'manual'", 'locked_from_auto = 1');
+      await run(db, 'UPDATE issues SET auto_worklog_locked = 1 WHERE id = ?', [log.issue_id]);
+    }
+
+    params.push(req.params.id);
+    await run(db, `UPDATE work_logs SET ${updates.join(', ')} WHERE id = ?`, params);
+    await recomputeTimeSpent(db, log.issue_id);
+
+    const updated = await queryOne(db, `
+      SELECT w.*, u.name AS user_name, u.avatar_color AS user_color
+      FROM work_logs w LEFT JOIN users u ON u.id = w.user_id WHERE w.id = ?`, [req.params.id]);
+    res.json({ ...updated, minutes: Number(updated.minutes) });
   } catch (e) { serverError(res, e); }
 });
 
@@ -53,15 +103,16 @@ router.delete('/worklogs/:id', requireAuth, async (req, res) => {
     const db = await getDb();
     const log = await queryOne(db, 'SELECT * FROM work_logs WHERE id = ?', [req.params.id]);
     if (!log) return res.status(404).json({ error: 'Work log not found' });
-    if (log.user_id !== req.userId && req.userRole !== 'admin') {
-      return res.status(403).json({ error: 'Not your work log' });
+    if (!canEditWorklog(log, req)) return res.status(403).json({ error: 'Not your work log' });
+
+    // Deleting an auto entry is "I don't want this counted" — lock the issue
+    // so the next completion doesn't regenerate it (utils/auto-worklog.js).
+    if (log.source === 'auto') {
+      await run(db, 'UPDATE issues SET auto_worklog_locked = 1 WHERE id = ?', [log.issue_id]);
     }
-    const issue = await queryOne(db, 'SELECT id, time_spent FROM issues WHERE id = ?', [log.issue_id]);
+
     await run(db, 'DELETE FROM work_logs WHERE id = ?', [req.params.id]);
-    if (issue) {
-      await run(db, "UPDATE issues SET time_spent = ?, updated_at = datetime('now') WHERE id = ?",
-        [Math.max(0, Number(issue.time_spent || 0) - Number(log.minutes)), issue.id]);
-    }
+    await recomputeTimeSpent(db, log.issue_id);
     res.json({ ok: true });
   } catch (e) { serverError(res, e); }
 });
