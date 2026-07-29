@@ -6,7 +6,7 @@ const NO_EPIC = '__no_epic__';
 const NO_VERSION = '__no_version__';
 const NO_COMPONENT = '__no_component__';
 
-import { Clock, Loader2, Trash2 } from 'lucide-react';
+import { Clock, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -22,7 +22,7 @@ import type { IssueStatus, Priority } from '@/lib/types';
 import type { IssueDetail } from './use-issue-detail';
 
 export function IssueFields({ detail }: { detail: IssueDetail }) {
-  const { issue, members, sprints, epics, worklogs, versions, components, logOpen, logHours, logComment, estimateHours, loggingWork, setLogOpen, setLogHours, setLogComment, setEstimateHours, canEdit, workflow, user, patch, logWork, removeWorkLog, saveEstimate } = detail;
+  const { issue, members, sprints, epics, worklogs, versions, components, logOpen, logHours, logComment, estimateHours, loggingWork, setLogOpen, setLogHours, setLogComment, setEstimateHours, canEdit, workflow, user, patch, logWork, removeWorkLog, editWorkLog, saveEstimate } = detail;
   if (!issue) return null;
 
   return (
@@ -284,19 +284,39 @@ export function IssueFields({ detail }: { detail: IssueDetail }) {
                               <span className="text-muted-foreground">
                                 logged {formatDuration(wlog.minutes)} · {timeAgo(wlog.created_at)}
                               </span>
+                              {wlog.source === 'auto' && (
+                                <span className="ml-1.5 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">
+                                  auto
+                                </span>
+                              )}
                             </p>
                             {wlog.comment && <p className="mt-0.5 text-sm">{wlog.comment}</p>}
                           </div>
                           {(wlog.user_id === user?.id || isAdmin(user?.role)) && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="size-7 text-muted-foreground hover:text-destructive"
-                              onClick={() => removeWorkLog(wlog.id)}
-                              aria-label="Delete work log"
-                            >
-                              <Trash2 className="size-3.5" />
-                            </Button>
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-7 text-muted-foreground hover:text-foreground"
+                                onClick={() => {
+                                  const input = window.prompt('Minutes worked:', String(wlog.minutes));
+                                  const minutes = input ? Math.round(Number(input)) : NaN;
+                                  if (Number.isFinite(minutes) && minutes > 0) editWorkLog(wlog.id, minutes);
+                                }}
+                                aria-label="Edit work log"
+                              >
+                                <Pencil className="size-3.5" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-7 text-muted-foreground hover:text-destructive"
+                                onClick={() => removeWorkLog(wlog.id)}
+                                aria-label="Delete work log"
+                              >
+                                <Trash2 className="size-3.5" />
+                              </Button>
+                            </>
                           )}
                         </li>
                       ))}

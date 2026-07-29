@@ -97,6 +97,8 @@ const post = <T>(p: string, body?: unknown) =>
   request<T>(p, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
 const put = <T>(p: string, body?: unknown) =>
   request<T>(p, { method: 'PUT', body: body === undefined ? undefined : JSON.stringify(body) });
+const patch = <T>(p: string, body?: unknown) =>
+  request<T>(p, { method: 'PATCH', body: body === undefined ? undefined : JSON.stringify(body) });
 const del = <T>(p: string) => request<T>(p, { method: 'DELETE' });
 
 export const api = {
@@ -304,6 +306,8 @@ export const api = {
     list: (issueId: string) => get<WorkLog[]>(`/issues/${issueId}/worklogs`),
     create: (issueId: string, minutes: number, comment?: string) =>
       post<WorkLog>(`/issues/${issueId}/worklogs`, { minutes, comment }),
+    update: (id: string, updates: { minutes?: number; comment?: string }) =>
+      patch<WorkLog>(`/worklogs/${id}`, updates),
     remove: (id: string) => del<{ ok: boolean }>(`/worklogs/${id}`),
   },
 
