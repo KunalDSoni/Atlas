@@ -37,7 +37,10 @@ describe('GET /api/issues/by-key/:key', () => {
   test('returns the same body as the by-id endpoint', async () => {
     const byKey = await request(app).get(`/api/issues/by-key/${seeded.issue_key}`).set(headers);
     const byId = await request(app).get(`/api/issues/${seeded.id}`).set(headers);
-    expect(byKey.body).toEqual(byId.body);
+    // in_progress_minutes_live is only computed on GET /api/issues/:id (by design,
+    // to avoid the extra query cost on other routes), so exclude it here.
+    const { in_progress_minutes_live, ...byIdRest } = byId.body;
+    expect(byKey.body).toEqual(byIdRest);
   });
 
   test('404s for an unknown key', async () => {
