@@ -2,9 +2,10 @@
  * Migration runner — a versioned, ordered replacement for the hand-rolled
  * try/catch ALTERs that used to live in database.js.
  */
+const crypto = require('crypto');
 const { createTestApp } = require('./setup');
 const { MIGRATIONS, runMigrations, sqliteAdapter } = require('../../migrations');
-const { getDb, queryAll, queryOne } = require('../../database');
+const { getDb, queryAll, queryOne, run } = require('../../database');
 
 describe('Migration definitions', () => {
   test('every migration has a unique id and at least one step', () => {
@@ -189,5 +190,50 @@ describe('015_insight_origins', () => {
     expect(seeded).toBeTruthy();
     expect(seeded.title).toBeTruthy();
     expect(seeded.origin_kind ?? null).toBeNull();
+  });
+});
+
+describe('023_wiki_page_numbers', () => {
+  test('backfills page_number and enforces uniqueness per space', async () => {
+    const db = await getDb();
+
+    // Raw inserts (bypassing routes/wiki.js) leave page_number NULL, exactly like
+    // rows that existed before this migration shipped.
+    const spaceId = crypto.randomUUID();
+    await run(db, "INSERT INTO wiki_spaces (id, space_key, name, owner_id) VALUES (?, ?, ?, ?)",
+      [spaceId, `TST${Date.now()}`, 'Test Space', null]);
+
+    const authorId = (await queryOne(db, 'SELECT id FROM users LIMIT 1')).id;
+    // created_at is set explicitly, one second apart, because the migration orders
+    // its backfill by (space_id, created_at, id) — two rows inserted in the same
+    // wall-clock second would otherwise tie-break on random UUID string order
+    // instead of insertion order, making this test flaky.
+    const insertPage = async (title, createdAt) => {
+      const id = crypto.randomUUID();
+      await run(db,
+        `INSERT INTO wiki_pages (id, space_id, title, slug, author_id, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+        [id, spaceId, title, title.toLowerCase(), authorId, createdAt]);
+      return id;
+    };
+    const p1 = await insertPage('First', '2026-01-01 00:00:00');
+    const p2 = await insertPage('Second', '2026-01-01 00:00:01');
+
+    // Re-run the 023 migration by dropping it from the ledger — the same pattern
+    // used above to prove a re-applied migration doesn't blow up on existing columns.
+    await run(db, "DELETE FROM schema_migrations WHERE id = ?", ['023_wiki_page_numbers']);
+    const applied = await runMigrations(sqliteAdapter(db));
+    expect(applied).toEqual(['023_wiki_page_numbers']);
+
+    const rows = await queryAll(db, 'SELECT id, page_number FROM wiki_pages WHERE space_id = ? ORDER BY page_number', [spaceId]);
+    expect(rows.map(r => r.id)).toEqual([p1, p2]);
+    expect(rows.map(r => r.page_number)).toEqual([1, 2]);
+  });
+
+  test('enforces uniqueness per space via a unique index', async () => {
+    const db = await getDb();
+    const idx = await queryAll(db, 'PRAGMA index_list(wiki_pages)');
+    const uniqueIdx = idx.find(i => i.name === 'idx_wiki_pages_space_number');
+    expect(uniqueIdx).toBeTruthy();
+    expect(Number(uniqueIdx.unique)).toBe(1);
   });
 });
