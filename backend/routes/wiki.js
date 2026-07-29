@@ -210,8 +210,9 @@ router.post('/wiki/spaces/:spaceId/pages', requireAuth, async (req, res) => {
     const id = uuidv4();
     const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
     const maxPos = await queryOne(db, 'SELECT COALESCE(MAX(position),0)+1 as p FROM wiki_pages WHERE space_id = ? AND parent_id IS ?', [req.params.spaceId, parent_id || null]);
-    await run(db, `INSERT INTO wiki_pages (id, space_id, parent_id, title, slug, body, body_format, author_id, last_editor_id, position, page_type) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-      [id, req.params.spaceId, parent_id || null, title, slug, body || '', body_format || 'html', req.userId, req.userId, maxPos.p, pageType]);
+    const maxNum = await queryOne(db, 'SELECT COALESCE(MAX(page_number),0)+1 as n FROM wiki_pages WHERE space_id = ?', [req.params.spaceId]);
+    await run(db, `INSERT INTO wiki_pages (id, space_id, parent_id, title, slug, body, body_format, author_id, last_editor_id, position, page_type, page_number) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [id, req.params.spaceId, parent_id || null, title, slug, body || '', body_format || 'html', req.userId, req.userId, maxPos.p, pageType, maxNum.n]);
     await run(db, "INSERT INTO wiki_page_versions (id, page_id, version, title, body, editor_id, change_message) VALUES (?,?,1,?,?,?,'Created')",
       [uuidv4(), id, title, body || '', req.userId]);
     if (labels && Array.isArray(labels)) {
@@ -225,57 +226,69 @@ router.post('/wiki/spaces/:spaceId/pages', requireAuth, async (req, res) => {
   } catch (e) { serverError(res, e); }
 });
 
+/**
+ * Full enrichment for one page: access check, view count, labels, breadcrumb,
+ * children, approval, tasks, linked issues, image re-signing. `whereClause`
+ * and `params` select the row (by id in one caller, by key in another) —
+ * everything after that row lookup is identical between the two callers.
+ */
+async function getPageDetail(db, req, whereClause, params) {
+  const page = await queryOne(db, `
+    SELECT p.*, s.name as space_name, s.space_key, s.icon as space_icon, s.id as space_id,
+      u.name as author_name, u.avatar_color as author_color,
+      e.name as editor_name, e.avatar_color as editor_color,
+      (SELECT COUNT(*) FROM wiki_page_likes WHERE page_id = p.id) as like_count,
+      EXISTS(SELECT 1 FROM wiki_page_likes WHERE page_id = p.id AND user_id = ?) as liked,
+      EXISTS(SELECT 1 FROM wiki_stars WHERE page_id = p.id AND user_id = ?) as starred
+    FROM wiki_pages p
+    JOIN wiki_spaces s ON p.space_id = s.id
+    LEFT JOIN users u ON p.author_id = u.id
+    LEFT JOIN users e ON p.last_editor_id = e.id
+    WHERE ${whereClause}
+  `, [req.userId, req.userId, ...params]);
+  if (!page) return { status: 404, body: { error: 'Page not found' } };
+  const access = await pageAccess(db, page.id, req.userId, req.userRole);
+  if (!access.view) return { status: 403, body: { error: 'This page is restricted' } };
+  page.restricted = access.restricted ? 1 : 0;
+  page.can_edit_page = access.edit ? 1 : 0;
+  page.page_key = `${page.space_key}-WIKI-${page.page_number}`;
+  // Increment view
+  await run(db, 'UPDATE wiki_pages SET view_count = view_count + 1 WHERE id = ?', [page.id]);
+  // Labels
+  page.labels = (await queryAll(db, 'SELECT label FROM wiki_labels WHERE page_id = ?', [page.id])).map(l => l.label);
+  // Breadcrumb
+  const breadcrumb = [];
+  let current = page;
+  while (current.parent_id) {
+    const parent = await queryOne(db, 'SELECT id, title, parent_id FROM wiki_pages WHERE id = ?', [current.parent_id]);
+    if (!parent) break;
+    breadcrumb.unshift({ id: parent.id, title: parent.title });
+    current = parent;
+  }
+  page.breadcrumb = breadcrumb;
+  // Children
+  page.children = await queryAll(db, "SELECT id, title, slug, status FROM wiki_pages WHERE parent_id = ? AND status = 'current' ORDER BY position, title", [page.id]);
+  page.approval = await pageApproval(db, page);
+  page.tasks = await pageTasks(db, page);
+  // Issues this page mentions, resolved at write time (see utils/issue-keys.js).
+  // Returned inline so chips render on first paint with no extra round trip.
+  page.linked_issues = await queryAll(db, `
+    SELECT i.id, i.issue_key, i.title, i.status, i.type, i.priority,
+           u.name AS assignee_name, u.avatar_color AS assignee_color
+    FROM wiki_page_issues l
+    JOIN issues i ON i.id = l.issue_id
+    LEFT JOIN users u ON u.id = i.assignee_id
+    WHERE l.page_id = ?`, [page.id]);
+  // Re-sign inline wiki images so the browser can load them for this session.
+  page.body = signWikiImages(page.body);
+  return { status: 200, body: page };
+}
+
 router.get('/wiki/pages/:id', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const page = await queryOne(db, `
-      SELECT p.*, s.name as space_name, s.space_key, s.icon as space_icon, s.id as space_id,
-        u.name as author_name, u.avatar_color as author_color,
-        e.name as editor_name, e.avatar_color as editor_color,
-        (SELECT COUNT(*) FROM wiki_page_likes WHERE page_id = p.id) as like_count,
-        EXISTS(SELECT 1 FROM wiki_page_likes WHERE page_id = p.id AND user_id = ?) as liked,
-        EXISTS(SELECT 1 FROM wiki_stars WHERE page_id = p.id AND user_id = ?) as starred
-      FROM wiki_pages p
-      JOIN wiki_spaces s ON p.space_id = s.id
-      LEFT JOIN users u ON p.author_id = u.id
-      LEFT JOIN users e ON p.last_editor_id = e.id
-      WHERE p.id = ?
-    `, [req.userId, req.userId, req.params.id]);
-    if (!page) return res.status(404).json({ error: 'Page not found' });
-    const access = await pageAccess(db, req.params.id, req.userId, req.userRole);
-    if (!access.view) return res.status(403).json({ error: 'This page is restricted' });
-    page.restricted = access.restricted ? 1 : 0;
-    page.can_edit_page = access.edit ? 1 : 0;
-    // Increment view
-    await run(db, 'UPDATE wiki_pages SET view_count = view_count + 1 WHERE id = ?', [req.params.id]);
-    // Labels
-    page.labels = (await queryAll(db, 'SELECT label FROM wiki_labels WHERE page_id = ?', [req.params.id])).map(l => l.label);
-    // Breadcrumb
-    const breadcrumb = [];
-    let current = page;
-    while (current.parent_id) {
-      const parent = await queryOne(db, 'SELECT id, title, parent_id FROM wiki_pages WHERE id = ?', [current.parent_id]);
-      if (!parent) break;
-      breadcrumb.unshift({ id: parent.id, title: parent.title });
-      current = parent;
-    }
-    page.breadcrumb = breadcrumb;
-    // Children
-    page.children = await queryAll(db, "SELECT id, title, slug, status FROM wiki_pages WHERE parent_id = ? AND status = 'current' ORDER BY position, title", [req.params.id]);
-    page.approval = await pageApproval(db, page);
-    page.tasks = await pageTasks(db, page);
-    // Issues this page mentions, resolved at write time (see utils/issue-keys.js).
-    // Returned inline so chips render on first paint with no extra round trip.
-    page.linked_issues = await queryAll(db, `
-      SELECT i.id, i.issue_key, i.title, i.status, i.type, i.priority,
-             u.name AS assignee_name, u.avatar_color AS assignee_color
-      FROM wiki_page_issues l
-      JOIN issues i ON i.id = l.issue_id
-      LEFT JOIN users u ON u.id = i.assignee_id
-      WHERE l.page_id = ?`, [req.params.id]);
-    // Re-sign inline wiki images so the browser can load them for this session.
-    page.body = signWikiImages(page.body);
-    res.json(page);
+    const { status, body } = await getPageDetail(db, req, 'p.id = ?', [req.params.id]);
+    res.status(status).json(body);
   } catch (e) { serverError(res, e); }
 });
 
