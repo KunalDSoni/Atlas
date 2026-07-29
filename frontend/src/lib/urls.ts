@@ -25,6 +25,14 @@ export function isIssueKey(segment: string): boolean {
   return ISSUE_KEY.test(segment);
 }
 
+/** DOCS-WIKI-12. Distinct from ISSUE_KEY so a wiki key can never be mistaken
+ * for an issue key even when a space shares its key with a project. */
+const WIKI_PAGE_KEY = /^[A-Za-z][A-Za-z0-9]*-WIKI-\d+$/i;
+
+export function isWikiPageKey(segment: string): boolean {
+  return WIKI_PAGE_KEY.test(segment);
+}
+
 /**
  * The project an issue key belongs to: ATLAS-3 -> atlas.
  * Splits on the LAST hyphen — MY-TEAM-42 belongs to MY-TEAM, not to MY.
@@ -45,6 +53,15 @@ export function projectUrl(projectKey: string, screen: string = 'board'): string
  */
 export function issueUrl(issueKey: string): string {
   return `/${projectKeyOf(issueKey)}/${issueKey.toUpperCase()}`;
+}
+
+/**
+ * Permanent path for a wiki page. Unlike issues, wiki pages are not scoped
+ * under a project-key path segment.
+ * backend/utils/links.js mirrors this for notification links.
+ */
+export function wikiPageUrl(pageKey: string): string {
+  return `/wiki/${pageKey.toUpperCase()}`;
 }
 
 export function sprintUrl(projectKey: string, slug: string): string {
