@@ -386,7 +386,7 @@ router.get('/projects/:projectId/reports/export/csv', requireAuth, async (req, r
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
     const issues = await queryAll(db, `
-      SELECT i.issue_key, i.title, i.type, i.status, i.priority, i.story_points,
+      SELECT i.issue_key, i.title, i.type, i.status, i.priority, i.story_points, i.time_spent,
         i.created_at, i.updated_at,
         u1.name as assignee, u2.name as reporter,
         s.name as sprint
@@ -398,7 +398,7 @@ router.get('/projects/:projectId/reports/export/csv', requireAuth, async (req, r
       ORDER BY i.issue_number
     `, [req.params.projectId]);
 
-    const headers = ['Key', 'Title', 'Type', 'Status', 'Priority', 'Story Points', 'Assignee', 'Reporter', 'Sprint', 'Created', 'Updated'];
+    const headers = ['Key', 'Title', 'Type', 'Status', 'Priority', 'Story Points', 'Time Spent (min)', 'Assignee', 'Reporter', 'Sprint', 'Created', 'Updated'];
     const escape = v => {
       if (v == null) return '';
       const s = String(v);
@@ -409,7 +409,7 @@ router.get('/projects/:projectId/reports/export/csv', requireAuth, async (req, r
     issues.forEach(i => {
       rows.push([
         i.issue_key, escape(i.title), i.type, i.status, i.priority,
-        i.story_points || '', i.assignee || 'Unassigned', i.reporter || '',
+        i.story_points || '', i.time_spent || 0, i.assignee || 'Unassigned', i.reporter || '',
         i.sprint || 'Backlog', i.created_at, i.updated_at
       ].join(','));
     });
@@ -417,6 +417,80 @@ router.get('/projects/:projectId/reports/export/csv', requireAuth, async (req, r
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${project.key}-issues.csv"`);
     res.send(rows.join('\n'));
+  } catch (e) { serverError(res, e); }
+});
+
+router.get('/projects/:projectId/reports/time-tracking', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const rows = await queryAll(db, `
+      SELECT i.sprint_id, s.name AS sprint_name, i.assignee_id AS user_id, u.name,
+             w.source, w.minutes
+      FROM work_logs w
+      JOIN issues i ON i.id = w.issue_id
+      LEFT JOIN sprints s ON s.id = i.sprint_id
+      LEFT JOIN users u ON u.id = i.assignee_id
+      WHERE i.project_id = ?`, [req.params.projectId]);
+
+    const bySprint = new Map();
+    const byUser = new Map();
+    for (const r of rows) {
+      const minutes = Number(r.minutes);
+      const sprintKey = r.sprint_id || 'backlog';
+      if (!bySprint.has(sprintKey)) {
+        bySprint.set(sprintKey, { sprint_id: r.sprint_id, sprint_name: r.sprint_name || 'Backlog', auto_minutes: 0, manual_minutes: 0 });
+      }
+      bySprint.get(sprintKey)[r.source === 'auto' ? 'auto_minutes' : 'manual_minutes'] += minutes;
+
+      const userKey = r.user_id || 'unassigned';
+      if (!byUser.has(userKey)) {
+        byUser.set(userKey, { user_id: r.user_id, name: r.name || 'Unassigned', auto_minutes: 0, manual_minutes: 0 });
+      }
+      byUser.get(userKey)[r.source === 'auto' ? 'auto_minutes' : 'manual_minutes'] += minutes;
+    }
+
+    const finalize = (m) => [...m.values()].map((v) => ({ ...v, total_minutes: v.auto_minutes + v.manual_minutes }));
+    res.json({ by_sprint: finalize(bySprint), by_user: finalize(byUser) });
+  } catch (e) { serverError(res, e); }
+});
+
+router.get('/projects/:projectId/reports/time-tracking/export/csv', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const project = await queryOne(db, 'SELECT * FROM projects WHERE id = ?', [req.params.projectId]);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    // Reuse the same aggregation as the JSON endpoint above.
+    const rows = await queryAll(db, `
+      SELECT i.sprint_id, s.name AS sprint_name, i.assignee_id AS user_id, u.name,
+             w.source, w.minutes
+      FROM work_logs w
+      JOIN issues i ON i.id = w.issue_id
+      LEFT JOIN sprints s ON s.id = i.sprint_id
+      LEFT JOIN users u ON u.id = i.assignee_id
+      WHERE i.project_id = ?`, [req.params.projectId]);
+
+    const bySprint = new Map();
+    const byUser = new Map();
+    for (const r of rows) {
+      const minutes = Number(r.minutes);
+      const sprintKey = r.sprint_id || 'backlog';
+      if (!bySprint.has(sprintKey)) bySprint.set(sprintKey, { name: r.sprint_name || 'Backlog', auto: 0, manual: 0 });
+      bySprint.get(sprintKey)[r.source === 'auto' ? 'auto' : 'manual'] += minutes;
+      const userKey = r.user_id || 'unassigned';
+      if (!byUser.has(userKey)) byUser.set(userKey, { name: r.name || 'Unassigned', auto: 0, manual: 0 });
+      byUser.get(userKey)[r.source === 'auto' ? 'auto' : 'manual'] += minutes;
+    }
+
+    const lines = ['Sprint,Auto Minutes,Manual Minutes,Total Minutes'];
+    for (const s of bySprint.values()) lines.push([s.name, s.auto, s.manual, s.auto + s.manual].join(','));
+    lines.push('');
+    lines.push('User,Auto Minutes,Manual Minutes,Total Minutes');
+    for (const u of byUser.values()) lines.push([u.name, u.auto, u.manual, u.auto + u.manual].join(','));
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${project.key}-time-tracking.csv"`);
+    res.send(lines.join('\n'));
   } catch (e) { serverError(res, e); }
 });
 
