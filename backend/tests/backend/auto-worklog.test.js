@@ -179,3 +179,20 @@ describe('PUT /api/issues/:id triggers auto-worklog on completion', () => {
     expect(Number(logs[0].minutes)).toBe(999); // human correction survived
   });
 });
+
+describe('GET /api/issues/:id includes in_progress_minutes_live', () => {
+  test('null when the issue is not in progress', async () => {
+    const issue = await mkIssue('Live field todo');
+    const res = await request(getApp()).get(`/api/issues/${issue.id}`).set(headers);
+    expect(res.body.in_progress_minutes_live).toBeNull();
+  });
+
+  test('a positive number while the issue is in progress', async () => {
+    const issue = await mkIssue('Live field in progress');
+    await request(getApp()).put(`/api/issues/${issue.id}`).set(headers).send({ status: 'in_progress' });
+    await run(db, "UPDATE activity_log SET created_at = datetime('now', '-30 minutes') WHERE issue_id = ? AND field = 'status'", [issue.id]);
+
+    const res = await request(getApp()).get(`/api/issues/${issue.id}`).set(headers);
+    expect(res.body.in_progress_minutes_live).toBeGreaterThan(0);
+  });
+});
