@@ -40,7 +40,7 @@ async function applyAutoWorklog(db, issue, statuses, fallbackActorId) {
 
   const segments = (await inProgressSegments(db, issue, statuses))
     .filter((seg) => seg.to !== null); // completed segments only; the final open segment is handled by liveInProgressMinutes
-  const attributedUserId = issue.assignee_id || fallbackActorId || issue.reporter_id;
+  const attributedUserId = issue.assignee_id || fallbackActorId;
   const profile = await resolvedProfileFor(db, issue, attributedUserId);
 
   const totalMinutes = Math.round(

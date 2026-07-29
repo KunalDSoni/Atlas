@@ -32,7 +32,7 @@ test('applyAutoWorklog sums in-progress segments (raw wall-clock, no business_ho
 
   const statuses = await projectStatuses(db, projectId);
   const fresh = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [issue.id]);
-  await applyAutoWorklog(db, fresh, statuses);
+  await applyAutoWorklog(db, fresh, statuses, issue.reporter_id);
 
   const logs = await queryAll(db, "SELECT * FROM work_logs WHERE issue_id = ? AND source = 'auto'", [issue.id]);
   expect(logs).toHaveLength(1);
@@ -48,7 +48,7 @@ test('applyAutoWorklog replaces the prior auto row on re-completion (reopen -> r
   await run(db, `INSERT INTO activity_log (id, issue_id, user_id, action, field, old_value, new_value, created_at)
     VALUES ('reopen-a2', ?, ?, 'update', 'status', 'in_progress', 'done', '2026-07-06 10:00:00')`, [issue.id, issue.reporter_id]);
   const statuses = await projectStatuses(db, projectId);
-  await applyAutoWorklog(db, { ...issue, status: 'done' }, statuses);
+  await applyAutoWorklog(db, { ...issue, status: 'done' }, statuses, issue.reporter_id);
   let logs = await queryAll(db, "SELECT * FROM work_logs WHERE issue_id = ? AND source = 'auto'", [issue.id]);
   expect(Number(logs[0].minutes)).toBe(60);
 
@@ -57,7 +57,7 @@ test('applyAutoWorklog replaces the prior auto row on re-completion (reopen -> r
     VALUES ('reopen-a3', ?, ?, 'update', 'status', 'done', 'in_progress', '2026-07-07 09:00:00')`, [issue.id, issue.reporter_id]);
   await run(db, `INSERT INTO activity_log (id, issue_id, user_id, action, field, old_value, new_value, created_at)
     VALUES ('reopen-a4', ?, ?, 'update', 'status', 'in_progress', 'done', '2026-07-07 11:00:00')`, [issue.id, issue.reporter_id]);
-  await applyAutoWorklog(db, { ...issue, status: 'done' }, statuses);
+  await applyAutoWorklog(db, { ...issue, status: 'done' }, statuses, issue.reporter_id);
 
   logs = await queryAll(db, "SELECT * FROM work_logs WHERE issue_id = ? AND source = 'auto'", [issue.id]);
   expect(logs).toHaveLength(1); // replaced, not duplicated
@@ -103,7 +103,7 @@ test('manual work logs are untouched by applyAutoWorklog', async () => {
     VALUES ('manual-a2', ?, ?, 'update', 'status', 'in_progress', 'done', '2026-07-06 10:00:00')`, [issue.id, issue.reporter_id]);
   const statuses = await projectStatuses(db, projectId);
   const freshIssue = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [issue.id]);
-  await applyAutoWorklog(db, freshIssue, statuses);
+  await applyAutoWorklog(db, freshIssue, statuses, issue.reporter_id);
 
   const manualLogs = await queryAll(db, "SELECT * FROM work_logs WHERE issue_id = ? AND source = 'manual'", [issue.id]);
   expect(manualLogs).toHaveLength(1);
