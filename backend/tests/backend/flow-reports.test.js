@@ -148,3 +148,50 @@ describe('query discipline', () => {
     expect(large - small).toBeLessThanOrEqual(1);
   });
 });
+
+describe('GET /reports/time-tracking', () => {
+  test('splits minutes by sprint and by user, by source', async () => {
+    const sprintRes = await request(getApp())
+      .post(`/api/projects/${projectId}/sprints`).set(headers)
+      .send({ name: 'Rollup Sprint', start_date: '2026-07-01', end_date: '2026-07-14' });
+    expect(sprintRes.status).toBe(201);
+    const sprintId = sprintRes.body.id;
+
+    const issueRes = await request(getApp())
+      .post(`/api/projects/${projectId}/issues`).set(headers)
+      .send({ title: 'Rollup test', type: 'task', sprint_id: sprintId });
+    const issue = issueRes.body;
+    // The rollup groups by assignee, so assign the issue to its reporter for a deterministic match below.
+    await request(getApp()).put(`/api/issues/${issue.id}`).set(headers).send({ assignee_id: issue.reporter_id });
+    await request(getApp()).post(`/api/issues/${issue.id}/worklogs`).set(headers).send({ minutes: 20, comment: 'manual' });
+
+    await run(db, "INSERT INTO work_logs (id, issue_id, user_id, minutes, source) VALUES (?, ?, ?, ?, 'auto')",
+      [uuidv4(), issue.id, issue.reporter_id, 40]);
+
+    const res = await request(getApp()).get(`/api/projects/${projectId}/reports/time-tracking`).set(headers);
+    expect(res.status).toBe(200);
+    const sprintRow = res.body.by_sprint.find((s) => s.sprint_id === sprintId);
+    expect(sprintRow.manual_minutes).toBeGreaterThanOrEqual(20);
+    expect(sprintRow.auto_minutes).toBeGreaterThanOrEqual(40);
+    expect(sprintRow.total_minutes).toBe(sprintRow.manual_minutes + sprintRow.auto_minutes);
+
+    const userRow = res.body.by_user.find((u) => u.user_id === issue.reporter_id);
+    expect(userRow.total_minutes).toBeGreaterThanOrEqual(60);
+  });
+});
+
+describe('GET /reports/time-tracking/export/csv', () => {
+  test('returns a CSV with sprint and user breakdown', async () => {
+    const res = await request(getApp()).get(`/api/projects/${projectId}/reports/time-tracking/export/csv`).set(headers);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/csv/);
+    expect(res.text).toContain('Sprint');
+  });
+});
+
+describe('GET /reports/export/csv includes time spent', () => {
+  test('issue export has a Time Spent column', async () => {
+    const res = await request(getApp()).get(`/api/projects/${projectId}/reports/export/csv`).set(headers);
+    expect(res.text.split('\n')[0]).toContain('Time Spent');
+  });
+});

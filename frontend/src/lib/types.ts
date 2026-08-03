@@ -168,6 +168,7 @@ export interface Issue {
   subtask_done_count: number;
   original_estimate: number | null;
   time_spent: number | null;
+  in_progress_minutes_live: number | null;
   fix_version_id: string | null;
   component_id: string | null;
   fix_version_name: string | null;
@@ -325,6 +326,8 @@ export interface WorkLog {
   created_at: string;
   user_name: string | null;
   user_color: string | null;
+  source: 'manual' | 'auto';
+  locked_from_auto: number;
 }
 
 export interface Comment {

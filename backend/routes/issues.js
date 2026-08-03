@@ -21,6 +21,8 @@ const { issueCustomFieldsBatch } = require('./custom-fields');
 const { placeholders, indexBy, countsBy } = require('../utils/sql');
 const sla = require('../utils/sla-clocks');
 const { issueLink } = require('../utils/links');
+const { applyAutoWorklog, liveInProgressMinutes } = require('../utils/auto-worklog');
+const { categoryOf } = require('../utils/flow');
 
 const requireBoardAdmin = requireRole('admin', 'board_admin');
 
@@ -239,7 +241,8 @@ router.get('/projects/:projectId/issues', requireAuth, async (req, res) => {
     }
 
     const issues = await queryAll(db, query, params);
-    res.json(await enrichIssues(db, issues));
+    const enriched = await enrichIssues(db, issues);
+    res.json(enriched);
   } catch (e) { serverError(res, e); }
 });
 
@@ -277,8 +280,11 @@ router.get('/projects/:projectId/epics', requireAuth, async (req, res) => {
 router.get('/issues/:id/children', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
+    const parent = await queryOne(db, 'SELECT project_id FROM issues WHERE id = ?', [req.params.id]);
+    if (!parent) return res.status(404).json({ error: 'Parent issue not found' });
     const children = await queryAll(db, 'SELECT * FROM issues WHERE parent_id = ? ORDER BY created_at', [req.params.id]);
-    res.json(await enrichIssues(db, children));
+    const enriched = await enrichIssues(db, children);
+    res.json(enriched);
   } catch (e) { serverError(res, e); }
 });
 
@@ -326,7 +332,8 @@ router.post('/projects/:projectId/issues', requireAuth, requireBoardAdmin, async
     auditLog({ userId: req.userId, action: 'Created issue', category: 'issues', entityType: 'issue', entityId: id, entityName: issue.issue_key, details: { title, type: type || 'task', priority: priority || 'medium' } });
     dispatchWebhook(db, req.params.projectId, 'issue.created', { id: issue.id, issue_key: issue.issue_key, title: issue.title, type: issue.type, status: issue.status });
     publish({ type: 'issue', action: 'created', projectId: req.params.projectId, issueId: issue.id, actorId: req.userId });
-    res.status(201).json(await enrichIssue(db, issue));
+    const enriched = await enrichIssue(db, issue);
+    res.status(201).json(enriched);
   } catch (e) { serverError(res, e); }
 });
 
@@ -346,7 +353,8 @@ router.get('/issues/by-key/:key', requireAuth, async (req, res) => {
     const issue = await queryOne(db, 'SELECT * FROM issues WHERE UPPER(issue_key) = ?',
       [String(req.params.key).toUpperCase()]);
     if (!issue) return res.status(404).json({ error: 'Issue not found' });
-    res.json(await enrichIssue(db, issue));
+    const enriched = await enrichIssue(db, issue);
+    res.json(enriched);
   } catch (e) { serverError(res, e); }
 });
 
@@ -356,7 +364,10 @@ router.get('/issues/:id', requireAuth, async (req, res) => {
     const db = await getDb();
     const issue = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
     if (!issue) return res.status(404).json({ error: 'Issue not found' });
-    res.json(await enrichIssue(db, issue));
+    const enriched = await enrichIssue(db, issue);
+    const statuses = await projectStatuses(db, issue.project_id);
+    enriched.in_progress_minutes_live = await liveInProgressMinutes(db, issue, statuses);
+    res.json(enriched);
   } catch (e) { serverError(res, e); }
 });
 
@@ -438,11 +449,21 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
       await sla.onStatusChange(db, updated, updated.status);
       await runAutomation(db, { type: 'status_changed', issue: updated, actorId: req.userId });
       await checkAllSubtasksDone(db, updated, req.userId);
+
+      const statuses = await projectStatuses(db, updated.project_id);
+      const newCategory = categoryOf(updated.status, statuses);
+      if (newCategory === 'done') {
+        await applyAutoWorklog(db, updated, statuses, req.userId);
+      } else if (newCategory === 'todo') {
+        await run(db, 'UPDATE issues SET auto_worklog_locked = 0 WHERE id = ?', [updated.id]);
+      }
+
       updated = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
     }
     dispatchWebhook(db, updated.project_id, 'issue.updated', { id: updated.id, issue_key: updated.issue_key, title: updated.title, type: updated.type, status: updated.status });
     publish({ type: 'issue', action: 'updated', projectId: updated.project_id, issueId: updated.id, actorId: req.userId });
-    res.json(await enrichIssue(db, updated));
+    const enriched = await enrichIssue(db, updated);
+    res.json(enriched);
   } catch (e) { serverError(res, e); }
 });
 
@@ -519,7 +540,8 @@ router.put('/issues/:id/move', requireAuth, async (req, res) => {
       updated = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
     }
     publish({ type: 'issue', action: 'moved', projectId: updated.project_id, issueId: updated.id, actorId: req.userId });
-    res.json(await enrichIssue(db, updated));
+    const enrichedMoved = await enrichIssue(db, updated);
+    res.json(enrichedMoved);
   } catch (e) { serverError(res, e); }
 });
 
