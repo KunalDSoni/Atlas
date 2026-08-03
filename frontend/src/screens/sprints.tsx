@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { CalendarRange, Plus, Rocket, Trash2 } from 'lucide-react';
+import { CalendarRange, Pencil, Plus, Rocket, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -34,11 +34,13 @@ function SprintCard({
   sprint,
   projectKey,
   canManage,
+  onEdit,
   onChanged,
 }: {
   sprint: Sprint;
   projectKey: string;
   canManage: boolean;
+  onEdit: (sprint: Sprint) => void;
   onChanged: () => void;
 }) {
   const pct = sprint.issue_count ? Math.round((sprint.done_count / sprint.issue_count) * 100) : 0;
@@ -124,6 +126,16 @@ function SprintCard({
                 ))}
               </SelectContent>
             </Select>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              onClick={() => onEdit(sprint)}
+              aria-label={`Edit ${sprint.name}`}
+              title="Edit sprint"
+            >
+              <Pencil className="size-4" />
+            </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="ghost" size="icon" className="size-8 text-destructive" aria-label={`Delete ${sprint.name}`}>
@@ -152,6 +164,121 @@ function SprintCard({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function EditSprintDialog({
+  sprint,
+  onOpenChange,
+  onSaved,
+}: {
+  sprint: Sprint | null;
+  onOpenChange: (open: boolean) => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [goal, setGoal] = useState('');
+  const [start, setStart] = useState('');
+  const [end, setEnd] = useState('');
+  const [status, setStatus] = useState<SprintStatus>('planning');
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (sprint) {
+      setName(sprint.name);
+      setGoal(sprint.goal ?? '');
+      setStart(sprint.start_date?.slice(0, 10) ?? '');
+      setEnd(sprint.end_date?.slice(0, 10) ?? '');
+      setStatus(sprint.status);
+    }
+  }, [sprint]);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!sprint || !name.trim()) return;
+    setSubmitting(true);
+    try {
+      await api.sprints.update(sprint.id, {
+        name: name.trim(),
+        goal: goal.trim() || null,
+        start_date: start || null,
+        end_date: end || null,
+        status,
+      });
+      toast.success('Sprint updated');
+      onOpenChange(false);
+      onSaved();
+    } catch (err) {
+      toast.error('Could not update sprint', { description: err instanceof Error ? err.message : undefined });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={!!sprint} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <form onSubmit={onSubmit}>
+          <DialogHeader>
+            <DialogTitle>Edit sprint</DialogTitle>
+            <DialogDescription>Update sprint details and status.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-sprint-name">Name</Label>
+              <Input
+                id="edit-sprint-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                autoFocus
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-sprint-goal">Goal</Label>
+              <Textarea
+                id="edit-sprint-goal"
+                value={goal}
+                onChange={(e) => setGoal(e.target.value)}
+                rows={2}
+                className="resize-none"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="edit-sprint-start">Start</Label>
+                <Input id="edit-sprint-start" type="date" value={start} onChange={(e) => setStart(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-sprint-end">End</Label>
+                <Input id="edit-sprint-end" type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select value={status} onValueChange={(v) => setStatus(v as SprintStatus)}>
+                <SelectTrigger aria-label="Sprint status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SPRINT_STATUSES.map((s) => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={submitting || !name.trim()}>
+              Save sprint
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -266,6 +393,7 @@ export default function SprintsScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [editingSprint, setEditingSprint] = useState<Sprint | null>(null);
 
   const canManage = canManageSprints(user?.role);
 
@@ -356,6 +484,7 @@ export default function SprintsScreen() {
                       sprint={s}
                       projectKey={currentProject?.key ?? ''}
                       canManage={canManage}
+                      onEdit={setEditingSprint}
                       onChanged={load}
                     />
                   ))}
@@ -370,6 +499,11 @@ export default function SprintsScreen() {
         onOpenChange={setCreateOpen}
         projectId={currentProjectId}
         onCreated={load}
+      />
+      <EditSprintDialog
+        sprint={editingSprint}
+        onOpenChange={(open) => { if (!open) setEditingSprint(null); }}
+        onSaved={load}
       />
     </>
   );
