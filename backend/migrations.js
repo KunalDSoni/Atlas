@@ -873,6 +873,39 @@ const MIGRATIONS = [
       },
     }],
   },
+  {
+    id: '023_wiki_page_numbers',
+    description: 'Per-space sequence number for wiki pages (shareable SPACE-WIKI-n keys)',
+    steps: [
+      {
+        addColumn: {
+          table: 'wiki_pages', column: 'page_number',
+          sqlite: 'ALTER TABLE wiki_pages ADD COLUMN page_number INTEGER',
+          mysql: 'ALTER TABLE wiki_pages ADD COLUMN page_number INT NULL',
+        },
+      },
+      {
+        run: async (adapter) => {
+          if (!['sqlite', 'mysql'].includes(adapter.driver)) {
+            throw new Error(`023: unsupported driver ${adapter.driver}`);
+          }
+          const rows = await adapter.all(
+            'SELECT id, space_id FROM wiki_pages ORDER BY space_id, created_at, id');
+          const next = {};
+          for (const row of rows) {
+            next[row.space_id] = (next[row.space_id] || 0) + 1;
+            await adapter.exec('UPDATE wiki_pages SET page_number = ? WHERE id = ?', [next[row.space_id], row.id]);
+          }
+        },
+      },
+      {
+        sql: {
+          sqlite: 'CREATE UNIQUE INDEX IF NOT EXISTS idx_wiki_pages_space_number ON wiki_pages(space_id, page_number)',
+          mysql: 'CREATE UNIQUE INDEX idx_wiki_pages_space_number ON wiki_pages(space_id, page_number)',
+        },
+      },
+    ],
+  },
 ];
 
 const LEDGER_SQL = {

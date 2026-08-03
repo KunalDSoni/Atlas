@@ -498,6 +498,9 @@ export interface WikiPage {
   restricted?: number;
   can_edit_page?: number;
   page_type?: 'page' | 'blog' | string;
+  page_number?: number;
+  /** Derived server-side: `${space_key}-WIKI-${page_number}`. */
+  page_key?: string;
   labels: string[];
   space_name?: string;
   space_key?: string;
