@@ -20,7 +20,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
 import { useProjects } from '@/hooks/use-projects';
 import { SPRINT_TONE, canManageSprints } from '@/lib/domain';
-import type { Sprint, SprintStatus } from '@/lib/types';
+import type { Issue, Sprint, SprintStatus } from '@/lib/types';
 import { CardsSkeleton, EmptyState, ErrorState, PageHeader } from '@/components/app/primitives';
 import { formatDate } from '@/lib/format';
 import { sprintUrl } from '@/lib/urls';
@@ -35,17 +35,23 @@ function SprintCard({
   projectKey,
   canManage,
   onEdit,
+  onComplete,
   onChanged,
 }: {
   sprint: Sprint;
   projectKey: string;
   canManage: boolean;
   onEdit: (sprint: Sprint) => void;
+  onComplete: (sprint: Sprint) => void;
   onChanged: () => void;
 }) {
   const pct = sprint.issue_count ? Math.round((sprint.done_count / sprint.issue_count) * 100) : 0;
 
   async function setStatus(status: SprintStatus) {
+    if (status === 'completed' && sprint.status !== 'completed') {
+      onComplete(sprint);
+      return;
+    }
     try {
       await api.sprints.update(sprint.id, { status });
       onChanged();
@@ -171,10 +177,12 @@ function EditSprintDialog({
   sprint,
   onOpenChange,
   onSaved,
+  onComplete,
 }: {
   sprint: Sprint | null;
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
+  onComplete: (sprint: Sprint, updates: Partial<Sprint>) => void;
 }) {
   const [name, setName] = useState('');
   const [goal, setGoal] = useState('');
@@ -196,15 +204,20 @@ function EditSprintDialog({
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!sprint || !name.trim()) return;
+    const updates = {
+      name: name.trim(),
+      goal: goal.trim() || null,
+      start_date: start || null,
+      end_date: end || null,
+      status,
+    };
+    if (status === 'completed' && sprint.status !== 'completed') {
+      onComplete(sprint, updates);
+      return;
+    }
     setSubmitting(true);
     try {
-      await api.sprints.update(sprint.id, {
-        name: name.trim(),
-        goal: goal.trim() || null,
-        start_date: start || null,
-        end_date: end || null,
-        status,
-      });
+      await api.sprints.update(sprint.id, updates);
       toast.success('Sprint updated');
       onOpenChange(false);
       onSaved();
@@ -277,6 +290,105 @@ function EditSprintDialog({
             </Button>
           </DialogFooter>
         </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function unfinishedSummary(issues: Pick<Issue, 'type'>[]) {
+  const counts = issues.reduce<Record<string, number>>((acc, issue) => {
+    acc[issue.type] = (acc[issue.type] ?? 0) + 1;
+    return acc;
+  }, {});
+  return Object.entries(counts)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([type, count]) => `${count} ${count === 1 ? type : pluralIssueType(type)}`)
+    .join(', ');
+}
+
+function pluralIssueType(type: string) {
+  if (type === 'story') return 'stories';
+  return `${type}s`;
+}
+
+function CompleteSprintDialog({
+  pending,
+  sprints,
+  onCancel,
+  onCompleted,
+}: {
+  pending: {
+    sprint: Sprint;
+    unfinished: Issue[];
+    updates?: Partial<Sprint>;
+  } | null;
+  sprints: Sprint[];
+  onCancel: () => void;
+  onCompleted: () => void;
+}) {
+  const [destination, setDestination] = useState('backlog');
+  const [submitting, setSubmitting] = useState(false);
+  const destinationSprints = sprints.filter((s) => s.id !== pending?.sprint.id && s.status !== 'completed');
+
+  useEffect(() => {
+    if (pending) setDestination(destinationSprints[0]?.id ?? 'backlog');
+    // Recompute only when a new completion flow opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending?.sprint.id]);
+
+  async function complete() {
+    if (!pending) return;
+    setSubmitting(true);
+    try {
+      const sprintUpdates = pending.updates ?? { status: 'completed' as SprintStatus };
+      const sprintPayload = { ...sprintUpdates, status: 'completed' as SprintStatus };
+      await api.sprints.update(pending.sprint.id, sprintPayload);
+      const sprint_id = destination === 'backlog' ? null : destination;
+      await Promise.all(pending.unfinished.map((issue) => api.issues.update(issue.id, { sprint_id })));
+      toast.success('Sprint completed', {
+        description: destination === 'backlog' ? 'Unfinished work moved to backlog.' : 'Unfinished work moved to the selected sprint.',
+      });
+      onCompleted();
+    } catch (err) {
+      toast.error('Could not complete sprint', { description: err instanceof Error ? err.message : undefined });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={!!pending} onOpenChange={(open) => { if (!open && !submitting) onCancel(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Complete {pending?.sprint.name}?</DialogTitle>
+          <DialogDescription>
+            {pending?.unfinished.length
+              ? `There are still ${pending.unfinished.length} unfinished issue${pending.unfinished.length === 1 ? '' : 's'} (${unfinishedSummary(pending.unfinished)}). Move them before closing the sprint.`
+              : 'This sprint has no unfinished work.'}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2">
+          <Label>Move unfinished work to</Label>
+          <Select value={destination} onValueChange={setDestination}>
+            <SelectTrigger aria-label="Move unfinished work to">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {destinationSprints.map((s) => (
+                <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+              ))}
+              <SelectItem value="backlog">Backlog</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={onCancel} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button onClick={complete} disabled={submitting}>
+            Complete sprint
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -394,6 +506,11 @@ export default function SprintsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [editingSprint, setEditingSprint] = useState<Sprint | null>(null);
+  const [completePending, setCompletePending] = useState<{
+    sprint: Sprint;
+    unfinished: Issue[];
+    updates?: Partial<Sprint>;
+  } | null>(null);
 
   const canManage = canManageSprints(user?.role);
 
@@ -412,6 +529,23 @@ export default function SprintsScreen() {
 
   useEffect(() => {
     void load();
+  }, [load]);
+
+  const requestComplete = useCallback(async (sprint: Sprint, updates?: Partial<Sprint>) => {
+    try {
+      const issues = await api.issues.list(sprint.project_id, sprint.id);
+      const unfinished = issues.filter((issue) => issue.status !== 'done');
+      if (unfinished.length === 0) {
+        await api.sprints.update(sprint.id, { ...(updates ?? {}), status: 'completed' });
+        toast.success('Sprint completed');
+        setEditingSprint(null);
+        void load();
+        return;
+      }
+      setCompletePending({ sprint, unfinished, updates });
+    } catch (err) {
+      toast.error('Could not inspect sprint work', { description: err instanceof Error ? err.message : undefined });
+    }
   }, [load]);
 
   if (projectsLoading || (loading && currentProjectId)) {
@@ -485,6 +619,7 @@ export default function SprintsScreen() {
                       projectKey={currentProject?.key ?? ''}
                       canManage={canManage}
                       onEdit={setEditingSprint}
+                      onComplete={requestComplete}
                       onChanged={load}
                     />
                   ))}
@@ -504,6 +639,17 @@ export default function SprintsScreen() {
         sprint={editingSprint}
         onOpenChange={(open) => { if (!open) setEditingSprint(null); }}
         onSaved={load}
+        onComplete={requestComplete}
+      />
+      <CompleteSprintDialog
+        pending={completePending}
+        sprints={sprints}
+        onCancel={() => setCompletePending(null)}
+        onCompleted={() => {
+          setCompletePending(null);
+          setEditingSprint(null);
+          void load();
+        }}
       />
     </>
   );
