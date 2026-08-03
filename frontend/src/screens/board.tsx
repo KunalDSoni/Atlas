@@ -185,10 +185,10 @@ export default function BoardScreen() {
 
   useEffect(() => {
     if (sprints.length === 0) {
-      setSprintFilter('');
+      setSprintFilter('all');
       return;
     }
-    if (sprintFilter && sprints.some((s) => s.id === sprintFilter)) return;
+    if (sprintFilter && (sprintFilter === 'all' || sprintFilter === 'backlog' || sprints.some((s) => s.id === sprintFilter))) return;
     const active = sprints.find((s) => s.status === 'active');
     const next = active ?? sprints.find((s) => s.status === 'planning') ?? sprints[0];
     setSprintFilter(next.id);
@@ -216,7 +216,8 @@ export default function BoardScreen() {
     const q = query.trim().toLowerCase();
     return issues.filter((i) => {
       if (i.type === 'epic' || i.type === 'subtask') return false;
-      if (!sprintFilter || i.sprint_id !== sprintFilter) return false;
+      if (sprintFilter === 'backlog' && i.sprint_id) return false;
+      if (sprintFilter && sprintFilter !== 'all' && sprintFilter !== 'backlog' && i.sprint_id !== sprintFilter) return false;
       if (!q) return true;
       return i.title.toLowerCase().includes(q) || i.issue_key.toLowerCase().includes(q);
     });
@@ -467,6 +468,8 @@ export default function BoardScreen() {
             <SelectValue placeholder="Select sprint" />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="all">All issues</SelectItem>
+            <SelectItem value="backlog">Backlog only</SelectItem>
             {sprints.map((s) => (
               <SelectItem key={s.id} value={s.id}>
                 {s.name}
