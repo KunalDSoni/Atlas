@@ -11,7 +11,7 @@ import { useWorkflow } from '@/hooks/use-workflow';
 import { statusTone } from '@/lib/domain';
 import type { Issue, Version } from '@/lib/types';
 import {
-  EmptyState, ErrorState, PageHeader, PriorityIcon, RowsSkeleton, StatusPill, TypeIcon, UserAvatar,
+  EmptyState, ErrorState, PageHeader, PriorityIcon, RowsSkeleton, SprintBadge, StatusPill, TypeIcon, UserAvatar,
 } from '@/components/app/primitives';
 import { formatDate } from '@/lib/format';
 import { absoluteUrl, issueUrl, projectUrl, releaseUrl } from '@/lib/urls';
@@ -147,6 +147,9 @@ export default function ReleaseDetailScreen() {
                   <TypeIcon type={issue.type} />
                   <span className="w-20 shrink-0 font-mono text-xs text-muted-foreground">{issue.issue_key}</span>
                   <span className="min-w-0 flex-1 truncate text-sm">{issue.title}</span>
+                  {issue.sprint_name && issue.type !== 'subtask' && issue.type !== 'epic' && (
+                    <SprintBadge name={issue.sprint_name} className="hidden shrink-0 md:inline-block" />
+                  )}
                   <PriorityIcon priority={issue.priority} />
                   <StatusPill status={issue.status} label={workflow.label(issue.status)} tone={statusTone(issue.status, workflow.statuses)} className="hidden md:inline-flex" />
                   {issue.assignee_name ? <UserAvatar name={issue.assignee_name} color={issue.assignee_color} /> : <span className="size-6 shrink-0 rounded-full border border-dashed border-border" />}

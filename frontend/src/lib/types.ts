@@ -103,6 +103,8 @@ export interface JqlSearchIssue {
   project_id: string;
   project_key: string;
   assignee_name: string | null;
+  sprint_name: string | null;
+  sprint_slug: string | null;
 }
 
 /** Compact issue state for wiki chips — what a hover card shows. */
@@ -164,6 +166,8 @@ export interface Issue {
   parent_key: string | null;
   parent_title: string | null;
   parent_type: IssueType | null;
+  sprint_name: string | null;
+  sprint_slug: string | null;
   subtask_count: number;
   subtask_done_count: number;
   original_estimate: number | null;
@@ -206,6 +210,8 @@ export interface SearchIssueHit {
   project_key: string;
   project_name: string;
   assignee_name?: string | null;
+  sprint_name?: string | null;
+  sprint_slug?: string | null;
 }
 
 export interface SearchPageHit {

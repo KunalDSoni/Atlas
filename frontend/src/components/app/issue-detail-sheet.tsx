@@ -1,7 +1,7 @@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TYPE_LABEL } from '@/lib/domain';
-import { TypeIcon } from './primitives';
+import { SprintBadge, TypeIcon } from './primitives';
 import { CopyIssueLink } from './copy-issue-link';
 import { useIssueDetail } from './issue-detail/use-issue-detail';
 import { IssueDetailBody } from './issue-detail/issue-detail-body';
@@ -42,6 +42,9 @@ export function IssueDetailSheet({
                 <TypeIcon type={issue.type} />
                 <span className="font-mono text-xs text-muted-foreground">{issue.issue_key}</span>
                 <span className="text-xs text-muted-foreground">· {TYPE_LABEL[issue.type]}</span>
+                {issue.sprint_name && issue.type !== 'subtask' && issue.type !== 'epic' && (
+                  <SprintBadge name={issue.sprint_name} />
+                )}
                 <span className="flex-1" />
                 <CopyIssueLink issueKey={issue.issue_key} />
                 <IssueActions detail={detail} />

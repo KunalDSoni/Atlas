@@ -56,9 +56,11 @@ router.get('/search', requireAuth, async (req, res) => {
       const issues = await queryAll(db, `
         SELECT i.id, i.issue_key, i.title, i.type, i.status, i.priority, i.project_id,
                p.key AS project_key, p.name AS project_name,
-               u.name AS assignee_name
+               u.name AS assignee_name,
+               s.name AS sprint_name, s.slug AS sprint_slug
         FROM issues i JOIN projects p ON p.id = i.project_id
         LEFT JOIN users u ON u.id = i.assignee_id
+        LEFT JOIN sprints s ON s.id = i.sprint_id
         WHERE ${clauses.join(' AND ')}
         ORDER BY i.updated_at DESC LIMIT 50`, params);
       return res.json({ issues, pages: [], jql: true });
@@ -67,8 +69,10 @@ router.get('/search', requireAuth, async (req, res) => {
     const like = `%${q}%`;
     let issueQuery = `
       SELECT i.id, i.issue_key, i.title, i.type, i.status, i.priority, i.project_id,
-             p.key AS project_key, p.name AS project_name
+             p.key AS project_key, p.name AS project_name,
+             s.name AS sprint_name, s.slug AS sprint_slug
       FROM issues i JOIN projects p ON p.id = i.project_id
+      LEFT JOIN sprints s ON s.id = i.sprint_id
       WHERE (i.title LIKE ? OR i.issue_key LIKE ? OR i.description LIKE ?)`;
     const issueParams = [like, like, like];
     if (req.query.project_id) {

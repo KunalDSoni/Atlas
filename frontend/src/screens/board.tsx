@@ -19,7 +19,7 @@ import { useSettings } from '@/hooks/use-settings';
 import { useWorkflow } from '@/hooks/use-workflow';
 import { STATUSES, canCreateIssues, canDragIssues, canManageSprints, statusTone } from '@/lib/domain';
 import type { Issue, IssueStatus, Sprint, StatusCategory } from '@/lib/types';
-import { EmptyState, EpicBadge, ErrorState, LabelChip, PageHeader, PriorityIcon, SubtaskProgress, TypeIcon, UserAvatar } from '@/components/app/primitives';
+import { EmptyState, EpicBadge, ErrorState, LabelChip, PageHeader, PriorityIcon, SprintBadge, SubtaskProgress, TypeIcon, UserAvatar } from '@/components/app/primitives';
 import { cn } from '@/lib/utils';
 import { CreateIssueDialog } from '@/components/app/create-issue-dialog';
 
@@ -100,6 +100,11 @@ function IssueCard({
       {issue.epic_key && (
         <div className={compact ? 'mb-1' : 'mb-1.5'}>
           <EpicBadge name={issue.epic_title ?? issue.epic_key} color={issue.epic_badge_color} />
+        </div>
+      )}
+      {issue.sprint_name && issue.type !== 'subtask' && issue.type !== 'epic' && (
+        <div className={compact ? 'mb-1' : 'mb-1.5'}>
+          <SprintBadge name={issue.sprint_name} />
         </div>
       )}
 

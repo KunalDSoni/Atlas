@@ -9,7 +9,7 @@ import { IssueDetailBody } from '@/components/app/issue-detail/issue-detail-body
 import { IssueActions } from '@/components/app/issue-detail/issue-detail-actions';
 import { CopyIssueLink } from '@/components/app/copy-issue-link';
 import { IssueNotFound } from '@/screens/not-found';
-import { TypeIcon } from '@/components/app/primitives';
+import { SprintBadge, TypeIcon } from '@/components/app/primitives';
 import { TYPE_LABEL } from '@/lib/domain';
 import { isIssueKey, issueUrl, projectUrl } from '@/lib/urls';
 
@@ -64,6 +64,9 @@ export default function IssuePage() {
         <TypeIcon type={issue.type} />
         <span className="font-mono text-xs text-muted-foreground">{issue.issue_key}</span>
         <span className="text-xs text-muted-foreground">· {TYPE_LABEL[issue.type]}</span>
+        {issue.sprint_name && issue.type !== 'subtask' && issue.type !== 'epic' && (
+          <SprintBadge name={issue.sprint_name} />
+        )}
         <span className="flex-1" />
         <CopyIssueLink issueKey={issue.issue_key} />
         <IssueActions detail={detail} />

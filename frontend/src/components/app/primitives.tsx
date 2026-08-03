@@ -76,6 +76,15 @@ export function EpicBadge({
   );
 }
 
+/** Neutral sprint chip shown where issues from multiple sprints can appear together. */
+export function SprintBadge({ name, className }: { name: string; className?: string }) {
+  return (
+    <span className={cn('inline-block max-w-32 truncate rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground', className)}>
+      {name}
+    </span>
+  );
+}
+
 /** Compact "done/total" subtask rollup shown on board cards and backlog rows. */
 export function SubtaskProgress({
   done,

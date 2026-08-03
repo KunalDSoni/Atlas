@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { HBarChart } from '@/components/app/charts';
-import { PriorityIcon, StatusPill, TypeIcon, UserAvatar } from '@/components/app/primitives';
+import { PriorityIcon, SprintBadge, StatusPill, TypeIcon, UserAvatar } from '@/components/app/primitives';
 import { STATUS_LABEL, TYPE_LABEL, statusLabel } from '@/lib/domain';
 import { timeAgo } from '@/lib/format';
 import { issueUrl, projectUrl } from '@/lib/urls';
@@ -276,6 +276,9 @@ function RecentActivityGadget({ issues }: { issues: Issue[] }) {
             <TypeIcon type={issue.type} />
             <span className="w-16 shrink-0 font-mono text-xs text-muted-foreground">{issue.issue_key}</span>
             <span className="min-w-0 flex-1 truncate text-sm">{issue.title}</span>
+            {issue.sprint_name && issue.type !== 'subtask' && issue.type !== 'epic' && (
+              <SprintBadge name={issue.sprint_name} className="hidden shrink-0 lg:inline-block" />
+            )}
             <PriorityIcon priority={issue.priority} className="hidden sm:block" />
             <StatusPill status={issue.status} className="hidden shrink-0 md:inline-flex" />
             <span className="hidden w-20 shrink-0 text-right text-xs text-muted-foreground lg:block">

@@ -88,15 +88,19 @@ async function enrichIssues(db, issues) {
   // Referenced rows: one query each, only when something actually references them.
   const userIds = uniq([...issues.map((i) => i.assignee_id), ...issues.map((i) => i.reporter_id)]);
   const parentIds = uniq(issues.map((i) => i.parent_id));
+  const sprintIds = uniq(issues.map((i) => i.sprint_id));
   const versionIds = uniq(issues.map((i) => i.fix_version_id));
   const componentIds = uniq(issues.map((i) => i.component_id));
 
-  const [users, parents, versions, components] = await Promise.all([
+  const [users, parents, sprints, versions, components] = await Promise.all([
     userIds.length
       ? queryAll(db, `SELECT id, name, avatar_color FROM users WHERE id IN (${placeholders(userIds)})`, userIds)
       : [],
     parentIds.length
       ? queryAll(db, `SELECT id, issue_key, title, type, epic_color FROM issues WHERE id IN (${placeholders(parentIds)})`, parentIds)
+      : [],
+    sprintIds.length
+      ? queryAll(db, `SELECT id, name, slug FROM sprints WHERE id IN (${placeholders(sprintIds)})`, sprintIds)
       : [],
     versionIds.length
       ? queryAll(db, `SELECT id, name, status FROM versions WHERE id IN (${placeholders(versionIds)})`, versionIds)
@@ -128,6 +132,7 @@ async function enrichIssues(db, issues) {
 
   const userById = indexBy(users, 'id');
   const parentById = indexBy(parents, 'id');
+  const sprintById = indexBy(sprints, 'id');
   const versionById = indexBy(versions, 'id');
   const componentById = indexBy(components, 'id');
   const commentCounts = countsBy(commentRows, 'issue_id');
@@ -152,6 +157,7 @@ async function enrichIssues(db, issues) {
     const assignee = issue.assignee_id ? userById.get(issue.assignee_id) : null;
     const reporter = issue.reporter_id ? userById.get(issue.reporter_id) : null;
     const parent = issue.parent_id ? parentById.get(issue.parent_id) : null;
+    const sprint = issue.sprint_id ? sprintById.get(issue.sprint_id) : null;
     const fixVersion = issue.fix_version_id ? versionById.get(issue.fix_version_id) : null;
     const component = issue.component_id ? componentById.get(issue.component_id) : null;
     const subtasks = subtaskRollup.get(issue.id);
@@ -168,6 +174,8 @@ async function enrichIssues(db, issues) {
       epic_key: parent?.type === 'epic' ? parent.issue_key : null,
       epic_title: parent?.type === 'epic' ? parent.title : null,
       epic_badge_color: parent?.type === 'epic' ? parent.epic_color : null,
+      sprint_name: sprint?.name || null,
+      sprint_slug: sprint?.slug || null,
       fix_version_name: fixVersion?.name || null,
       fix_version_status: fixVersion?.status || null,
       component_name: component?.name || null,

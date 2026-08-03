@@ -18,7 +18,7 @@ import { issueUrl } from '@/lib/urls';
 import { statusTone, TYPE_LABEL } from '@/lib/domain';
 import type { SavedFilter, SearchIssueHit } from '@/lib/types';
 import {
-  EmptyState, ErrorState, PageHeader, PriorityIcon, RowsSkeleton, StatusPill, TypeIcon,
+  EmptyState, ErrorState, PageHeader, PriorityIcon, RowsSkeleton, SprintBadge, StatusPill, TypeIcon,
 } from '@/components/app/primitives';
 import { cn } from '@/lib/utils';
 
@@ -355,6 +355,7 @@ export default function FiltersScreen() {
                         <th className="whitespace-nowrap px-3 py-2 text-xs font-medium text-muted-foreground">Key</th>
                         <th className="min-w-64 px-3 py-2 text-xs font-medium text-muted-foreground">Summary</th>
                         <th className="whitespace-nowrap px-3 py-2 text-xs font-medium text-muted-foreground">Type</th>
+                        <th className="whitespace-nowrap px-3 py-2 text-xs font-medium text-muted-foreground">Sprint</th>
                         <th className="whitespace-nowrap px-3 py-2 text-xs font-medium text-muted-foreground">Status</th>
                         <th className="whitespace-nowrap px-3 py-2 text-xs font-medium text-muted-foreground">Priority</th>
                         <th className="whitespace-nowrap px-3 py-2 text-xs font-medium text-muted-foreground">Assignee</th>
@@ -377,6 +378,11 @@ export default function FiltersScreen() {
                             <span className="inline-flex items-center gap-1.5">
                               <TypeIcon type={issue.type} /> {TYPE_LABEL[issue.type]}
                             </span>
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2">
+                            {issue.sprint_name && issue.type !== 'subtask' && issue.type !== 'epic'
+                              ? <SprintBadge name={issue.sprint_name} />
+                              : <span className="text-xs text-muted-foreground">Backlog</span>}
                           </td>
                           <td className="whitespace-nowrap px-3 py-2">
                             <StatusPill
