@@ -211,10 +211,10 @@ router.get('/projects/:projectId/reports/burndown', requireAuth, async (req, res
 router.get('/projects/:projectId/reports/epics/:epicId', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const epic = await queryOne(db, 'SELECT * FROM issues WHERE id = ? AND type = ?', [req.params.epicId, 'epic']);
+    const epic = await queryOne(db, 'SELECT * FROM issues WHERE id = ? AND type = ? AND project_id = ?', [req.params.epicId, 'epic', req.params.projectId]);
     if (!epic) return res.status(404).json({ error: 'Epic not found' });
 
-    const children = await queryAll(db, 'SELECT id, issue_key, title, status, story_points, created_at, updated_at FROM issues WHERE parent_id = ? ORDER BY board_order', [epic.id]);
+    const children = await queryAll(db, 'SELECT id, issue_key, title, status, story_points, created_at, updated_at FROM issues WHERE parent_id = ? AND project_id = ? ORDER BY board_order', [epic.id, req.params.projectId]);
     const done = children.filter(i => i.status === 'done');
     const totalPoints = children.reduce((s, i) => s + (i.story_points || 0), 0);
     const donePoints = done.reduce((s, i) => s + (i.story_points || 0), 0);
