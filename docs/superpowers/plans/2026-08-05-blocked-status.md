@@ -4,14 +4,14 @@
 
 **Goal:** Add "Blocked" as a fifth built-in issue status (To Do → In Progress → Blocked → In Review → Done) in the default workflow, with its own label and a visually distinct tone.
 
-**Architecture:** All built-in status vocabulary lives in one file, `frontend/src/lib/domain.tsx` (`STATUSES`, `STATUS_LABEL`, `STATUS_TONE`, `CATEGORY_TONE`). Every screen (board, backlog, filters, dropdowns, reports) reads status metadata through the `statusLabel()`/`statusTone()` helpers in that file rather than hardcoding values, so adding one status key there propagates everywhere automatically. No other file needs code changes.
+**Architecture:** All built-in status vocabulary lives in one file, `frontend/src/lib/domain.tsx` (`STATUSES`, `STATUS_LABEL`, `STATUS_TONE`, `CATEGORY_TONE`). Every screen (board, backlog, filters, dropdowns, reports) reads status metadata through the `statusLabel()`/`statusTone()` helpers in that file rather than hardcoding values, so adding one status key there propagates everywhere automatically for label/tone purposes. **Correction (post-Task 3):** this was wrong about being the sole source of truth — `backend/routes/workflows.js`'s `DEFAULT_STATUSES` is a second, independent source that also determines the default status list served to the board, and had to be updated separately (see Task 3).
 
 **Tech Stack:** React + TypeScript frontend, Tailwind CSS for tone classes. No unit test runner exists in this repo (`frontend/`) — only Playwright E2E (`frontend/playwright.config.ts`). Verification for this change is done by running the dev server and checking the board/dropdowns in-browser, per the spec's manual test list.
 
 ## Global Constraints
 
 - Status keys are per-project since custom workflows exist; the four (now five) built-ins remain the common default (per `frontend/src/lib/types.ts:5` comment).
-- `blocked` is additive only — no changes to `backend/routes/workflows.js` or the `project_statuses` table; existing projects with custom workflows are unaffected.
+- `blocked` is additive only — no changes to the `project_statuses` table; existing projects with custom workflows are unaffected. (This originally also claimed no changes to `backend/routes/workflows.js`; that assumption was wrong — see Task 3, added after manual verification found the backend's `DEFAULT_STATUSES` needed the same update.)
 - `STATUS_TONE` must be checked before `CATEGORY_TONE` in `statusTone()` (already true in existing code at `frontend/src/lib/domain.tsx:41-45`) — `blocked` needs its own entry in `STATUS_TONE` precisely so it doesn't fall back to the `in_progress` category tone.
 
 ---
