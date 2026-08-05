@@ -6,11 +6,12 @@ import {
 } from 'lucide-react';
 import type { IssueStatus, IssueType, LinkType, Priority, Role, SprintStatus } from './types';
 
-export const STATUSES: IssueStatus[] = ['todo', 'in_progress', 'in_review', 'done'];
+export const STATUSES: IssueStatus[] = ['todo', 'in_progress', 'blocked', 'in_review', 'done'];
 
 export const STATUS_LABEL: Record<IssueStatus, string> = {
   todo: 'To Do',
   in_progress: 'In Progress',
+  blocked: 'Blocked',
   in_review: 'In Review',
   done: 'Done',
 };
@@ -19,6 +20,7 @@ export const STATUS_LABEL: Record<IssueStatus, string> = {
 export const STATUS_TONE: Record<IssueStatus, string> = {
   todo: 'bg-muted text-muted-foreground',
   in_progress: 'bg-primary-muted text-accent-foreground',
+  blocked: 'bg-destructive-muted text-destructive',
   in_review: 'bg-info-muted text-info',
   done: 'bg-success-muted text-success',
 };
