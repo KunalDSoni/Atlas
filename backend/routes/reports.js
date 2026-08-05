@@ -7,6 +7,9 @@
 // GET /api/projects/:id/reports/created-vs-resolved - Creation vs resolution trend
 // GET /api/projects/:id/reports/type-distribution   - Issue type breakdown
 // GET /api/projects/:id/reports/priority-distribution - Priority breakdown
+// GET /api/projects/:id/reports/average-age  - Average age of open issues by status
+// GET /api/projects/:id/reports/epics/:epicId - Epic with children and rollup
+// GET /api/projects/:id/reports/versions/:versionId - Version with linked issues and rollup
 // GET /api/projects/:id/reports/export/csv   - Export issues as CSV
 
 const express = require('express');
@@ -245,6 +248,29 @@ router.get('/projects/:projectId/reports/epics/:epicId', requireAuth, async (req
   } catch (e) { serverError(res, e); }
 });
 
+// ===== VERSION REPORT =====
+router.get('/projects/:projectId/reports/versions/:versionId', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const version = await queryOne(db, 'SELECT * FROM versions WHERE id = ? AND project_id = ?', [req.params.versionId, req.params.projectId]);
+    if (!version) return res.status(404).json({ error: 'Version not found' });
+
+    const issues = await queryAll(db, 'SELECT id, issue_key, title, status, story_points FROM issues WHERE fix_version_id = ? AND project_id = ?', [version.id, req.params.projectId]);
+    const done = issues.filter(i => i.status === 'done');
+    const totalPoints = issues.reduce((s, i) => s + (i.story_points || 0), 0);
+    const donePoints = done.reduce((s, i) => s + (i.story_points || 0), 0);
+
+    res.json({
+      version: { id: version.id, name: version.name },
+      issues: issues.map(i => ({ id: i.id, issue_key: i.issue_key, title: i.title, status: i.status, points: i.story_points || 0 })),
+      done_count: done.length,
+      total_count: issues.length,
+      done_points: donePoints,
+      total_points: totalPoints
+    });
+  } catch (e) { serverError(res, e); }
+});
+
 // ===== CREATED vs RESOLVED TREND =====
 router.get('/projects/:projectId/reports/created-vs-resolved', requireAuth, async (req, res) => {
   try {
@@ -346,6 +372,41 @@ router.get('/projects/:projectId/reports/cycle-time', requireAuth, async (req, r
       p85_cycle_h: percentile(cycles, 0.85),
       avg_lead_h: avg(leads),
       count: rows.length,
+    });
+  } catch (e) { serverError(res, e); }
+});
+
+router.get('/projects/:projectId/reports/control-chart', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const statuses = await projectStatuses(db, req.params.projectId);
+    const { issues, byIssue } = await loadFlowData(db, req.params.projectId);
+
+    const rows = [];
+    for (const issue of issues) {
+      if (categoryOf(issue.status, statuses) !== 'done') continue;
+      const trans = byIssue.get(issue.id) || [];
+      const doneEntry = trans.find((t) => categoryOf(t.new_value, statuses) === 'done');
+      if (!doneEntry) continue; // legacy issue with no recorded completion
+      const progressEntry = trans.find((t) => categoryOf(t.new_value, statuses) === 'in_progress');
+      const cycleTimeH = progressEntry && hoursBetween(progressEntry.created_at, doneEntry.created_at) >= 0
+        ? hoursBetween(progressEntry.created_at, doneEntry.created_at)
+        : null;
+
+      rows.push({
+        id: issue.id,
+        issue_key: issue.issue_key,
+        title: issue.title,
+        resolved_date: doneEntry.created_at,
+        cycle_time_days: cycleTimeH !== null ? Math.round((cycleTimeH / 24) * 10) / 10 : null,
+      });
+    }
+
+    const cycles = rows.map((r) => r.cycle_time_days).filter((c) => c !== null).sort((a, b) => a - b);
+    res.json({
+      issues: rows.sort((a, b) => (a.resolved_date < b.resolved_date ? 1 : -1)),
+      p50_cycle_days: percentile(cycles, 0.5),
+      p85_cycle_days: percentile(cycles, 0.85),
     });
   } catch (e) { serverError(res, e); }
 });
