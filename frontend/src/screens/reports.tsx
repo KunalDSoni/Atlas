@@ -71,6 +71,11 @@ interface ResolutionResponse {
   by_priority: { priority: string; total: number; resolved: number; avg_days: number | null }[];
 }
 
+interface CreatedVsResolvedResponse {
+  created: { day: string; count: number }[];
+  resolved: { day: string; count: number }[];
+}
+
 /**
  * Collapse a status-split distribution into totals per key, in a caller-supplied
  * domain order. The API returns rows grouped by status, so insertion order is
@@ -138,6 +143,7 @@ export default function ReportsScreen() {
   const [cycle, setCycle] = useState<CycleTimeResponse | null>(null);
   const [tis, setTis] = useState<TimeInStatusResponse | null>(null);
   const [cfd, setCfd] = useState<CumulativeFlowResponse | null>(null);
+  const [createdVsResolved, setCreatedVsResolved] = useState<CreatedVsResolvedResponse | null>(null);
   const [epics, setEpics] = useState<Array<{ id: string; title: string }> | null>(null);
   const [selectedEpicId, setSelectedEpicId] = useState<string | null>(null);
   const [epicReport, setEpicReport] = useState<unknown | null>(null);
@@ -149,7 +155,7 @@ export default function ReportsScreen() {
     setLoading(true);
     setError(null);
     try {
-      const [v, w, t, p, sr, bd, rs, ct, ts, cf, epicsList] = await Promise.all([
+      const [v, w, t, p, sr, bd, rs, ct, ts, cf, cvr, epicsList] = await Promise.all([
         api.reports.velocity(currentProjectId),
         api.reports.workload(currentProjectId),
         api.reports.typeDistribution(currentProjectId),
@@ -160,6 +166,7 @@ export default function ReportsScreen() {
         api.reports.cycleTime(currentProjectId).catch(() => null),
         api.reports.timeInStatus(currentProjectId).catch(() => null),
         api.reports.cumulativeFlow(currentProjectId).catch(() => null),
+        api.reports.createdVsResolved(currentProjectId).catch(() => null),
         api.epics.list(currentProjectId).catch(() => []),
       ]);
       setVelocity(v as VelocityResponse);
@@ -172,6 +179,7 @@ export default function ReportsScreen() {
       setCycle(ct);
       setTis(ts);
       setCfd(cf);
+      setCreatedVsResolved(cvr as CreatedVsResolvedResponse | null);
 
       const epicSummaries = (epicsList as any[]).map((e) => ({ id: e.id, title: e.title }));
       setEpics(epicSummaries);
@@ -590,6 +598,37 @@ export default function ReportsScreen() {
             />
             <div className="mt-2">
               <Legend items={['To Do', 'In Progress', 'Done'].map((label, i) => ({ label, color: seriesColor(i) }))} />
+            </div>
+          </ChartCard>
+        )}
+
+        {createdVsResolved && (createdVsResolved.created.length > 1 || createdVsResolved.resolved.length > 1) && (
+          <ChartCard
+            title="Created vs Resolved"
+            description="Issues created and resolved per day"
+            table={
+              <DataTable
+                caption="Daily counts of created and resolved issues"
+                columns={['Date', 'Created', 'Resolved']}
+                rows={createdVsResolved.created.map((c, i) => {
+                  const resolved = createdVsResolved.resolved[i];
+                  return [c.day, c.count, resolved?.count ?? 0];
+                })}
+              />
+            }
+          >
+            <LineChart
+              series={['Created', 'Resolved']}
+              points={createdVsResolved.created.map((c, i) => {
+                const resolved = createdVsResolved.resolved[i];
+                return {
+                  label: c.day.slice(5),
+                  values: [c.count, resolved?.count ?? 0],
+                };
+              })}
+            />
+            <div className="mt-2">
+              <Legend items={['Created', 'Resolved'].map((label, i) => ({ label, color: seriesColor(i) }))} />
             </div>
           </ChartCard>
         )}
