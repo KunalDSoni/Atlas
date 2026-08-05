@@ -343,3 +343,167 @@ export function LineChart({
     </div>
   );
 }
+
+/**
+ * Scatter plot for cycle time or similar metrics with p50/p85 reference lines.
+ * Points are small circles colored by series, reference lines are horizontal dashed with labels.
+ */
+export function ScatterChart({
+  data,
+  p50,
+  p85,
+  xLabel = 'Date',
+  yLabel = 'Value',
+  formatValue = (n: number) => String(n),
+}: {
+  data: { x: string; y: number; label: string }[];
+  p50?: number;
+  p85?: number;
+  xLabel?: string;
+  yLabel?: string;
+  formatValue?: (n: number) => string;
+}) {
+  const [hover, setHover] = useState<number | null>(null);
+  const W = 560;
+  const H = 180;
+  const PAD = { top: 16, right: 48, bottom: 22, left: 32 };
+
+  if (!data.length) return <p className="py-8 text-center text-sm text-muted-foreground">No data.</p>;
+
+  const yValues = data.map((d) => d.y);
+  const maxY = Math.max(1, ...yValues);
+  const plotW = W - PAD.left - PAD.right;
+  const plotH = H - PAD.top - PAD.bottom;
+
+  // Scale functions
+  const x = (i: number) => PAD.left + (i / (Math.max(1, data.length - 1))) * plotW;
+  const y = (v: number) => PAD.top + plotH - (v / maxY) * plotH;
+
+  // Y-axis ticks
+  const ticks = [0, 0.5, 1].map((f) => Math.round(maxY * f));
+
+  return (
+    <div>
+      <div className="overflow-x-auto">
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          className="h-44 w-full min-w-[420px]"
+          role="img"
+          aria-label={`Scatter plot of ${yLabel} over ${xLabel}`}
+          onMouseLeave={() => setHover(null)}
+        >
+          {/* Recessive gridlines + y ticks + y-axis label */}
+          {ticks.map((t) => (
+            <g key={t}>
+              <line x1={PAD.left} x2={W - PAD.right} y1={y(t)} y2={y(t)} stroke="var(--border)" strokeWidth="1" />
+              <text x={PAD.left - 6} y={y(t) + 3} textAnchor="end" fontSize="9" fill="var(--muted-foreground)">
+                {t}
+              </text>
+            </g>
+          ))}
+
+          {/* Reference lines for p50 and p85 */}
+          {p50 != null && (
+            <g key="p50">
+              <line
+                x1={PAD.left}
+                x2={W - PAD.right}
+                y1={y(p50)}
+                y2={y(p50)}
+                stroke="var(--muted-foreground)"
+                strokeWidth="1"
+                strokeDasharray="3 2"
+                opacity="0.5"
+              />
+              <text
+                x={W - PAD.right + 4}
+                y={y(p50) + 3}
+                fontSize="8"
+                fill="var(--muted-foreground)"
+              >
+                p50: {formatValue(p50)}
+              </text>
+            </g>
+          )}
+          {p85 != null && (
+            <g key="p85">
+              <line
+                x1={PAD.left}
+                x2={W - PAD.right}
+                y1={y(p85)}
+                y2={y(p85)}
+                stroke="var(--muted-foreground)"
+                strokeWidth="1"
+                strokeDasharray="3 2"
+                opacity="0.5"
+              />
+              <text
+                x={W - PAD.right + 4}
+                y={y(p85) + 3}
+                fontSize="8"
+                fill="var(--muted-foreground)"
+              >
+                p85: {formatValue(p85)}
+              </text>
+            </g>
+          )}
+
+          {/* Data points as circles */}
+          {data.map((d, i) => (
+            <circle
+              key={i}
+              cx={x(i)}
+              cy={y(d.y)}
+              r="3"
+              fill={seriesColor(0)}
+              opacity={hover === i ? 1 : 0.7}
+              className="transition-opacity duration-200"
+            />
+          ))}
+
+          {/* Hover marker */}
+          {hover != null && (
+            <circle
+              cx={x(hover)}
+              cy={y(data[hover].y)}
+              r="5"
+              fill="none"
+              stroke={seriesColor(0)}
+              strokeWidth="1.5"
+              opacity="0.8"
+            />
+          )}
+
+          {/* Invisible hit targets */}
+          {data.map((d, i) => (
+            <circle
+              key={`hit-${i}`}
+              cx={x(i)}
+              cy={y(d.y)}
+              r="6"
+              fill="transparent"
+              onMouseEnter={() => setHover(i)}
+            >
+              <title>{`${d.label}: ${formatValue(d.y)}`}</title>
+            </circle>
+          ))}
+
+          {/* X-axis labels: first and last only */}
+          <text x={PAD.left} y={H - 6} fontSize="9" fill="var(--muted-foreground)">
+            {data[0].x}
+          </text>
+          <text x={W - PAD.right} y={H - 6} textAnchor="end" fontSize="9" fill="var(--muted-foreground)">
+            {data[data.length - 1].x}
+          </text>
+        </svg>
+      </div>
+      {hover != null && (
+        <p className="mt-1 text-center text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">{data[hover].label}</span>
+          {' · '}
+          <span className="tabular-nums text-foreground">{formatValue(data[hover].y)} {yLabel}</span>
+        </p>
+      )}
+    </div>
+  );
+}

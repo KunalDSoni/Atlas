@@ -9,7 +9,7 @@ import { useProjects } from '@/hooks/use-projects';
 import { PRIORITIES, PRIORITY_LABEL, STATUS_LABEL, STATUSES, TYPE_LABEL } from '@/lib/domain';
 import type { CumulativeFlowResponse, CycleTimeResponse, IssueStatus, IssueType, Priority, TimeInStatusResponse } from '@/lib/types';
 import { EmptyState, ErrorState, PageHeader, UserAvatar } from '@/components/app/primitives';
-import { DataTable, GroupedColumns, HBarChart, Legend, LineChart, StackedBar, seriesColor } from '@/components/app/charts';
+import { DataTable, GroupedColumns, HBarChart, Legend, LineChart, ScatterChart, StackedBar, seriesColor } from '@/components/app/charts';
 import { toast } from 'sonner';
 
 /** Story → Task → Bug reads as a workflow; alphabetical does not. */
