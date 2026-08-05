@@ -207,6 +207,44 @@ router.get('/projects/:projectId/reports/burndown', requireAuth, async (req, res
   } catch (e) { serverError(res, e); }
 });
 
+// ===== EPIC REPORT =====
+router.get('/projects/:projectId/reports/epics/:epicId', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const epic = await queryOne(db, 'SELECT * FROM issues WHERE id = ? AND type = ?', [req.params.epicId, 'epic']);
+    if (!epic) return res.status(404).json({ error: 'Epic not found' });
+
+    const children = await queryAll(db, 'SELECT id, issue_key, title, status, story_points, created_at, updated_at FROM issues WHERE parent_id = ? ORDER BY board_order', [epic.id]);
+    const done = children.filter(i => i.status === 'done');
+    const totalPoints = children.reduce((s, i) => s + (i.story_points || 0), 0);
+    const donePoints = done.reduce((s, i) => s + (i.story_points || 0), 0);
+
+    // Compute daily burndown from epic's created_at to today
+    const start = new Date(epic.created_at);
+    const today = new Date();
+    const burndown = [];
+
+    for (let d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
+      const dateStr = d.toISOString().split('T')[0];
+      const doneByDate = children.filter(c =>
+        c.status === 'done' && c.updated_at && c.updated_at.split('T')[0] <= dateStr
+      );
+      const donePts = doneByDate.reduce((s, c) => s + (c.story_points || 0), 0);
+      burndown.push({ date: dateStr, remaining_points: totalPoints - donePts });
+    }
+
+    res.json({
+      epic: { id: epic.id, name: epic.title, created_at: epic.created_at },
+      children: children.map(c => ({ id: c.id, issue_key: c.issue_key, title: c.title, status: c.status, points: c.story_points || 0 })),
+      done_count: done.length,
+      total_count: children.length,
+      done_points: donePoints,
+      total_points: totalPoints,
+      burndown: burndown
+    });
+  } catch (e) { serverError(res, e); }
+});
+
 // ===== CREATED vs RESOLVED TREND =====
 router.get('/projects/:projectId/reports/created-vs-resolved', requireAuth, async (req, res) => {
   try {
