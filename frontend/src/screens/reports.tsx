@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { api, getToken } from '@/lib/api';
 import { useProjects } from '@/hooks/use-projects';
 import { PRIORITIES, PRIORITY_LABEL, STATUS_LABEL, STATUSES, TYPE_LABEL } from '@/lib/domain';
-import type { CumulativeFlowResponse, CycleTimeResponse, IssueStatus, IssueType, Priority, TimeInStatusResponse } from '@/lib/types';
+import type { ControlChartResponse, CumulativeFlowResponse, CycleTimeResponse, IssueStatus, IssueType, Priority, TimeInStatusResponse, VersionReportResponse } from '@/lib/types';
 import { EmptyState, ErrorState, PageHeader, UserAvatar } from '@/components/app/primitives';
 import { DataTable, GroupedColumns, HBarChart, Legend, LineChart, ScatterChart, StackedBar, seriesColor } from '@/components/app/charts';
 import { toast } from 'sonner';
@@ -143,10 +143,14 @@ export default function ReportsScreen() {
   const [cycle, setCycle] = useState<CycleTimeResponse | null>(null);
   const [tis, setTis] = useState<TimeInStatusResponse | null>(null);
   const [cfd, setCfd] = useState<CumulativeFlowResponse | null>(null);
+  const [controlChart, setControlChart] = useState<ControlChartResponse | null>(null);
   const [createdVsResolved, setCreatedVsResolved] = useState<CreatedVsResolvedResponse | null>(null);
   const [epics, setEpics] = useState<Array<{ id: string; title: string }> | null>(null);
   const [selectedEpicId, setSelectedEpicId] = useState<string | null>(null);
   const [epicReport, setEpicReport] = useState<unknown | null>(null);
+  const [versions, setVersions] = useState<Array<{ id: string; name: string }> | null>(null);
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+  const [versionReport, setVersionReport] = useState<VersionReportResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -155,7 +159,7 @@ export default function ReportsScreen() {
     setLoading(true);
     setError(null);
     try {
-      const [v, w, t, p, sr, bd, rs, ct, ts, cf, cvr, epicsList] = await Promise.all([
+      const [v, w, t, p, sr, bd, rs, ct, ts, cf, cc, cvr, epicsList, versionsList] = await Promise.all([
         api.reports.velocity(currentProjectId),
         api.reports.workload(currentProjectId),
         api.reports.typeDistribution(currentProjectId),
@@ -166,8 +170,10 @@ export default function ReportsScreen() {
         api.reports.cycleTime(currentProjectId).catch(() => null),
         api.reports.timeInStatus(currentProjectId).catch(() => null),
         api.reports.cumulativeFlow(currentProjectId).catch(() => null),
+        api.reports.controlChart(currentProjectId).catch(() => null),
         api.reports.createdVsResolved(currentProjectId).catch(() => null),
         api.epics.list(currentProjectId).catch(() => []),
+        api.reports.versions(currentProjectId).catch(() => []),
       ]);
       setVelocity(v as VelocityResponse);
       setWorkload(w as WorkloadResponse);
@@ -179,6 +185,7 @@ export default function ReportsScreen() {
       setCycle(ct);
       setTis(ts);
       setCfd(cf);
+      setControlChart(cc);
       setCreatedVsResolved(cvr as CreatedVsResolvedResponse | null);
 
       const epicSummaries = (epicsList as any[]).map((e) => ({ id: e.id, title: e.title }));
@@ -187,6 +194,14 @@ export default function ReportsScreen() {
         const firstBurndown = await api.reports.epicBurndown(currentProjectId, epicSummaries[0].id);
         setEpicReport(firstBurndown);
         setSelectedEpicId(epicSummaries[0].id);
+      }
+
+      const versionSummaries = (versionsList as any[]).map((v) => ({ id: v.id, name: v.name }));
+      setVersions(versionSummaries);
+      if (versionSummaries.length > 0) {
+        const firstReport = await api.reports.versionReport(currentProjectId, versionSummaries[0].id);
+        setVersionReport(firstReport as VersionReportResponse);
+        setSelectedVersionId(versionSummaries[0].id);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load reports');
@@ -227,6 +242,17 @@ export default function ReportsScreen() {
       setEpicReport(burndown);
     } catch (e) {
       toast.error('Could not load epic report', { description: e instanceof Error ? e.message : undefined });
+    }
+  }
+
+  async function handleVersionChange(versionId: string) {
+    if (!currentProjectId) return;
+    setSelectedVersionId(versionId);
+    try {
+      const report = await api.reports.versionReport(currentProjectId, versionId);
+      setVersionReport(report);
+    } catch (e) {
+      toast.error('Could not load version report', { description: e instanceof Error ? e.message : undefined });
     }
   }
 
@@ -387,6 +413,60 @@ export default function ReportsScreen() {
               ) : (
                 <p className="py-8 text-center text-sm text-muted-foreground">No burndown data available.</p>
               )}
+            </div>
+          </ChartCard>
+        )}
+
+        {versionReport && (
+          <ChartCard
+            title="Version Report"
+            description={selectedVersionId ? `${versionReport.version?.name || 'Version'}` : 'Select a version'}
+            table={
+              versionReport.issues?.length ? (
+                <DataTable
+                  caption="Version issues"
+                  columns={['Key', 'Title', 'Status', 'Points']}
+                  rows={versionReport.issues.map((i) => [i.issue_key, i.title, STATUS_LABEL[i.status as IssueStatus] || i.status, i.points])}
+                />
+              ) : undefined
+            }
+          >
+            <div className="space-y-4">
+              <select
+                value={selectedVersionId || ''}
+                onChange={(e) => handleVersionChange(e.target.value)}
+                className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="">Select version...</option>
+                {versions?.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name}
+                  </option>
+                ))}
+              </select>
+              <div className="space-y-3">
+                <div className="flex items-baseline justify-between gap-2 text-xs">
+                  <span className="font-medium">Completion</span>
+                  <span className="tabular-nums text-muted-foreground">
+                    {versionReport.done_count}/{versionReport.total_count} issues · {versionReport.done_points}/{versionReport.total_points} points
+                  </span>
+                </div>
+                <StackedBar
+                  total={versionReport.total_points}
+                  segments={[
+                    {
+                      label: 'Done',
+                      value: versionReport.done_points,
+                      color: seriesColor(4), // Using the done status color
+                    },
+                    {
+                      label: 'Remaining',
+                      value: versionReport.total_points - versionReport.done_points,
+                      color: seriesColor(0), // Using a neutral color for remaining
+                    },
+                  ]}
+                />
+              </div>
             </div>
           </ChartCard>
         )}
@@ -598,6 +678,41 @@ export default function ReportsScreen() {
             />
             <div className="mt-2">
               <Legend items={['To Do', 'In Progress', 'Done'].map((label, i) => ({ label, color: seriesColor(i) }))} />
+            </div>
+          </ChartCard>
+        )}
+
+        {controlChart && controlChart.issues.length > 0 && (
+          <ChartCard
+            title="Control Chart"
+            description="Cycle time trend with p50/p85 reference lines"
+            table={
+              <DataTable
+                caption="Resolved issues with cycle time"
+                columns={['Key', 'Title', 'Resolved', 'Cycle (days)']}
+                rows={controlChart.issues.map((i) => [i.issue_key, i.title, i.resolved_date.slice(0, 10), i.cycle_time_days])}
+              />
+            }
+          >
+            <div className="space-y-4">
+              <Legend
+                items={[
+                  { label: `p50: ${controlChart.p50_cycle_days}d`, color: seriesColor(0) },
+                  { label: `p85: ${controlChart.p85_cycle_days}d`, color: seriesColor(1) },
+                ]}
+              />
+              <ScatterChart
+                data={controlChart.issues.map((i) => ({
+                  x: i.resolved_date.slice(5),
+                  y: i.cycle_time_days,
+                  label: `${i.issue_key}: ${i.title}`,
+                }))}
+                p50={controlChart.p50_cycle_days}
+                p85={controlChart.p85_cycle_days}
+                xLabel="Date"
+                yLabel="Cycle time (days)"
+                formatValue={(n) => `${n}d`}
+              />
             </div>
           </ChartCard>
         )}

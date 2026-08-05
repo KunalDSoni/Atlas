@@ -92,6 +92,21 @@ export interface CumulativeFlowResponse {
   days: { date: string; todo: number; in_progress: number; done: number }[];
 }
 
+export interface ControlChartResponse {
+  issues: { resolved_date: string; cycle_time_days: number; issue_key: string; title: string }[];
+  p50_cycle_days: number;
+  p85_cycle_days: number;
+}
+
+export interface VersionReportResponse {
+  version: { id: string; name: string };
+  issues: { id: string; issue_key: string; title: string; status: string; points: number }[];
+  done_count: number;
+  total_count: number;
+  done_points: number;
+  total_points: number;
+}
+
 /** A row from the JQL branch of /api/search, as rendered by the wiki macro. */
 export interface JqlSearchIssue {
   id: string;
