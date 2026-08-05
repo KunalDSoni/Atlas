@@ -222,7 +222,7 @@ describe('custom workflows', () => {
   test('defaults returned before customization', async () => {
     const res = await request(app).get(`/api/projects/${otherProjectId}/statuses`).set(headers);
     expect(res.status).toBe(200);
-    expect(res.body.map((s) => s.key)).toEqual(['todo', 'in_progress', 'in_review', 'done']);
+    expect(res.body.map((s) => s.key)).toEqual(['todo', 'in_progress', 'blocked', 'in_review', 'done']);
     expect(res.body.every((s) => s.builtin)).toBe(true);
   });
 
@@ -233,7 +233,7 @@ describe('custom workflows', () => {
     expect(added.body.key).toBe('code_review');
 
     const list = await request(app).get(`/api/projects/${projectId}/statuses`).set(headers);
-    expect(list.body.length).toBe(5);
+    expect(list.body.length).toBe(6);
     expect(list.body.every((s) => !s.builtin)).toBe(true);
 
     const issue = await createIssue({ title: 'Reviewed Issue', type: 'task' });

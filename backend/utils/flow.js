@@ -4,10 +4,12 @@
 // without a database.
 
 // Built-in categories, used when a status key is absent from the project's
-// configured workflow (matching DEFAULT_STATUSES in routes/workflows.js).
+// configured workflow. Should track the categories used by DEFAULT_STATUSES
+// in routes/workflows.js, though the two lists are maintained separately.
 const BUILTIN_CATEGORY = {
   todo: 'todo',
   in_progress: 'in_progress',
+  blocked: 'in_progress',
   in_review: 'in_progress',
   done: 'done',
 };

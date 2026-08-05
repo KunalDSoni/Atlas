@@ -22,8 +22,9 @@ const CATEGORIES = ['todo', 'in_progress', 'done'];
 const DEFAULT_STATUSES = [
   { key: 'todo', label: 'To Do', category: 'todo', position: 0 },
   { key: 'in_progress', label: 'In Progress', category: 'in_progress', position: 1 },
-  { key: 'in_review', label: 'In Review', category: 'in_progress', position: 2 },
-  { key: 'done', label: 'Done', category: 'done', position: 3 },
+  { key: 'blocked', label: 'Blocked', category: 'in_progress', position: 2 },
+  { key: 'in_review', label: 'In Review', category: 'in_progress', position: 3 },
+  { key: 'done', label: 'Done', category: 'done', position: 4 },
 ];
 
 async function projectStatuses(db, projectId) {

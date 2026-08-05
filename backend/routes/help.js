@@ -34,6 +34,7 @@ async function statusFor(db, projectId, statusKey) {
   const FALLBACK = {
     todo: ['To Do', 'todo'],
     in_progress: ['In Progress', 'in_progress'],
+    blocked: ['Blocked', 'in_progress'],
     in_review: ['In Review', 'in_progress'],
     done: ['Done', 'done'],
   };
