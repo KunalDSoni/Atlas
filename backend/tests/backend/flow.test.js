@@ -15,6 +15,9 @@ describe('categoryOf', () => {
   test('falls back to built-ins for keys missing from the list', () => {
     expect(categoryOf('in_review', STATUSES)).toBe('in_progress');
   });
+  test('blocked falls back to the in_progress built-in category', () => {
+    expect(categoryOf('blocked', STATUSES)).toBe('in_progress');
+  });
   test('unknown keys are todo', () => {
     expect(categoryOf('someday', STATUSES)).toBe('todo');
   });

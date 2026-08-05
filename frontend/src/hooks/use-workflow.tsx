@@ -1,5 +1,5 @@
 // Per-project workflow statuses (custom board columns). Falls back to the
-// built-in four-status workflow while loading or when the API is unavailable.
+// built-in five-status workflow while loading or when the API is unavailable.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
@@ -9,6 +9,7 @@ import type { StatusCategory, WorkflowStatus } from '@/lib/types';
 const DEFAULT_CATEGORY: Record<string, StatusCategory> = {
   todo: 'todo',
   in_progress: 'in_progress',
+  blocked: 'in_progress',
   in_review: 'in_progress',
   done: 'done',
 };

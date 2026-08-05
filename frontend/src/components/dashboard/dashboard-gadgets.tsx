@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { HBarChart } from '@/components/app/charts';
 import { PriorityIcon, SprintBadge, StatusPill, TypeIcon, UserAvatar } from '@/components/app/primitives';
-import { STATUS_LABEL, TYPE_LABEL, statusLabel } from '@/lib/domain';
+import { STATUS_LABEL, STATUSES, TYPE_LABEL, statusLabel } from '@/lib/domain';
 import { timeAgo } from '@/lib/format';
 import { issueUrl, projectUrl } from '@/lib/urls';
 import type {
@@ -199,7 +199,7 @@ function StatusGadget({ stats }: { stats: ProjectStats }) {
   const total = Number(stats.total) || 0;
   const count = (status: string) => Number(stats.byStatus.find((item) => item.status === status)?.count || 0);
   const done = count('done');
-  const rows = ['todo', 'in_progress', 'in_review', 'done'];
+  const rows = STATUSES;
   return (
     <div className="space-y-4">
       <div>
