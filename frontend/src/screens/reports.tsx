@@ -138,6 +138,9 @@ export default function ReportsScreen() {
   const [cycle, setCycle] = useState<CycleTimeResponse | null>(null);
   const [tis, setTis] = useState<TimeInStatusResponse | null>(null);
   const [cfd, setCfd] = useState<CumulativeFlowResponse | null>(null);
+  const [epics, setEpics] = useState<Array<{ id: string; title: string }> | null>(null);
+  const [selectedEpicId, setSelectedEpicId] = useState<string | null>(null);
+  const [epicReport, setEpicReport] = useState<unknown | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -146,7 +149,7 @@ export default function ReportsScreen() {
     setLoading(true);
     setError(null);
     try {
-      const [v, w, t, p, sr, bd, rs, ct, ts, cf] = await Promise.all([
+      const [v, w, t, p, sr, bd, rs, ct, ts, cf, epicsList] = await Promise.all([
         api.reports.velocity(currentProjectId),
         api.reports.workload(currentProjectId),
         api.reports.typeDistribution(currentProjectId),
@@ -157,6 +160,7 @@ export default function ReportsScreen() {
         api.reports.cycleTime(currentProjectId).catch(() => null),
         api.reports.timeInStatus(currentProjectId).catch(() => null),
         api.reports.cumulativeFlow(currentProjectId).catch(() => null),
+        api.epics.list(currentProjectId).catch(() => []),
       ]);
       setVelocity(v as VelocityResponse);
       setWorkload(w as WorkloadResponse);
@@ -168,6 +172,14 @@ export default function ReportsScreen() {
       setCycle(ct);
       setTis(ts);
       setCfd(cf);
+
+      const epicSummaries = (epicsList as any[]).map((e) => ({ id: e.id, title: e.title }));
+      setEpics(epicSummaries);
+      if (epicSummaries.length > 0) {
+        const firstBurndown = await api.reports.epicBurndown(currentProjectId, epicSummaries[0].id);
+        setEpicReport(firstBurndown);
+        setSelectedEpicId(epicSummaries[0].id);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load reports');
     } finally {
@@ -196,6 +208,17 @@ export default function ReportsScreen() {
       URL.revokeObjectURL(url);
     } catch (e) {
       toast.error('Could not export CSV', { description: e instanceof Error ? e.message : undefined });
+    }
+  }
+
+  async function handleEpicChange(epicId: string) {
+    if (!currentProjectId) return;
+    setSelectedEpicId(epicId);
+    try {
+      const burndown = await api.reports.epicBurndown(currentProjectId, epicId);
+      setEpicReport(burndown);
+    } catch (e) {
+      toast.error('Could not load epic report', { description: e instanceof Error ? e.message : undefined });
     }
   }
 
@@ -316,6 +339,49 @@ export default function ReportsScreen() {
             formatValue={(n) => `${n} pts`}
           />
         </ChartCard>
+
+        {epicReport && (
+          <ChartCard
+            title="Epic Burndown"
+            description={selectedEpicId ? `${(epicReport as any).epic?.name || 'Epic'}` : 'Select an epic'}
+            table={
+              (epicReport as any).children?.length ? (
+                <DataTable
+                  caption="Epic children"
+                  columns={['Key', 'Title', 'Status', 'Points']}
+                  rows={(epicReport as any).children.map((c: any) => [c.issue_key, c.title, STATUS_LABEL[c.status] || c.status, c.points])}
+                />
+              ) : undefined
+            }
+          >
+            <div className="space-y-4">
+              <select
+                value={selectedEpicId || ''}
+                onChange={(e) => handleEpicChange(e.target.value)}
+                className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="">Select epic...</option>
+                {epics?.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.title}
+                  </option>
+                ))}
+              </select>
+              {(epicReport as any).burndown && (epicReport as any).burndown.length > 0 ? (
+                <LineChart
+                  series={['Remaining']}
+                  points={(epicReport as any).burndown.map((d: any) => ({
+                    label: d.date.slice(5),
+                    values: [d.remaining_points],
+                  }))}
+                  formatValue={(n) => `${n} pts`}
+                />
+              ) : (
+                <p className="py-8 text-center text-sm text-muted-foreground">No burndown data available.</p>
+              )}
+            </div>
+          </ChartCard>
+        )}
 
         <ChartCard
           title="Workload by assignee"

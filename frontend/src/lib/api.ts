@@ -590,6 +590,7 @@ export const api = {
     cycleTime: (projectId: string) => get<CycleTimeResponse>(`/projects/${projectId}/reports/cycle-time`),
     timeInStatus: (projectId: string) => get<TimeInStatusResponse>(`/projects/${projectId}/reports/time-in-status`),
     cumulativeFlow: (projectId: string, days = 30) => get<CumulativeFlowResponse>(`/projects/${projectId}/reports/cumulative-flow?days=${days}`),
+    epicBurndown: (projectId: string, epicId: string) => get<unknown>(`/projects/${projectId}/reports/epics/${epicId}`),
     csvUrl: (projectId: string) => `/api/projects/${projectId}/reports/export/csv`,
   },
 };
