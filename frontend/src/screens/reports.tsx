@@ -147,7 +147,7 @@ export default function ReportsScreen() {
   const [createdVsResolved, setCreatedVsResolved] = useState<CreatedVsResolvedResponse | null>(null);
   const [epics, setEpics] = useState<Array<{ id: string; title: string }> | null>(null);
   const [selectedEpicId, setSelectedEpicId] = useState<string | null>(null);
-  const [epicReport, setEpicReport] = useState<unknown | null>(null);
+  const [epicReport, setEpicReport] = useState<any | null>(null);
   const [versions, setVersions] = useState<Array<{ id: string; name: string }> | null>(null);
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [versionReport, setVersionReport] = useState<VersionReportResponse | null>(null);
