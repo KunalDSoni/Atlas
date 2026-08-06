@@ -146,7 +146,11 @@ export default function SprintDetailScreen() {
       )}
 
       {filteredIssues.length === 0 ? (
-        <EmptyState icon={ListTodo} title="No issues in this sprint" />
+        <EmptyState
+          icon={ListTodo}
+          title={issues.length > 0 ? 'No issues match this filter' : 'No issues in this sprint'}
+          description={issues.length > 0 ? 'Try selecting a different issue type.' : undefined}
+        />
       ) : (
         <Card className="overflow-hidden py-0">
           <ul className="divide-y divide-border-light">
