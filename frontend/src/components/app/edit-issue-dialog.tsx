@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -12,6 +12,9 @@ import { api } from '@/lib/api';
 import { TYPE_LABEL } from '@/lib/domain';
 import type { Issue, IssueType } from '@/lib/types';
 import { TypeIcon } from './primitives';
+import { useAuth } from '@/hooks/use-auth';
+import { useProjects } from '@/hooks/use-projects';
+import { MentionAutocomplete } from './mention-autocomplete';
 
 const TYPES: IssueType[] = ['story', 'task', 'bug', 'epic', 'subtask'];
 
@@ -45,6 +48,9 @@ export function EditIssueDialog({
   const [dueDate, setDueDate] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { user } = useAuth();
+  const { currentProject } = useProjects();
+  const descriptionRef = useRef<HTMLTextAreaElement>(null);
 
   // Seed the form from the issue each time the dialog opens, so reopening
   // after a cancelled edit shows what is actually stored.
@@ -127,13 +133,45 @@ export function EditIssueDialog({
 
             <div className="space-y-2">
               <Label htmlFor="edit-issue-desc">Description</Label>
-              <Textarea
-                id="edit-issue-desc"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="What needs to happen?"
-                rows={5}
-              />
+              {user && currentProject && (
+                <MentionAutocomplete
+                  projectId={currentProject.id}
+                  authorId={user.id}
+                  onMentionInsert={(mentionText) => {
+                    if (descriptionRef.current) {
+                      const start = descriptionRef.current.selectionStart || 0;
+                      const end = descriptionRef.current.selectionEnd || 0;
+                      const text = descriptionRef.current.value;
+                      let atIndex = start - 1;
+                      while (atIndex >= 0 && /[a-zA-Z0-9\s]/.test(text[atIndex])) {
+                        atIndex--;
+                      }
+                      const beforeMention = text.substring(0, atIndex + 1);
+                      const afterMention = text.substring(end);
+                      setDescription(beforeMention + mentionText + afterMention);
+                    }
+                  }}
+                >
+                  <Textarea
+                    ref={descriptionRef}
+                    id="edit-issue-desc"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="What needs to happen?"
+                    rows={5}
+                  />
+                </MentionAutocomplete>
+              )}
+              {(!user || !currentProject) && (
+                <Textarea
+                  ref={descriptionRef}
+                  id="edit-issue-desc"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="What needs to happen?"
+                  rows={5}
+                />
+              )}
             </div>
 
             <div className="grid grid-cols-3 gap-3">

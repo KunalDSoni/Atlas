@@ -12,7 +12,7 @@ const { auditLog } = require('../middleware/logger');
 const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
-const { notify } = require('../utils/notify');
+const { notify, mentionedUserIdsInProject } = require('../utils/notify');
 const { projectStatuses } = require('./workflows');
 const { runAutomation, checkAllSubtasksDone } = require('../utils/automation');
 const { dispatch: dispatchWebhook } = require('../utils/webhooks');
@@ -450,6 +450,29 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
         link: issueLink(issue.issue_key),
         issueId: issue.id,
       });
+    }
+
+    // Mention notifications: detect new mentions in description and notify newly mentioned users.
+    if (req.body.description !== undefined && req.body.description !== issue.description) {
+      const oldMentions = new Set(await mentionedUserIdsInProject(db, issue.description, req.userId, issue.project_id));
+      const newMentions = new Set(await mentionedUserIdsInProject(db, req.body.description, req.userId, issue.project_id));
+
+      // Find newly mentioned users (in new but not in old)
+      const newlyMentioned = [...newMentions].filter(id => !oldMentions.has(id));
+
+      if (newlyMentioned.length > 0) {
+        const actor = await queryOne(db, 'SELECT name FROM users WHERE id = ?', [req.userId]);
+        for (const userId of newlyMentioned) {
+          await notify(db, {
+            userId,
+            actorId: req.userId,
+            type: 'mentioned',
+            message: `${actor?.name || 'Someone'} mentioned you in ${issue.issue_key}`,
+            link: issueLink(issue.issue_key),
+            issueId: issue.id,
+          });
+        }
+      }
     }
 
     let updated = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);

@@ -50,4 +50,33 @@ async function mentionedUserIds(db, text, authorId) {
   return [...hits];
 }
 
-module.exports = { notify, mentionedUserIds };
+/**
+ * Parse @mentions out of free text, filtering to project members only.
+ * Excludes self-mentions and inactive users.
+ * Returns unique user ids who are active members of the given project.
+ */
+async function mentionedUserIdsInProject(db, text, authorId, projectId) {
+  if (!text || !text.includes('@')) return [];
+
+  // Get all active project members
+  const projectMembers = await queryAll(db, `
+    SELECT DISTINCT u.id, u.name
+    FROM users u
+    INNER JOIN project_members pm ON pm.user_id = u.id
+    WHERE pm.project_id = ? AND u.is_active = 1
+  `, [projectId]);
+
+  const lower = text.toLowerCase();
+  const hits = new Set();
+
+  for (const u of projectMembers) {
+    if (u.id === authorId) continue;
+    const full = u.name.toLowerCase();
+    const first = full.split(/\s+/)[0];
+    if (lower.includes(`@${full}`) || lower.includes(`@${first}`)) hits.add(u.id);
+  }
+
+  return [...hits];
+}
+
+module.exports = { notify, mentionedUserIds, mentionedUserIdsInProject };
