@@ -11,14 +11,15 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { TYPE_LABEL } from '@/lib/domain';
 import { TypeIcon } from '@/components/app/primitives';
+import type { IssueType } from '@/lib/types';
 
 interface IssueTypeFilterProps {
-  selectedTypes: string[];
-  onSelectedTypesChange: (types: string[]) => void;
+  selectedTypes: IssueType[];
+  onSelectedTypesChange: (types: IssueType[]) => void;
 }
 
 export function IssueTypeFilter({ selectedTypes, onSelectedTypesChange }: IssueTypeFilterProps) {
-  const allTypes = useMemo(() => Object.keys(TYPE_LABEL), []);
+  const allTypes = useMemo(() => Object.keys(TYPE_LABEL) as IssueType[], []);
 
   const displayLabel = selectedTypes.length === 0
     ? 'All types'
@@ -26,7 +27,7 @@ export function IssueTypeFilter({ selectedTypes, onSelectedTypesChange }: IssueT
       ? TYPE_LABEL[selectedTypes[0]]
       : `${selectedTypes.length} types selected`;
 
-  function handleTypeToggle(type: string) {
+  function handleTypeToggle(type: IssueType) {
     const updated = selectedTypes.includes(type)
       ? selectedTypes.filter((t) => t !== type)
       : [...selectedTypes, type];

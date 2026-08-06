@@ -9,7 +9,7 @@ import { api } from '@/lib/api';
 import { useProjects } from '@/hooks/use-projects';
 import { useWorkflow } from '@/hooks/use-workflow';
 import { SPRINT_TONE, statusTone } from '@/lib/domain';
-import type { Issue, Sprint } from '@/lib/types';
+import type { Issue, IssueType, Sprint } from '@/lib/types';
 import {
   EmptyState, ErrorState, PageHeader, PriorityIcon, RowsSkeleton, StatusPill, TypeIcon, UserAvatar,
 } from '@/components/app/primitives';
@@ -43,7 +43,7 @@ export default function SprintDetailScreen() {
   const [issues, setIssues] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+  const [selectedTypes, setSelectedTypes] = useState<IssueType[]>([]);
   const workflow = useWorkflow(currentProjectId);
 
   const load = useCallback(async () => {
