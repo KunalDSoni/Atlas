@@ -18,7 +18,7 @@ interface DropdownState {
 
 /**
  * MentionAutocomplete wraps a textarea/input element and provides @mention autocomplete functionality.
- * It detects when the user types '@', shows a dropdown with project members, and inserts mentions on selection.
+ * It detects when the user types '@', shows a dropdown with active project members, and inserts mentions on selection.
  */
 export function MentionAutocomplete({
   projectId,
@@ -28,6 +28,8 @@ export function MentionAutocomplete({
 }: MentionAutocompleteProps) {
   const inputRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null);
   const [members, setMembers] = useState<ProjectMember[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [dropdown, setDropdown] = useState<DropdownState>({
     isOpen: false,
     query: '',
@@ -36,21 +38,57 @@ export function MentionAutocomplete({
   });
   const [mentionStart, setMentionStart] = useState<number | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [caretCoords, setCaretCoords] = useState({ top: 0, left: 0 });
 
   // Fetch project members on mount
   useEffect(() => {
     async function fetchMembers() {
+      setIsLoading(true);
+      setError(null);
       try {
         const projectMembers = await api.projects.members(projectId);
-        // Filter out the author (self-mentions excluded)
-        const filteredMembers = projectMembers.filter((m) => m.id !== authorId);
+        // Filter: only active members, exclude author
+        // Treat undefined is_active as active (backward compatibility)
+        const filteredMembers = projectMembers.filter((m) => {
+          const isActive = m.is_active === undefined || m.is_active === 1 || m.is_active === true;
+          return isActive && m.id !== authorId;
+        });
         setMembers(filteredMembers);
-      } catch (error) {
-        console.error('Failed to fetch project members:', error);
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : 'Failed to load members';
+        setError(errorMsg);
+        setMembers([]);
+      } finally {
+        setIsLoading(false);
       }
     }
     fetchMembers();
   }, [projectId, authorId]);
+
+  // Get caret coordinates for better dropdown positioning
+  const getCaretCoordinates = (): { top: number; left: number } => {
+    if (!inputRef.current) return { top: 0, left: 0 };
+
+    const input = inputRef.current;
+    const rect = input.getBoundingClientRect();
+
+    if (input instanceof HTMLTextAreaElement) {
+      // For textarea, approximate position based on scroll
+      const scrollTop = input.scrollTop;
+      const lineHeight = parseInt(window.getComputedStyle(input).lineHeight);
+      const approximateLines = Math.floor(scrollTop / (lineHeight || 20));
+      return {
+        top: rect.top + (approximateLines * (lineHeight || 20)) + lineHeight,
+        left: rect.left,
+      };
+    }
+
+    // For input, position below
+    return {
+      top: rect.bottom,
+      left: rect.left,
+    };
+  };
 
   // Handle input changes to detect @ and filter members
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
@@ -71,13 +109,14 @@ export function MentionAutocomplete({
       }
     }
 
-    if (atIndex >= 0) {
+    if (atIndex >= 0 && !error && members.length > 0) {
       // We have an active mention
       const query = text.substring(atIndex + 1, cursorPos).toLowerCase();
       const filtered = members.filter((m) =>
         m.name.toLowerCase().includes(query)
       );
       setMentionStart(atIndex);
+      setCaretCoords(getCaretCoordinates());
       setDropdown({
         isOpen: filtered.length > 0,
         query,
@@ -139,8 +178,7 @@ export function MentionAutocomplete({
     const cursorPos = input.selectionStart || 0;
     const text = input.value;
 
-    // Find the actual end of the query (up to cursor)
-    const query = text.substring(mentionStart + 1, cursorPos);
+    // Replace @query with @Full Name
     const mentionText = `@${member.name}`;
 
     // Replace @query with @Full Name
@@ -168,6 +206,28 @@ export function MentionAutocomplete({
   // Handle click on a member in the dropdown
   const handleMemberClick = (member: ProjectMember) => {
     insertMention(member);
+  };
+
+  // Handle retry button click
+  const handleRetry = () => {
+    setError(null);
+    setIsLoading(true);
+    async function refetch() {
+      try {
+        const projectMembers = await api.projects.members(projectId);
+        const filteredMembers = projectMembers.filter((m) => {
+          const isActive = m.is_active === undefined || m.is_active === 1 || m.is_active === true;
+          return isActive && m.id !== authorId;
+        });
+        setMembers(filteredMembers);
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : 'Failed to load members';
+        setError(errorMsg);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    refetch();
   };
 
   // Close dropdown on outside click
@@ -208,34 +268,51 @@ export function MentionAutocomplete({
       })
     : children;
 
-  // Calculate dropdown position based on input and mention start
-  const getDropdownPosition = () => {
-    if (!inputRef.current || mentionStart === null) return { top: 0, left: 0 };
-
-    const input = inputRef.current;
-    const rect = input.getBoundingClientRect();
-    const scrollTop = input.scrollTop || 0;
-
-    // For now, position directly below the input
-    // A more sophisticated implementation could calculate the exact line
-    return {
-      top: rect.bottom - scrollTop,
-      left: rect.left,
-    };
-  };
-
-  const { top, left } = getDropdownPosition();
-
   return (
     <div className="mention-autocomplete-wrapper">
       {clonedChildren}
-      {dropdown.isOpen && dropdown.filteredMembers.length > 0 && (
+      {isLoading && dropdown.isOpen && (
+        <div
+          className="mention-autocomplete-dropdown"
+          style={{
+            top: `${caretCoords.top}px`,
+            left: `${caretCoords.left}px`,
+            width: `${inputRef.current?.offsetWidth || 'auto'}px`,
+          }}
+        >
+          <div className="mention-item loading">
+            <span className="text-sm text-muted-foreground">Loading members...</span>
+          </div>
+        </div>
+      )}
+      {error && dropdown.isOpen && (
+        <div
+          className="mention-autocomplete-dropdown"
+          style={{
+            top: `${caretCoords.top}px`,
+            left: `${caretCoords.left}px`,
+            width: `${inputRef.current?.offsetWidth || 'auto'}px`,
+          }}
+        >
+          <div className="mention-item error">
+            <div className="text-sm text-destructive">Failed to load members</div>
+            <button
+              className="text-xs text-primary hover:underline mt-1"
+              onClick={handleRetry}
+              type="button"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
+      {!isLoading && !error && dropdown.isOpen && dropdown.filteredMembers.length > 0 && (
         <div
           ref={dropdownRef}
           className="mention-autocomplete-dropdown"
           style={{
-            top: `${top}px`,
-            left: `${left}px`,
+            top: `${caretCoords.top}px`,
+            left: `${caretCoords.left}px`,
             width: `${inputRef.current?.offsetWidth || 'auto'}px`,
           }}
         >

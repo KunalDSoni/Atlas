@@ -62,10 +62,11 @@ describe('MentionAutocomplete', () => {
 
     const textarea = screen.getByTestId('textarea') as HTMLTextAreaElement;
 
-    // Type @jo to filter
-    await userEvent.type(textarea, '@jo');
+    // Type @alice to filter - only matches "Alice Brown"
+    await userEvent.type(textarea, '@alice');
     await waitFor(() => {
-      expect(screen.getByText('John Doe')).toBeInTheDocument();
+      expect(screen.getByText('Alice Brown')).toBeInTheDocument();
+      expect(screen.queryByText('John Doe')).not.toBeInTheDocument();
       expect(screen.queryByText('Jane Smith')).not.toBeInTheDocument();
       expect(screen.queryByText('Bob Johnson')).not.toBeInTheDocument();
     });

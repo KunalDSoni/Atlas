@@ -17,4 +17,9 @@ export default defineConfig({
     // `npm run dev` proxies the API to the Express backend
     proxy: { '/api': 'http://localhost:3001' },
   },
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: ['./vitest.setup.ts'],
+  },
 });

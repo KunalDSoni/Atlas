@@ -397,6 +397,7 @@ export interface ProjectMember {
   avatar_color: string;
   role: Role;
   role_in_project: string;
+  is_active?: number | boolean; // User active status from users table
 }
 
 export interface ProjectStats {
