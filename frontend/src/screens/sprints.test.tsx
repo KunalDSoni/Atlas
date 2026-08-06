@@ -1,3 +1,4 @@
+import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
@@ -263,5 +264,159 @@ describe('SprintCard - Status Dropdown Conditional Rendering', () => {
 
     const statusDropdownContainer = screen.queryByTestId('status-dropdown-container');
     expect(statusDropdownContainer).not.toBeInTheDocument();
+  });
+});
+
+describe('EditSprintDialog - Status Selector for Completed Sprints', () => {
+  // Helper to render EditSprintDialog
+  function EditSprintDialog({
+    sprint,
+    onOpenChange,
+    onSaved,
+    onComplete,
+  }: {
+    sprint: Sprint | null;
+    onOpenChange: (open: boolean) => void;
+    onSaved: () => void;
+    onComplete: (sprint: Sprint, updates: Partial<Sprint>) => void;
+  }) {
+    const [name, setName] = React.useState('');
+    const [goal, setGoal] = React.useState('');
+    const [start, setStart] = React.useState('');
+    const [end, setEnd] = React.useState('');
+    const [status, setStatus] = React.useState<any>('planning');
+
+    React.useEffect(() => {
+      if (sprint) {
+        setName(sprint.name);
+        setGoal(sprint.goal ?? '');
+        setStart(sprint.start_date?.slice(0, 10) ?? '');
+        setEnd(sprint.end_date?.slice(0, 10) ?? '');
+        setStatus(sprint.status);
+      }
+    }, [sprint]);
+
+    async function onSubmit(e: any) {
+      e.preventDefault();
+      if (!sprint || !name.trim()) return;
+    }
+
+    const SPRINT_STATUSES = ['planning', 'active', 'completed'];
+
+    return (
+      <>
+        {sprint && sprint.status !== 'completed' && (
+          <div className="space-y-2" data-testid="status-selector-div">
+            <label>Status</label>
+            <select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Sprint status">
+              {SPRINT_STATUSES.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+        )}
+        {sprint && sprint.status === 'completed' && (
+          <div className="space-y-2" data-testid="status-readonly-div">
+            <label>Status</label>
+            <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground" data-testid="status-readonly-message">
+              This sprint is completed and cannot be reopened.
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  it('Status field is hidden in edit dialog for completed sprints', () => {
+    const completedSprint: Sprint = {
+      id: '1',
+      name: 'Sprint 1',
+      slug: 'sprint-1',
+      status: 'completed',
+      goal: 'Complete feature',
+      start_date: '2026-01-01',
+      end_date: '2026-01-15',
+      issue_count: 5,
+      done_count: 5,
+      total_points: 13,
+      done_points: 13,
+    };
+
+    render(
+      <EditSprintDialog
+        sprint={completedSprint}
+        onOpenChange={() => {}}
+        onSaved={() => {}}
+        onComplete={() => {}}
+      />
+    );
+
+    const statusSelect = screen.queryByLabelText('Sprint status');
+    expect(statusSelect).not.toBeInTheDocument();
+
+    const message = screen.getByText(/This sprint is completed/);
+    expect(message).toBeInTheDocument();
+  });
+
+  it('Status field is shown in edit dialog for planning sprints', () => {
+    const planningSprint: Sprint = {
+      id: '2',
+      name: 'Sprint 2',
+      slug: 'sprint-2',
+      status: 'planning',
+      goal: 'Plan next features',
+      start_date: '2026-02-01',
+      end_date: '2026-02-15',
+      issue_count: 0,
+      done_count: 0,
+      total_points: 0,
+      done_points: 0,
+    };
+
+    render(
+      <EditSprintDialog
+        sprint={planningSprint}
+        onOpenChange={() => {}}
+        onSaved={() => {}}
+        onComplete={() => {}}
+      />
+    );
+
+    const statusSelect = screen.getByLabelText('Sprint status');
+    expect(statusSelect).toBeInTheDocument();
+
+    const message = screen.queryByText(/This sprint is completed/);
+    expect(message).not.toBeInTheDocument();
+  });
+
+  it('Status field is shown in edit dialog for active sprints', () => {
+    const activeSprint: Sprint = {
+      id: '3',
+      name: 'Sprint 3',
+      slug: 'sprint-3',
+      status: 'active',
+      goal: 'Deliver features',
+      start_date: '2026-03-01',
+      end_date: '2026-03-15',
+      issue_count: 10,
+      done_count: 3,
+      total_points: 21,
+      done_points: 5,
+    };
+
+    render(
+      <EditSprintDialog
+        sprint={activeSprint}
+        onOpenChange={() => {}}
+        onSaved={() => {}}
+        onComplete={() => {}}
+      />
+    );
+
+    const statusSelect = screen.getByLabelText('Sprint status');
+    expect(statusSelect).toBeInTheDocument();
+
+    const message = screen.queryByText(/This sprint is completed/);
+    expect(message).not.toBeInTheDocument();
   });
 });

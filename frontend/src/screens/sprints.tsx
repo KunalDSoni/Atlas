@@ -306,19 +306,29 @@ function EditSprintDialog({
                 <Input id="edit-sprint-end" type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
               </div>
             </div>
-            <div className="space-y-2">
-              <Label>Status</Label>
-              <Select value={status} onValueChange={(v) => setStatus(v as SprintStatus)}>
-                <SelectTrigger aria-label="Sprint status">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SPRINT_STATUSES.map((s) => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {sprint && sprint.status !== 'completed' && (
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select value={status} onValueChange={(v) => setStatus(v as SprintStatus)}>
+                  <SelectTrigger aria-label="Sprint status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SPRINT_STATUSES.map((s) => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {sprint && sprint.status === 'completed' && (
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
+                  This sprint is completed and cannot be reopened.
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
