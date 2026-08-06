@@ -120,7 +120,7 @@ function SprintCard({
           </p>
         )}
 
-        {canManage && (
+        {canManage && sprint.status !== 'completed' && (
           <div className="flex items-center gap-2 pt-1">
             <Select value={sprint.status} onValueChange={(v) => setStatus(v as SprintStatus)}>
               <SelectTrigger className="h-8 flex-1 text-xs" aria-label={`Status for ${sprint.name}`}>
@@ -132,6 +132,45 @@ function SprintCard({
                 ))}
               </SelectContent>
             </Select>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              onClick={() => onEdit(sprint)}
+              aria-label={`Edit ${sprint.name}`}
+              title="Edit sprint"
+            >
+              <Pencil className="size-4" />
+            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="ghost" size="icon" className="size-8 text-destructive" aria-label={`Delete ${sprint.name}`}>
+                  <Trash2 className="size-4" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete {sprint.name}?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Issues in this sprint move back to the backlog. They are not deleted.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={remove}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Delete sprint
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+        )}
+
+        {canManage && sprint.status === 'completed' && (
+          <div className="flex items-center gap-2 pt-1">
             <Button
               variant="ghost"
               size="icon"
