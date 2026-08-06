@@ -57,7 +57,7 @@ test('Issue type filter works on sprint detail', async ({ page }) => {
   }
 
   // Click the filter dropdown (button with "All types" text)
-  await page.getByRole('button', { name: /All types|types selected/ }).click();
+  await page.getByRole('button', { name: 'Filter by issue type' }).click();
 
   // Select only "Bug" type
   await page.getByLabel('Bug').click();
@@ -70,7 +70,7 @@ test('Issue type filter works on sprint detail', async ({ page }) => {
 
   // Verify filtered count is less than or equal to initial
   const filteredIssues = await page.locator('li').count();
-  expect(filteredIssues).toBeLessThanOrEqual(initialIssues);
+  await expect(filteredIssues).toBeLessThanOrEqual(initialIssues);
 });
 
 test('Cannot change status of completed sprint', async ({ page }) => {
@@ -96,7 +96,7 @@ test('Cannot change status of completed sprint', async ({ page }) => {
 
   // Verify no status dropdown in the card for completed sprint
   const statusSelect = page.getByRole('combobox', { name: `Status for ${name}` });
-  expect(statusSelect).not.toBeVisible();
+  await expect(statusSelect).not.toBeVisible();
 });
 
 test('Can change status of planning sprint', async ({ page }) => {
@@ -113,7 +113,7 @@ test('Can change status of planning sprint', async ({ page }) => {
 
   // Verify status dropdown exists for planning sprint
   const statusSelect = page.getByRole('combobox', { name: `Status for ${name}` });
-  expect(statusSelect).toBeVisible();
+  await expect(statusSelect).toBeVisible();
 
   // Verify we can change the status
   await statusSelect.click();
@@ -141,7 +141,7 @@ test('Can filter sprint issues by type', async ({ page }) => {
   }
 
   // Open filter dropdown
-  await page.getByRole('button', { name: /All types|types selected/ }).click();
+  await page.getByRole('button', { name: 'Filter by issue type' }).click();
   await page.waitForSelector('[role="menuitemcheckbox"]');
 
   // Select only "Bug"
@@ -154,11 +154,11 @@ test('Can filter sprint issues by type', async ({ page }) => {
 
   // Verify filtered count
   const filteredCount = await page.locator('li').count();
-  expect(filteredCount).toBeLessThanOrEqual(initialCount);
+  await expect(filteredCount).toBeLessThanOrEqual(initialCount);
 
   // Verify button now shows selected count
-  const filterButton = page.getByRole('button', { name: /\d+ types selected/ });
-  expect(filterButton).toBeVisible();
+  const filterButton = page.getByRole('button', { name: 'Filter by issue type' });
+  await expect(filterButton).toHaveText(/Bug|\d+ types selected/);
 });
 
 test('Selecting no types shows all issues', async ({ page }) => {
@@ -180,7 +180,7 @@ test('Selecting no types shows all issues', async ({ page }) => {
   }
 
   // Filter to Bug only
-  await page.getByRole('button', { name: /All types|types selected/ }).click();
+  await page.getByRole('button', { name: 'Filter by issue type' }).click();
   const bugCheckbox = page.locator('[role="menuitemcheckbox"]').filter({ hasText: 'Bug' }).first();
   await bugCheckbox.click();
   await page.locator('h1').first().click();
@@ -188,19 +188,19 @@ test('Selecting no types shows all issues', async ({ page }) => {
 
   // Filter should be active
   let currentCount = await page.locator('li').count();
-  expect(currentCount).toBeLessThanOrEqual(initialCount);
+  await expect(currentCount).toBeLessThanOrEqual(initialCount);
 
   // Uncheck Bug to show all again
-  await page.getByRole('button', { name: /\d+ types selected/ }).click();
+  await page.getByRole('button', { name: 'Filter by issue type' }).click();
   await bugCheckbox.click();
   await page.locator('h1').first().click();
   await page.waitForTimeout(100);
 
   // All issues should show
   currentCount = await page.locator('li').count();
-  expect(currentCount).toBe(initialCount);
+  await expect(currentCount).toBe(initialCount);
 
   // Button should show "All types"
-  const filterButton = page.getByRole('button', { name: 'All types' });
-  expect(filterButton).toBeVisible();
+  const filterButton = page.getByRole('button', { name: 'Filter by issue type' });
+  await expect(filterButton).toHaveText('All types');
 });
