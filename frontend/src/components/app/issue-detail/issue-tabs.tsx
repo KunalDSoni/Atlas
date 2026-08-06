@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { formatBytes, timeAgo } from '@/lib/format';
+import { renderMentions } from '@/lib/mention-renderer';
 import { UserAvatar } from '../primitives';
 import type { IssueDetail } from './use-issue-detail';
 
@@ -49,7 +50,7 @@ export function IssueTabs({ detail }: { detail: IssueDetail }) {
                                 <span className="font-semibold">{c.author_name}</span>{' '}
                                 <span className="text-muted-foreground">{timeAgo(c.created_at)}</span>
                               </p>
-                              <p className="mt-0.5 whitespace-pre-wrap text-sm">{c.body}</p>
+                              <p className="mt-0.5 whitespace-pre-wrap text-sm">{renderMentions(c.body)}</p>
                             </div>
                           </li>
                         ))}

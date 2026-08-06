@@ -382,3 +382,27 @@
 .mention-item.selected {
   background-color: var(--muted);
 }
+
+/* Mention badge styling for rendered mentions in descriptions and comments */
+.mention {
+  color: #0066cc;
+  background-color: rgba(0, 102, 204, 0.08);
+  font-weight: 500;
+  padding: 0 2px;
+  border-radius: 2px;
+  white-space: nowrap;
+  transition: background-color 0.2s ease;
+}
+
+.mention:hover {
+  background-color: rgba(0, 102, 204, 0.16);
+}
+
+.dark .mention {
+  color: #579dff;
+  background-color: rgba(87, 157, 255, 0.12);
+}
+
+.dark .mention:hover {
+  background-color: rgba(87, 157, 255, 0.20);
+}
