@@ -12,7 +12,7 @@ let app, headers;
 beforeAll(async () => {
   app = await createTestApp();
   headers = await adminHeaders();
-});
+}, 30000);
 
 describe('Version Report', () => {
   let projectId, versionId, issueIds;

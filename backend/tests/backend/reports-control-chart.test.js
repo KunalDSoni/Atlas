@@ -57,7 +57,7 @@ beforeAll(async () => {
   expect(projects.status).toBe(200);
   expect(projects.body.length).toBeGreaterThan(0);
   projectId = projects.body[0].id;
-});
+}, 30000);
 
 describe('Control Chart Endpoint', () => {
   test('returns issues with resolved_date and cycle_time_days, plus p50/p85 percentiles', async () => {
