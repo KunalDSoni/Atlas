@@ -352,3 +352,32 @@
 .wiki-prose .wiki-toc li { margin: 0.15em 0; }
 .wiki-prose .wiki-toc a { display: block; color: var(--muted-foreground); text-decoration: none; font-size: 0.85rem; padding: 0.1em 0; }
 .wiki-prose .wiki-toc a:hover { color: var(--primary); }
+
+/* Mention autocomplete component styles */
+.mention-autocomplete-wrapper {
+  position: relative;
+}
+
+.mention-autocomplete-dropdown {
+  position: absolute;
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 1000;
+  box-shadow: var(--shadow-raised);
+  min-width: 200px;
+}
+
+.mention-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  user-select: none;
+}
+
+.mention-item:hover,
+.mention-item.selected {
+  background-color: var(--muted);
+}
