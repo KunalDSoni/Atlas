@@ -9,13 +9,14 @@ import { api } from '@/lib/api';
 import { useProjects } from '@/hooks/use-projects';
 import { useWorkflow } from '@/hooks/use-workflow';
 import { SPRINT_TONE, statusTone } from '@/lib/domain';
-import type { Issue, Sprint } from '@/lib/types';
+import type { Issue, IssueType, Sprint } from '@/lib/types';
 import {
   EmptyState, ErrorState, PageHeader, PriorityIcon, RowsSkeleton, StatusPill, TypeIcon, UserAvatar,
 } from '@/components/app/primitives';
 import { formatDate } from '@/lib/format';
 import { absoluteUrl, issueUrl, projectUrl, sprintUrl } from '@/lib/urls';
 import { cn } from '@/lib/utils';
+import { IssueTypeFilter } from '@/components/app/issue-type-filter';
 
 function CopySprintLink({ projectKey, slug }: { projectKey: string; slug: string }) {
   async function copy() {
@@ -42,6 +43,7 @@ export default function SprintDetailScreen() {
   const [issues, setIssues] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedTypes, setSelectedTypes] = useState<IssueType[]>([]);
   const workflow = useWorkflow(currentProjectId);
 
   const load = useCallback(async () => {
@@ -66,6 +68,11 @@ export default function SprintDetailScreen() {
 
   const sprint = useMemo(() => sprints.find((s) => s.slug === sprintSlug), [sprints, sprintSlug]);
   const pct = sprint?.issue_count ? Math.round((sprint.done_count / sprint.issue_count) * 100) : 0;
+
+  const filteredIssues = useMemo(() => {
+    if (selectedTypes.length === 0) return issues;
+    return issues.filter((issue) => selectedTypes.includes(issue.type));
+  }, [issues, selectedTypes]);
 
   if (projectsLoading || (loading && currentProjectId)) {
     return (
@@ -129,12 +136,25 @@ export default function SprintDetailScreen() {
         </div>
       </Card>
 
-      {issues.length === 0 ? (
-        <EmptyState icon={ListTodo} title="No issues in this sprint" />
+      {issues.length > 0 && (
+        <div className="mb-4 flex items-center gap-2">
+          <IssueTypeFilter
+            selectedTypes={selectedTypes}
+            onSelectedTypesChange={setSelectedTypes}
+          />
+        </div>
+      )}
+
+      {filteredIssues.length === 0 ? (
+        <EmptyState
+          icon={ListTodo}
+          title={issues.length > 0 ? 'No issues match this filter' : 'No issues in this sprint'}
+          description={issues.length > 0 ? 'Try selecting a different issue type.' : undefined}
+        />
       ) : (
         <Card className="overflow-hidden py-0">
           <ul className="divide-y divide-border-light">
-            {issues.map((issue) => (
+            {filteredIssues.map((issue) => (
               <li key={issue.id}>
                 <Link to={issueUrl(issue.issue_key)} className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/60">
                   <TypeIcon type={issue.type} />
