@@ -12,7 +12,7 @@ import { api } from '@/lib/api';
 import { TYPE_LABEL } from '@/lib/domain';
 import type { Issue, IssueType } from '@/lib/types';
 import { TypeIcon } from './primitives';
-import { useAuth } from '@/hooks/use-auth';
+import { useAuth } from '@/context/auth-provider';
 import { useProjects } from '@/hooks/use-projects';
 import { MentionAutocomplete } from './mention-autocomplete';
 
