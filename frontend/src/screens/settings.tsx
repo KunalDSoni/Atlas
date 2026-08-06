@@ -14,7 +14,7 @@ import { DeveloperSettings } from '@/components/app/developer-settings';
 const NOTIFICATION_TOGGLES: { key: keyof Settings; label: string; hint: string }[] = [
   { key: 'email_notifications', label: 'Email notifications', hint: 'Receive updates by email.' },
   { key: 'notify_assigned', label: 'Assigned to me', hint: 'When an issue is assigned to you.' },
-  { key: 'notify_mentions', label: 'Mentions', hint: 'When someone mentions you.' },
+  { key: 'notify_mentions', label: 'Notify me when mentioned', hint: 'Get notified when someone tags you with @mention' },
   { key: 'notify_comments', label: 'Comments', hint: 'New comments on issues you watch.' },
   { key: 'notify_status_changes', label: 'Status changes', hint: 'When an issue you watch changes status.' },
   { key: 'notify_sprint_updates', label: 'Sprint updates', hint: 'When a sprint starts or completes.' },
