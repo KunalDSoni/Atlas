@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
@@ -280,13 +280,13 @@ describe('EditSprintDialog - Status Selector for Completed Sprints', () => {
     onSaved: () => void;
     onComplete: (sprint: Sprint, updates: Partial<Sprint>) => void;
   }) {
-    const [name, setName] = React.useState('');
-    const [goal, setGoal] = React.useState('');
-    const [start, setStart] = React.useState('');
-    const [end, setEnd] = React.useState('');
-    const [status, setStatus] = React.useState<any>('planning');
+    const [name, setName] = useState('');
+    const [goal, setGoal] = useState('');
+    const [start, setStart] = useState('');
+    const [end, setEnd] = useState('');
+    const [status, setStatus] = useState<any>('planning');
 
-    React.useEffect(() => {
+    useEffect(() => {
       if (sprint) {
         setName(sprint.name);
         setGoal(sprint.goal ?? '');
