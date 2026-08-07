@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { ImpactChart } from '../components/ImpactChart';
+// import { ImpactChart } from '../components/ImpactChart';
 
 interface FeatureImpact {
   id: string;
@@ -50,6 +50,8 @@ export const ImpactDashboard: React.FC = () => {
   if (error) return <div className="p-6 text-red-600">Error: {error}</div>;
   if (!summary) return <div className="p-6">No data</div>;
 
+  // Chart display pending ImpactChart component integration
+  /*
   const chartData = summary.features.map((f) => {
     const forecast = f.forecast_adoption || 0;
     const actual = f.actual_adoption || 0;
@@ -64,6 +66,7 @@ export const ImpactDashboard: React.FC = () => {
       variance,
     };
   });
+  */
 
   return (
     <div className="p-6 space-y-6">
@@ -86,7 +89,7 @@ export const ImpactDashboard: React.FC = () => {
         </div>
       </div>
 
-      <ImpactChart data={chartData} title="Adoption: Forecast vs Actual" />
+      {/* <ImpactChart data={chartData} title="Adoption: Forecast vs Actual" /> */}
     </div>
   );
 };
