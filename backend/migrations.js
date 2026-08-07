@@ -1116,19 +1116,17 @@ const MIGRATIONS = [
       {
         sql: {
           sqlite: `CREATE TABLE IF NOT EXISTS feature_impact_metrics (
-            id VARCHAR(36) PRIMARY KEY,
-            feature_id VARCHAR(36) NOT NULL,
-            metric_type VARCHAR(50) NOT NULL,
-            forecast_value FLOAT,
-            actual_value FLOAT CHECK(actual_value IS NULL OR actual_value >= 0),
-            unit VARCHAR(50),
-            measurement_date DATE CHECK(measurement_date IS NULL OR DATE(measurement_date) <= DATE()),
-            data_source VARCHAR(50) DEFAULT 'manual',
+            id TEXT PRIMARY KEY,
+            feature_id TEXT NOT NULL,
+            metric_type TEXT NOT NULL,
+            forecast_value REAL,
+            actual_value REAL CHECK(actual_value IS NULL OR actual_value >= 0),
+            unit TEXT,
+            measurement_date DATE,
+            data_source TEXT DEFAULT 'manual',
             notes TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            created_by_id VARCHAR(36),
-            KEY idx_feature (feature_id),
-            KEY idx_date (measurement_date)
+            created_by_id TEXT
           )`,
           mysql: `CREATE TABLE IF NOT EXISTS feature_impact_metrics (
             id VARCHAR(36) PRIMARY KEY,
@@ -1147,6 +1145,18 @@ const MIGRATIONS = [
             CHECK (actual_value IS NULL OR actual_value >= 0),
             CHECK (measurement_date IS NULL OR measurement_date <= CURDATE())
           )`,
+        },
+      },
+      {
+        sql: {
+          sqlite: `CREATE INDEX IF NOT EXISTS idx_feature_impact_metrics_feature_id ON feature_impact_metrics(feature_id)`,
+          mysql: null,
+        },
+      },
+      {
+        sql: {
+          sqlite: `CREATE INDEX IF NOT EXISTS idx_feature_impact_metrics_date ON feature_impact_metrics(measurement_date)`,
+          mysql: null,
         },
       },
     ],

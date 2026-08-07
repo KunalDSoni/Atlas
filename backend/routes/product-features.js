@@ -8,6 +8,10 @@
 // POST   /api/product/features/:id/push        - Create a new issue in a project and link it
 // DELETE /api/product/feature-issues/:id       - Unlink a delivery issue
 // POST   /api/product/features/:id/vote        - Toggle current user's vote
+// POST   /api/product/features/:id/impact-metrics     - Record impact measurement
+// GET    /api/product/features/:id/impact-metrics     - Get metrics with variance
+// PUT    /api/product/features/:id/forecast-metrics   - Set pre-launch forecast
+// GET    /api/product/features/impact-dashboard       - Dashboard summary
 //
 // Computed scores (never stored):
 //   user_impact = Σ linked-insight importance × company tier weight (strategic 3 / growth 2 / else 1)
@@ -26,6 +30,7 @@ const { projectStatuses } = require('./workflows');
 const { outcomeDetailsForFeature, sqlTimestamp } = require('../utils/product-outcomes');
 const { notify } = require('../utils/notify');
 const FeatureMergeHistory = require('../models/feature-merge-history');
+const FeatureImpactMetrics = require('../models/feature-impact-metrics');
 const { findSimilarFeatures } = require('../lib/similarity');
 
 const router = express.Router();
@@ -145,6 +150,48 @@ router.post('/product/features', requireAuth, async (req, res) => {
        release_id || null, featureStatus === 'launched' ? sqlTimestamp() : null, req.userId]);
     res.status(201).json(await getFeatureWithOutcome(db, id));
   } catch (e) { serverError(res, e); }
+});
+
+// GET /api/product/features/impact-dashboard
+router.get('/product/features/impact-dashboard', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const features = await queryAll(
+      db,
+      `SELECT id, name, forecast_adoption, forecast_revenue, actual_adoption, actual_revenue, impact_status
+       FROM pb_features WHERE actual_adoption IS NOT NULL OR actual_revenue IS NOT NULL
+       ORDER BY updated_at DESC`
+    );
+
+    const summary = {
+      total_features_analyzed: features.length,
+      avg_adoption_variance: null,
+      avg_revenue_variance: null,
+      features: features,
+    };
+
+    if (features.length > 0) {
+      const adoptionVariances = features
+        .filter(f => f.forecast_adoption)
+        .map(f => FeatureImpactMetrics.calculateVariance(f.forecast_adoption, f.actual_adoption || 0));
+
+      const revenueVariances = features
+        .filter(f => f.forecast_revenue)
+        .map(f => FeatureImpactMetrics.calculateVariance(f.forecast_revenue, f.actual_revenue || 0));
+
+      if (adoptionVariances.length > 0) {
+        summary.avg_adoption_variance = adoptionVariances.reduce((a, b) => a + b, 0) / adoptionVariances.length;
+      }
+
+      if (revenueVariances.length > 0) {
+        summary.avg_revenue_variance = revenueVariances.reduce((a, b) => a + b, 0) / revenueVariances.length;
+      }
+    }
+
+    res.json({ data: summary });
+  } catch (error) {
+    res.status(500).json({ error: true, message: error.message });
+  }
 });
 
 // GET /api/product/features/:id — full detail: linked insights (with quotes), issues, objectives
@@ -564,6 +611,107 @@ router.post('/product/features/:id/unmerge', requireAuth, adminOrProjectOwner, a
     res.json({ data: restoredChild });
   } catch (error) {
     res.status(500).json({ error: true, message: error.message, code: 'SERVER_ERROR', status: 500 });
+  }
+});
+
+// POST /api/product/features/:id/impact-metrics
+router.post('/product/features/:id/impact-metrics', requireAuth, async (req, res) => {
+  try {
+    const { metricType, actualValue, unit, dataSource = 'manual', notes } = req.body;
+
+    if (!metricType || actualValue === undefined) {
+      return res.status(400).json({ error: true, message: 'metricType and actualValue required' });
+    }
+
+    if (actualValue < 0) {
+      return res.status(400).json({ error: true, message: 'Actual value must be ≥ 0' });
+    }
+
+    const metric = await FeatureImpactMetrics.create(
+      req.params.id,
+      metricType,
+      actualValue,
+      unit,
+      dataSource,
+      notes,
+      req.userId
+    );
+
+    // Log activity
+    const db = await getDb();
+    await run(
+      db,
+      `INSERT INTO activity (id, type, actor_id, resource_type, resource_id, changes, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+      [uuidv4(), 'impact_measured', req.userId, 'feature', req.params.id,
+       JSON.stringify({ metric_type: metricType, actual_value: actualValue })]
+    );
+
+    res.json({ data: metric });
+  } catch (error) {
+    res.status(500).json({ error: true, message: error.message });
+  }
+});
+
+// GET /api/product/features/:id/impact-metrics
+router.get('/product/features/:id/impact-metrics', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const feature = await queryOne(db, 'SELECT * FROM pb_features WHERE id = ?', [req.params.id]);
+    if (!feature) return res.status(404).json({ error: true, message: 'Feature not found' });
+
+    const metrics = await FeatureImpactMetrics.findByFeatureId(req.params.id);
+
+    // Group by metric type and calculate variance
+    const grouped = {};
+    metrics.forEach(m => {
+      if (!grouped[m.metric_type]) grouped[m.metric_type] = [];
+
+      const variance = FeatureImpactMetrics.calculateVariance(m.forecast_value, m.actual_value);
+      grouped[m.metric_type].push({ ...m, variance });
+    });
+
+    res.json({
+      data: {
+        feature_id: feature.id,
+        impact_status: feature.impact_status,
+        forecast_adoption: feature.forecast_adoption,
+        forecast_revenue: feature.forecast_revenue,
+        actual_adoption: feature.actual_adoption,
+        actual_revenue: feature.actual_revenue,
+        metrics: grouped,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ error: true, message: error.message });
+  }
+});
+
+// PUT /api/product/features/:id/forecast-metrics
+router.put('/product/features/:id/forecast-metrics', requireAuth, async (req, res) => {
+  try {
+    const { forecastAdoption, forecastRevenue, forecastNotes } = req.body;
+    const db = await getDb();
+
+    await run(
+      db,
+      `UPDATE pb_features SET forecast_adoption = ?, forecast_revenue = ?, updated_at = datetime('now')
+       WHERE id = ?`,
+      [forecastAdoption ?? null, forecastRevenue ?? null, req.params.id]
+    );
+
+    await run(
+      db,
+      `INSERT INTO activity (id, type, actor_id, resource_type, resource_id, changes, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+      [uuidv4(), 'forecast_set', req.userId, 'feature', req.params.id,
+       JSON.stringify({ forecast_adoption: forecastAdoption, forecast_revenue: forecastRevenue })]
+    );
+
+    const updated = await queryOne(db, 'SELECT * FROM pb_features WHERE id = ?', [req.params.id]);
+    res.json({ data: updated });
+  } catch (error) {
+    res.status(500).json({ error: true, message: error.message });
   }
 });
 
