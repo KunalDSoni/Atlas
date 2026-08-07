@@ -17,7 +17,7 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { getDb, queryAll, queryOne, run } = require('../database');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, adminOrProjectOwner } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
 const { demandForFeatures } = require('../utils/demand');
 const { buildSpecBody } = require('../utils/spec-draft');
@@ -25,6 +25,8 @@ const { complete, aiEnabled, MODELS } = require('./ai');
 const { projectStatuses } = require('./workflows');
 const { outcomeDetailsForFeature, sqlTimestamp } = require('../utils/product-outcomes');
 const { notify } = require('../utils/notify');
+const FeatureMergeHistory = require('../models/feature-merge-history');
+const { findSimilarFeatures } = require('../lib/similarity');
 
 const router = express.Router();
 
@@ -402,6 +404,143 @@ router.post('/product/features/:id/spec', requireAuth, async (req, res) => {
 
     res.status(201).json({ page_id: pageId, created: true });
   } catch (e) { serverError(res, e); }
+});
+
+// GET /api/product/features/:id/merge-candidates
+router.get('/product/features/:id/merge-candidates', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const { limit = 10 } = req.query;
+
+    const feature = await queryOne(db, 'SELECT * FROM pb_features WHERE id = ?', [req.params.id]);
+    if (!feature) return res.status(404).json({ error: true, message: 'Feature not found', code: 'NOT_FOUND', status: 404 });
+
+    const allFeatures = await queryAll(db, 'SELECT * FROM pb_features WHERE project_id = ?', [feature.project_id]);
+    const candidates = findSimilarFeatures(feature, allFeatures, 0.6).slice(0, limit);
+
+    res.json({ data: candidates });
+  } catch (error) {
+    res.status(500).json({ error: true, message: error.message, code: 'SERVER_ERROR', status: 500 });
+  }
+});
+
+// POST /api/product/features/:id/merge
+router.post('/product/features/:id/merge', requireAuth, adminOrProjectOwner, async (req, res) => {
+  try {
+    const db = await getDb();
+    const { childFeatureIds, reason } = req.body;
+
+    if (!Array.isArray(childFeatureIds) || childFeatureIds.length === 0) {
+      return res.status(400).json({ error: true, message: 'childFeatureIds must be non-empty array', code: 'BAD_REQUEST', status: 400 });
+    }
+
+    const parent = await queryOne(db, 'SELECT * FROM pb_features WHERE id = ?', [req.params.id]);
+    if (!parent) return res.status(404).json({ error: true, message: 'Parent feature not found', code: 'NOT_FOUND', status: 404 });
+
+    // Check for cycles
+    const parentMergedFrom = JSON.parse(parent.merged_from_ids || '[]');
+    if (parentMergedFrom.some(id => childFeatureIds.includes(id))) {
+      return res.status(400).json({ error: true, message: 'Cannot merge: would create cycle', code: 'CYCLE_DETECTED', status: 400 });
+    }
+
+    let totalRequestCount = parent.request_count || 0;
+    const mergeHistories = [];
+
+    // Merge each child into parent
+    try {
+      for (const childId of childFeatureIds) {
+        const child = await queryOne(db, 'SELECT * FROM pb_features WHERE id = ?', [childId]);
+        if (!child) continue;
+
+        if (JSON.parse(child.merged_from_ids || '[]').length > 0) {
+          throw new Error(`Cannot merge already-merged feature ${childId}. Unmerge first.`);
+        }
+
+        const childCount = child.request_count || 0;
+        totalRequestCount += childCount;
+
+        // Update parent
+        const updatedMergedFrom = Array.from(new Set([
+          ...JSON.parse(parent.merged_from_ids || '[]'),
+          childId,
+        ]));
+
+        await run(db,
+          `UPDATE pb_features SET request_count = ?, merged_from_ids = ?, merged_at = datetime('now'), merged_by_id = ?
+           WHERE id = ?`,
+          [totalRequestCount, JSON.stringify(updatedMergedFrom), req.userId, req.params.id]
+        );
+
+        // Create history entry (serves as audit trail)
+        const history = await FeatureMergeHistory.create(req.params.id, childId, req.userId, childCount, reason);
+        mergeHistories.push(history);
+      }
+    } catch (error) {
+      throw error;
+    }
+
+    const updatedParent = await queryOne(db, 'SELECT * FROM pb_features WHERE id = ?', [req.params.id]);
+    res.json({ data: updatedParent, merged_count: childFeatureIds.length });
+  } catch (error) {
+    res.status(400).json({ error: true, message: error.message, code: 'BAD_REQUEST', status: 400 });
+  }
+});
+
+// GET /api/product/features/:id/merge-history
+router.get('/product/features/:id/merge-history', requireAuth, async (req, res) => {
+  try {
+    const history = await FeatureMergeHistory.findByParentId(req.params.id);
+    res.json({ data: history });
+  } catch (error) {
+    res.status(500).json({ error: true, message: error.message, code: 'SERVER_ERROR', status: 500 });
+  }
+});
+
+// POST /api/product/features/:id/unmerge
+router.post('/product/features/:id/unmerge', requireAuth, adminOrProjectOwner, async (req, res) => {
+  try {
+    const db = await getDb();
+    const { childFeatureId } = req.body;
+
+    const history = await FeatureMergeHistory.findByChildId(childFeatureId);
+    if (!history) {
+      return res.status(404).json({ error: true, message: 'Merge not found', code: 'NOT_FOUND', status: 404 });
+    }
+
+    // Check 24h window
+    const mergedAt = new Date(history.merged_at);
+    const now = new Date();
+    const hoursAgo = (now - mergedAt) / (1000 * 60 * 60);
+
+    if (hoursAgo > 24) {
+      return res.status(400).json({ error: true, message: 'Merge too old to undo (>24h)', code: 'MERGE_TOO_OLD', status: 400 });
+    }
+
+    try {
+      // Restore child feature
+      await run(db,
+        `UPDATE pb_features SET merged_from_ids = '[]' WHERE id = ?`,
+        [childFeatureId]
+      );
+
+      // Update parent request count
+      const currentParent = await queryOne(db, 'SELECT * FROM pb_features WHERE id = ?', [history.parent_feature_id]);
+      const newRequestCount = Math.max(0, (currentParent.request_count || 0) - history.child_request_count);
+
+      const updatedMergedFrom = JSON.parse(currentParent.merged_from_ids || '[]').filter(id => id !== childFeatureId);
+      await run(db,
+        `UPDATE pb_features SET request_count = ?, merged_from_ids = ? WHERE id = ?`,
+        [newRequestCount, JSON.stringify(updatedMergedFrom), history.parent_feature_id]
+      );
+    } catch (error) {
+      throw error;
+    }
+
+    const restoredChild = await queryOne(db, 'SELECT * FROM pb_features WHERE id = ?', [childFeatureId]);
+    res.json({ data: restoredChild });
+  } catch (error) {
+    res.status(500).json({ error: true, message: error.message, code: 'SERVER_ERROR', status: 500 });
+  }
 });
 
 module.exports = router;

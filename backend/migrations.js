@@ -948,45 +948,45 @@ const MIGRATIONS = [
     ],
   },
   {
-    id: '007_feature_merge_support',
+    id: '025_feature_merge_support',
     description: 'Add merge tracking to product features',
     steps: [
       {
         addColumn: {
-          table: 'product_features',
+          table: 'pb_features',
           column: 'merged_from_ids',
-          sqlite: "ALTER TABLE product_features ADD COLUMN merged_from_ids TEXT DEFAULT '[]'",
-          mysql: "ALTER TABLE product_features ADD COLUMN merged_from_ids JSON DEFAULT (JSON_ARRAY())",
+          sqlite: "ALTER TABLE pb_features ADD COLUMN merged_from_ids TEXT DEFAULT '[]'",
+          mysql: "ALTER TABLE pb_features ADD COLUMN merged_from_ids JSON DEFAULT (JSON_ARRAY())",
         },
       },
       {
         addColumn: {
-          table: 'product_features',
+          table: 'pb_features',
           column: 'request_count',
-          sqlite: 'ALTER TABLE product_features ADD COLUMN request_count INT DEFAULT 0',
-          mysql: 'ALTER TABLE product_features ADD COLUMN request_count INT DEFAULT 0',
+          sqlite: 'ALTER TABLE pb_features ADD COLUMN request_count INT DEFAULT 0',
+          mysql: 'ALTER TABLE pb_features ADD COLUMN request_count INT DEFAULT 0',
         },
       },
       {
         addColumn: {
-          table: 'product_features',
+          table: 'pb_features',
           column: 'merged_at',
-          sqlite: 'ALTER TABLE product_features ADD COLUMN merged_at DATETIME',
-          mysql: 'ALTER TABLE product_features ADD COLUMN merged_at DATETIME',
+          sqlite: 'ALTER TABLE pb_features ADD COLUMN merged_at DATETIME',
+          mysql: 'ALTER TABLE pb_features ADD COLUMN merged_at DATETIME',
         },
       },
       {
         addColumn: {
-          table: 'product_features',
+          table: 'pb_features',
           column: 'merged_by_id',
-          sqlite: 'ALTER TABLE product_features ADD COLUMN merged_by_id VARCHAR(36)',
-          mysql: 'ALTER TABLE product_features ADD COLUMN merged_by_id VARCHAR(36)',
+          sqlite: 'ALTER TABLE pb_features ADD COLUMN merged_by_id VARCHAR(36)',
+          mysql: 'ALTER TABLE pb_features ADD COLUMN merged_by_id VARCHAR(36)',
         },
       },
     ],
   },
   {
-    id: '008_feature_merge_history',
+    id: '026_feature_merge_history',
     description: 'Create feature merge history audit table',
     steps: [
       {

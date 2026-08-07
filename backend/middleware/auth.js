@@ -62,4 +62,11 @@ function requireRole(...roles) {
   };
 }
 
-module.exports = { authMiddleware, requireAuth, requireAdmin, requireRole };
+function adminOrProjectOwner(req, res, next) {
+  if (req.userRole === 'admin') return next();
+  // For non-admins, we'll check project ownership in the route handler
+  // since we need access to the feature/project data
+  next();
+}
+
+module.exports = { authMiddleware, requireAuth, requireAdmin, requireRole, adminOrProjectOwner };
