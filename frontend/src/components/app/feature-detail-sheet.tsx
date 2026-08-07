@@ -15,6 +15,9 @@ import { OutcomeDialog } from '@/components/app/outcome-dialog';
 import { MergeSuggestions } from '@/components/MergeSuggestions';
 import { MergeConfirmDialog } from '@/components/MergeConfirmDialog';
 import { MergeHistoryTimeline } from '@/components/MergeHistoryTimeline';
+import { ForecastCard } from '@/components/ForecastCard';
+import { MetricsInput } from '@/components/MetricsInput';
+import { ImpactChart } from '@/components/ImpactChart';
 import {
   FEATURE_STATUS_CLASS, FEATURE_STATUS_LABELS, FEATURE_STATUS_OPTIONS,
   OUTCOME_VERDICT_CLASS, OUTCOME_VERDICT_LABELS,
@@ -433,6 +436,23 @@ export function FeatureDetailSheet({
                   <MergeHistoryTimeline
                     featureId={feature.id}
                     onUnmerge={handleUnmerge}
+                  />
+                </div>
+              </div>
+
+              {/* Impact Measurement */}
+              <div className="border-t pt-6">
+                <h3 className="text-lg font-semibold mb-4">Impact Measurement</h3>
+                <div className="space-y-4">
+                  <ForecastCard
+                    featureId={feature.id}
+                    forecastAdoption={feature.forecast_adoption}
+                    forecastRevenue={feature.forecast_revenue}
+                    onSave={() => void load()}
+                  />
+                  <MetricsInput
+                    featureId={feature.id}
+                    onMetricRecorded={() => void load()}
                   />
                 </div>
               </div>
