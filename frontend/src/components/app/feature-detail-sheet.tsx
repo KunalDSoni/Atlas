@@ -12,6 +12,9 @@ import { api } from '@/lib/api';
 import { useProjects } from '@/hooks/use-projects';
 import type { PbFeature, WikiSpace } from '@/lib/types';
 import { OutcomeDialog } from '@/components/app/outcome-dialog';
+import { MergeSuggestions } from '@/components/MergeSuggestions';
+import { MergeConfirmDialog } from '@/components/MergeConfirmDialog';
+import { MergeHistoryTimeline } from '@/components/MergeHistoryTimeline';
 import {
   FEATURE_STATUS_CLASS, FEATURE_STATUS_LABELS, FEATURE_STATUS_OPTIONS,
   OUTCOME_VERDICT_CLASS, OUTCOME_VERDICT_LABELS,
@@ -50,6 +53,9 @@ export function FeatureDetailSheet({
   const [outcomePrompted, setOutcomePrompted] = useState(false);
   const navigate = useNavigate();
   const [pushProject, setPushProject] = useState('');
+  const [showMergeDialog, setShowMergeDialog] = useState(false);
+  const [selectedForMerge, setSelectedForMerge] = useState<{ id: string; name: string; request_count: number }[]>([]);
+  const [isMerging, setIsMerging] = useState(false);
 
   const load = useCallback(async () => {
     if (!featureId) return;
@@ -134,6 +140,61 @@ export function FeatureDetailSheet({
       onChange?.();
     } catch (e) {
       toast.error('Unlink failed', { description: e instanceof Error ? e.message : undefined });
+    }
+  }
+
+  async function handleSelectForMerge(childIds: string[]) {
+    if (!feature) return;
+    try {
+      // Fetch the child features to display in the confirm dialog
+      const childFeatures = await Promise.all(
+        childIds.map(async (id) => {
+          const f = await api.product.feature(id);
+          return { id: f.id, name: f.name, request_count: f.request_count || 0 };
+        })
+      );
+      setSelectedForMerge(childFeatures);
+      setShowMergeDialog(true);
+    } catch (e) {
+      toast.error('Failed to load features for merge', { description: e instanceof Error ? e.message : undefined });
+    }
+  }
+
+  async function handleConfirmMerge(reason?: string) {
+    if (!feature) return;
+    setIsMerging(true);
+    try {
+      const childIds = selectedForMerge.map((f) => f.id);
+      await fetch(`/api/product-features/${feature.id}/merge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ child_feature_ids: childIds, reason: reason || '' }),
+      });
+      toast.success('Features merged successfully');
+      setShowMergeDialog(false);
+      setSelectedForMerge([]);
+      await load();
+      onChange?.();
+    } catch (e) {
+      toast.error('Merge failed', { description: e instanceof Error ? e.message : undefined });
+    } finally {
+      setIsMerging(false);
+    }
+  }
+
+  async function handleUnmerge(childFeatureId: string) {
+    if (!feature) return;
+    try {
+      await fetch(`/api/product-features/${feature.id}/unmerge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ child_feature_id: childFeatureId }),
+      });
+      toast.success('Merge undone');
+      await load();
+      onChange?.();
+    } catch (e) {
+      toast.error('Unmerge failed', { description: e instanceof Error ? e.message : undefined });
     }
   }
 
@@ -360,6 +421,21 @@ export function FeatureDetailSheet({
                   )) : <p className="text-xs text-muted-foreground">Not tied to an objective.</p>}
                 </div>
               </section>
+
+              {/* Manage Duplicates */}
+              <div className="border-t pt-6">
+                <h3 className="text-lg font-semibold mb-4">Manage Duplicates</h3>
+                <div className="space-y-4">
+                  <MergeSuggestions
+                    featureId={feature.id}
+                    onSelectForMerge={handleSelectForMerge}
+                  />
+                  <MergeHistoryTimeline
+                    featureId={feature.id}
+                    onUnmerge={handleUnmerge}
+                  />
+                </div>
+              </div>
             </div>
           </>
         ) : null}
@@ -377,6 +453,15 @@ export function FeatureDetailSheet({
           setFeature((current) => current ? { ...current, outcome, needs_outcome_metric: !outcome.metric } : current);
           onChange?.();
         }}
+      />
+    )}
+    {showMergeDialog && feature && (
+      <MergeConfirmDialog
+        parentFeature={feature}
+        childFeatures={selectedForMerge}
+        onConfirm={handleConfirmMerge}
+        onCancel={() => setShowMergeDialog(false)}
+        isLoading={isMerging}
       />
     )}
     </>

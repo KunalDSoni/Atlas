@@ -835,6 +835,7 @@ export interface PbFeature {
   delivery_total: number;
   delivery_done: number;
   rice: number | null;
+  request_count: number;
   insights?: PbFeatureInsight[];
   issues?: PbFeatureIssue[];
   objectives?: PbFeatureObjective[];
