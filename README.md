@@ -1,6 +1,8 @@
 # Atlas — Project Management
 
-A full-stack Jira clone with Kanban boards, sprint management, role-based access control, and real-time dashboards.
+A full-stack Jira clone with Kanban boards, sprint management, role-based access control, and comprehensive dashboards. Built with React, Node.js, and modular API architecture for extensibility.
+
+**Feature Status:** See [JIRA_FEATURE_COMPARISON.md](docs/JIRA_FEATURE_COMPARISON.md) for detailed feature matrix (35+ completed, 15+ in progress, 30+ planned).
 
 ## Quick Start
 
@@ -19,6 +21,42 @@ cd ../backend && npm install && node server.js
 
 For frontend development with hot reload, run the backend and then
 `cd frontend && npm run dev` — Vite proxies `/api` to port 3001.
+
+## Feature Overview
+
+### ✅ Fully Implemented
+- **Core Board & Sprint Management** — Kanban boards, sprint planning, drag-and-drop issue movement
+- **Issue Tracking** — Create, edit, search issues with full history and audit trail
+- **User & Permission Management** — Role-based access control (Admin, Board Admin, User, Client)
+- **Comments & Collaboration** — Issue comments with threading and permissions
+- **Attachments & Linking** — File uploads and issue relationship linking
+- **Epics & Roadmaps** — Portfolio view with epic-to-issue hierarchy
+- **Reporting** — Sprint burndown, velocity tracking, issue status reports
+- **Wiki & Documentation** — Wiki pages, spaces, and attachments
+- **Product Management** — Features, outcomes, objectives, roadmap, themes, customer management
+- **Service Desk Basics** — Request types, queues, SLA tracking, customer portal
+- **API & Webhooks** — RESTful API with webhook support for event notifications
+- **Admin Dashboard** — User counts, project counts, role breakdown, audit logs
+
+### 🚧 Partially Implemented
+- **Board Customization** — Columns fixed to workflow states; swimlanes/grouping not yet available
+- **Automation** — Manual workflow transitions work; automatic triggers and conditions incomplete
+- **Notifications** — Watchers tracked; email/in-app delivery rules need development
+- **Filters** — Basic filtering works; saved filter persistence unclear
+- **Goal Alignment** — OKRs exist but issue-to-goal linking incomplete
+- **Time Tracking** — Worklog CRUD exists; reporting needs work
+- **Mobile App** — Separate Expo project (see `mobile/README.md`); feature parity needs verification
+
+### ❌ Not Yet Implemented
+- **AI-Assisted Planning** — No Rovo AI features (auto-assign, task breakdown, priority suggestions)
+- **OAuth/SSO** — No Google, GitHub, Microsoft login integrations
+- **Third-Party Integrations** — Slack, GitHub, Figma, Confluence not integrated
+- **No-Code Automation Builder** — Drag-and-drop rule creation UI not built
+- **Advanced Metrics** — Cycle time, escape rate, defect density reports missing
+- **Real-Time Updates** — WebSocket real-time dashboard updates not implemented
+- **Custom Dashboards** — Dashboard builder and widget system not available
+- **LDAP Sync** — No corporate directory integration
+- **Data Export** — CSV export and backup functionality not yet available
 
 ## Mobile app
 
@@ -251,6 +289,34 @@ Everything after that goes in `backend/migrations.js` as a new entry appended to
 Each migration declares both a `sqlite` and a `mysql` form and runs once, tracked in
 the `schema_migrations` table. The runner applies pending migrations automatically on
 startup, so you no longer need to delete `data.db` when the schema changes.
+
+## Development Roadmap
+
+### Phase 1: Core Completion (Foundation)
+1. **Board Customization** — Add swimlanes, grouping by assignee/epic, configurable columns
+2. **Filter Persistence** — Save and load custom filter views
+3. **Automation Triggers** — Event-based actions (on status change, on assignment, etc.)
+4. **Mobile Feature Parity** — Ensure Expo app matches web feature set
+
+### Phase 2: Collaboration & Automation (Engagement)
+1. **Notification Rules** — Email/in-app delivery, configurable per project
+2. **Slack Integration** — Create issues, update status, post notifications
+3. **Automation Builder UI** — No-code workflow builder
+4. **Real-Time Updates** — WebSocket support for live dashboard and board updates
+
+### Phase 3: Intelligence & Insights (Value)
+1. **AI-Assisted Planning** — Task breakdown, assignee suggestions using LLM
+2. **Advanced Metrics** — Cycle time, escape rate, defect density, burnup charts
+3. **Trend Detection** — Identify bottlenecks, at-risk items, velocity trends
+4. **Custom Dashboards** — Draggable widgets, user-saved views
+
+### Phase 4: Enterprise & Compliance (Scale)
+1. **OAuth/SSO** — Google, GitHub, Microsoft, SAML integrations
+2. **LDAP Sync** — Corporate directory user sync
+3. **Data Compliance** — GDPR/CCPA controls, data residency options
+4. **Backup & Export** — Project backup, CSV/PDF export, audit log export
+
+See [JIRA_FEATURE_COMPARISON.md](docs/JIRA_FEATURE_COMPARISON.md) for complete feature matrix with status.
 
 ## Security
 
