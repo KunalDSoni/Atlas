@@ -44,6 +44,23 @@ const PORTAL_STATUS_LABELS = {
   launched: 'Launched',
 };
 
+const IMPACT_STATUSES = ['not_launched', 'launched', 'measuring', 'analyzed'];
+const IMPACT_METRIC_TYPES = ['adoption', 'satisfaction', 'revenue', 'bug_rate', 'engagement'];
+
+// `adminOrProjectOwner` waves non-admins through by design — it cannot know
+// which project a feature belongs to, so the route owns the second half of the
+// check. Admins pass; everyone else must be a member of the feature's project.
+// A feature with no project is admin-only: there is no membership to test.
+async function denyUnlessFeatureWritable(req, feature) {
+  if (req.userRole === 'admin') return null;
+  if (!feature.project_id) return 'Admin access required for features with no project';
+  const db = await getDb();
+  const membership = await queryOne(db,
+    'SELECT id FROM project_members WHERE project_id = ? AND user_id = ?',
+    [feature.project_id, req.userId]);
+  return membership ? null : 'You do not have access to this project';
+}
+
 // Tier-weighted sum of linked insight importance. ELSE 1 covers both 'standard'
 // and insights with no customer/company attached.
 const USER_IMPACT_SQL = `
@@ -242,6 +259,7 @@ router.put('/product/features/:id', requireAuth, async (req, res) => {
     if (body.status !== undefined && !FEATURE_STATUSES.includes(body.status)) return res.status(400).json({ error: 'invalid status' });
     if (body.timeframe !== undefined && body.timeframe !== null && !TIMEFRAMES.includes(body.timeframe)) return res.status(400).json({ error: 'invalid timeframe' });
     if (body.portal_status !== undefined && body.portal_status !== null && !PORTAL_STATUSES.includes(body.portal_status)) return res.status(400).json({ error: 'invalid portal_status' });
+    if (body.impact_status !== undefined && body.impact_status !== null && !IMPACT_STATUSES.includes(body.impact_status)) return res.status(400).json({ error: 'invalid impact_status' });
 
     const fields = ['project_id', 'name', 'description', 'status', 'timeframe', 'portal_status',
                     'owner_id', 'effort', 'value', 'reach', 'impact', 'confidence', 'release_id', 'impact_status'];
@@ -615,67 +633,72 @@ router.post('/product/features/:id/unmerge', requireAuth, adminOrProjectOwner, a
 });
 
 // POST /api/product-features/:id/impact-metrics
-router.post('/product-features/:id/impact-metrics', requireAuth, async (req, res) => {
+router.post('/product-features/:id/impact-metrics', requireAuth, adminOrProjectOwner, async (req, res) => {
   try {
     const { metricType, actualValue, unit, dataSource = 'manual', notes, measurementDate } = req.body;
 
-    if (!metricType || actualValue === undefined) {
-      return res.status(400).json({ error: true, message: 'metricType and actualValue required' });
+    if (!metricType || actualValue === undefined || actualValue === null) {
+      return res.status(400).json({ error: 'metricType and actualValue required' });
     }
 
-    if (actualValue < 0) {
-      return res.status(400).json({ error: true, message: 'Actual value must be ≥ 0' });
+    if (!IMPACT_METRIC_TYPES.includes(metricType)) {
+      return res.status(400).json({ error: `invalid metricType — expected one of ${IMPACT_METRIC_TYPES.join(', ')}` });
     }
 
-    // Validate measurement_date is not older than 30 days
-    if (measurementDate) {
-      const metricDate = new Date(measurementDate);
-      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-      if (metricDate < thirtyDaysAgo) {
-        return res.status(400).json({ error: true, message: 'Cannot record metrics for measurements >30 days old' });
+    const value = Number(actualValue);
+    if (!Number.isFinite(value)) return res.status(400).json({ error: 'actualValue must be a number' });
+    if (value < 0) return res.status(400).json({ error: 'Actual value must be ≥ 0' });
+
+    // A measurement may be dated in the past — backfilling a launch month once
+    // analytics settle is normal, and anything past the edit window simply
+    // lands read-only (see FeatureImpactMetrics.isEditable). What it may never
+    // be is dated in the future: that is a typo, not a measurement.
+    let measuredOn = null;
+    if (measurementDate !== undefined && measurementDate !== null && measurementDate !== '') {
+      measuredOn = String(measurementDate).slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(measuredOn) || Number.isNaN(Date.parse(measuredOn))) {
+        return res.status(400).json({ error: 'measurementDate must be an ISO date (YYYY-MM-DD)' });
+      }
+      if (measuredOn > new Date().toISOString().slice(0, 10)) {
+        return res.status(400).json({ error: 'measurementDate cannot be in the future' });
       }
     }
 
-    // Validate feature exists and has valid impact_status
     const db = await getDb();
     const feature = await queryOne(db, 'SELECT * FROM pb_features WHERE id = ?', [req.params.id]);
-    if (!feature) {
-      return res.status(404).json({ error: true, message: 'Feature not found' });
-    }
+    if (!feature) return res.status(404).json({ error: 'Feature not found' });
+
+    const denied = await denyUnlessFeatureWritable(req, feature);
+    if (denied) return res.status(403).json({ error: denied });
 
     if (!feature.impact_status) {
-      return res.status(400).json({ error: true, message: 'Feature impact_status must be set' });
+      return res.status(400).json({ error: 'Feature impact_status must be set' });
+    }
+    if (!IMPACT_STATUSES.includes(feature.impact_status)) {
+      return res.status(400).json({ error: 'Invalid feature impact_status' });
     }
 
-    const validStatuses = ['not_launched', 'launched', 'measuring', 'analyzed'];
-    if (!validStatuses.includes(feature.impact_status)) {
-      return res.status(400).json({ error: true, message: 'Invalid feature impact_status' });
-    }
-
-    const metric = await FeatureImpactMetrics.create(
-      req.params.id,
+    const metric = await FeatureImpactMetrics.create({
+      featureId: req.params.id,
       metricType,
-      actualValue,
+      actualValue: value,
       unit,
       dataSource,
       notes,
-      req.userId,
-      measurementDate
-    );
+      userId: req.userId,
+      measurementDate: measuredOn,
+    });
 
-    // Log activity
     await run(
       db,
       `INSERT INTO activity (id, type, actor_id, resource_type, resource_id, changes, created_at)
        VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
       [uuidv4(), 'impact_measured', req.userId, 'feature', req.params.id,
-       JSON.stringify({ metric_type: metricType, actual_value: actualValue, measurement_date: measurementDate })]
+       JSON.stringify({ metric_type: metricType, actual_value: value, measurement_date: metric.measurement_date })]
     );
 
-    res.json({ data: metric });
-  } catch (error) {
-    res.status(500).json({ error: true, message: error.message });
-  }
+    res.json({ data: { ...metric, editable: FeatureImpactMetrics.isEditable(metric) } });
+  } catch (e) { serverError(res, e); }
 });
 
 // GET /api/product-features/:id/impact-metrics
@@ -687,13 +710,14 @@ router.get('/product-features/:id/impact-metrics', requireAuth, async (req, res)
 
     const metrics = await FeatureImpactMetrics.findByFeatureId(req.params.id);
 
-    // Group by metric type and calculate variance
+    // Group by metric type and calculate variance. `editable` is what the client
+    // uses to render a frozen measurement — past the window a row is audit trail.
     const grouped = {};
     metrics.forEach(m => {
       if (!grouped[m.metric_type]) grouped[m.metric_type] = [];
 
       const variance = FeatureImpactMetrics.calculateVariance(m.forecast_value, m.actual_value);
-      grouped[m.metric_type].push({ ...m, variance });
+      grouped[m.metric_type].push({ ...m, variance, editable: FeatureImpactMetrics.isEditable(m) });
     });
 
     res.json({
@@ -707,22 +731,37 @@ router.get('/product-features/:id/impact-metrics', requireAuth, async (req, res)
         metrics: grouped,
       },
     });
-  } catch (error) {
-    res.status(500).json({ error: true, message: error.message });
-  }
+  } catch (e) { serverError(res, e); }
 });
 
 // PUT /api/product-features/:id/forecast-metrics
-router.put('/product-features/:id/forecast-metrics', requireAuth, async (req, res) => {
+router.put('/product-features/:id/forecast-metrics', requireAuth, adminOrProjectOwner, async (req, res) => {
   try {
-    const { forecastAdoption, forecastRevenue, forecastNotes } = req.body;
+    const { forecastAdoption, forecastRevenue } = req.body;
     const db = await getDb();
+
+    const feature = await queryOne(db, 'SELECT * FROM pb_features WHERE id = ?', [req.params.id]);
+    if (!feature) return res.status(404).json({ error: 'Feature not found' });
+
+    const denied = await denyUnlessFeatureWritable(req, feature);
+    if (denied) return res.status(403).json({ error: denied });
+
+    // Absent means "leave alone"; explicit null means "clear". Without that
+    // distinction a partial update silently wipes the other forecast.
+    const nextAdoption = forecastAdoption === undefined ? feature.forecast_adoption : forecastAdoption;
+    const nextRevenue = forecastRevenue === undefined ? feature.forecast_revenue : forecastRevenue;
+
+    for (const [label, v] of [['forecastAdoption', nextAdoption], ['forecastRevenue', nextRevenue]]) {
+      if (v === null || v === undefined) continue;
+      if (!Number.isFinite(Number(v))) return res.status(400).json({ error: `${label} must be a number` });
+      if (Number(v) < 0) return res.status(400).json({ error: `${label} must be ≥ 0` });
+    }
 
     await run(
       db,
       `UPDATE pb_features SET forecast_adoption = ?, forecast_revenue = ?, updated_at = datetime('now')
        WHERE id = ?`,
-      [forecastAdoption ?? null, forecastRevenue ?? null, req.params.id]
+      [nextAdoption ?? null, nextRevenue ?? null, req.params.id]
     );
 
     await run(
@@ -730,14 +769,12 @@ router.put('/product-features/:id/forecast-metrics', requireAuth, async (req, re
       `INSERT INTO activity (id, type, actor_id, resource_type, resource_id, changes, created_at)
        VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
       [uuidv4(), 'forecast_set', req.userId, 'feature', req.params.id,
-       JSON.stringify({ forecast_adoption: forecastAdoption, forecast_revenue: forecastRevenue })]
+       JSON.stringify({ forecast_adoption: nextAdoption, forecast_revenue: nextRevenue })]
     );
 
     const updated = await queryOne(db, 'SELECT * FROM pb_features WHERE id = ?', [req.params.id]);
     res.json({ data: updated });
-  } catch (error) {
-    res.status(500).json({ error: true, message: error.message });
-  }
+  } catch (e) { serverError(res, e); }
 });
 
 module.exports = router;

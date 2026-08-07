@@ -1061,52 +1061,12 @@ const MIGRATIONS = [
           mysql: 'ALTER TABLE pb_features ADD COLUMN actual_revenue FLOAT',
         },
       },
-      {
-        run: async (adapter) => {
-          if (adapter.driver !== 'sqlite') return;
-          const rows = await adapter.all(
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name='pb_features'");
-          const ddl = rows[0] && rows[0].sql;
-          if (!ddl || /impact_status.*CHECK/i.test(ddl)) return;
-
-          const rebuilt = ddl
-            .replace(/CREATE\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?["'`[]?pb_features["'`\]]?/i,
-              'CREATE TABLE pb_features_rebuild_027')
-            .replace(/\)(\s*$|;)/,
-              ",CHECK(impact_status IN ('not_launched','launched','measuring','analyzed')))");
-
-          if (!/pb_features_rebuild_027/.test(rebuilt)) {
-            throw new Error('027: could not derive the rebuilt pb_features DDL');
-          }
-
-          const indexes = await adapter.all(
-            "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='pb_features' AND sql IS NOT NULL");
-
-          await adapter.exec('DROP TABLE IF EXISTS pb_features_rebuild_027');
-          await adapter.exec(rebuilt);
-          await adapter.exec('INSERT INTO pb_features_rebuild_027 SELECT * FROM pb_features');
-          await adapter.exec('DROP TABLE pb_features');
-          await adapter.exec('ALTER TABLE pb_features_rebuild_027 RENAME TO pb_features');
-          for (const i of indexes) {
-            await adapter.exec(i.sql);
-          }
-        },
-      },
-      {
-        run: async (adapter) => {
-          if (adapter.driver !== 'mysql') return;
-          const rows = await adapter.all(
-            `SELECT CONSTRAINT_NAME FROM information_schema.CHECK_CONSTRAINTS
-             WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'pb_features'`);
-
-          const hasConstraint = rows.some(r => /impact_status/i.test(r.CONSTRAINT_NAME));
-          if (hasConstraint) return;
-
-          await adapter.exec(
-            "ALTER TABLE pb_features ADD CONSTRAINT chk_impact_status " +
-            "CHECK (impact_status IN ('not_launched','launched','measuring','analyzed'))");
-        },
-      },
+      // No CHECK constraint on impact_status here, deliberately. SQLite cannot
+      // add one to an existing table — enforcing it would mean regex-rewriting
+      // the pb_features DDL and swapping the table out from under live data,
+      // which risks the whole table to duplicate a rule the route layer already
+      // enforces (IMPACT_STATUSES in routes/product-features.js). MySQL is left
+      // symmetrical with SQLite so the two schemas cannot drift.
     ],
   },
   {
@@ -1122,6 +1082,10 @@ const MIGRATIONS = [
             forecast_value REAL,
             actual_value REAL CHECK(actual_value IS NULL OR actual_value >= 0),
             unit TEXT,
+            -- No CHECK bounding this to today: SQLite and MySQL both reject
+            -- non-deterministic functions (date('now') / CURDATE()) inside a
+            -- CHECK constraint. "Not in the future" is enforced in the route
+            -- layer, which is also the only place that can return a 400.
             measurement_date DATE,
             data_source TEXT DEFAULT 'manual',
             notes TEXT,
@@ -1140,23 +1104,29 @@ const MIGRATIONS = [
             notes TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             created_by_id VARCHAR(36),
-            KEY idx_feature (feature_id),
-            KEY idx_date (measurement_date),
-            CHECK (actual_value IS NULL OR actual_value >= 0),
-            CHECK (measurement_date IS NULL OR measurement_date <= CURDATE())
+            -- Indexes are declared inline here and as separate steps for
+            -- SQLite; naming them identically keeps the two schemas comparable.
+            KEY idx_feature_impact_metrics_feature_id (feature_id),
+            KEY idx_feature_impact_metrics_date (measurement_date),
+            -- See the SQLite variant: CURDATE() is non-deterministic and is
+            -- rejected inside a CHECK. The future-date rule lives in the route.
+            CHECK (actual_value IS NULL OR actual_value >= 0)
           )`,
         },
       },
       {
+        // MySQL already created these inline above — CREATE TABLE cannot carry
+        // indexes portably, so the SQLite side needs its own statements. The
+        // mysql form is a no-op rather than null so every step names both.
         sql: {
           sqlite: `CREATE INDEX IF NOT EXISTS idx_feature_impact_metrics_feature_id ON feature_impact_metrics(feature_id)`,
-          mysql: null,
+          mysql: `SELECT 1`,
         },
       },
       {
         sql: {
           sqlite: `CREATE INDEX IF NOT EXISTS idx_feature_impact_metrics_date ON feature_impact_metrics(measurement_date)`,
-          mysql: null,
+          mysql: `SELECT 1`,
         },
       },
     ],

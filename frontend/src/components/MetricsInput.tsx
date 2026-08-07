@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { toast } from 'sonner';
+import { api } from '@/lib/api';
+import type { ImpactMetricType } from '@/lib/types';
 
 interface MetricsInputProps {
   featureId: string;
@@ -7,14 +9,21 @@ interface MetricsInputProps {
 }
 
 export const MetricsInput: React.FC<MetricsInputProps> = ({ featureId, onMetricRecorded }) => {
-  const [metricType, setMetricType] = useState('adoption');
+  const [metricType, setMetricType] = useState<ImpactMetricType>('adoption');
   const [actualValue, setActualValue] = useState('');
   const [measurementDate, setMeasurementDate] = useState(new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [acknowledgeReadOnly, setAcknowledgeReadOnly] = useState(false);
+  const fieldId = useId();
+  const ids = {
+    type: `${fieldId}-type`,
+    value: `${fieldId}-value`,
+    date: `${fieldId}-date`,
+    notes: `${fieldId}-notes`,
+  };
 
-  const unitMap = {
+  const unitMap: Record<ImpactMetricType, string> = {
     adoption: 'percentage',
     satisfaction: 'score',
     revenue: 'dollars',
@@ -22,6 +31,9 @@ export const MetricsInput: React.FC<MetricsInputProps> = ({ featureId, onMetricR
     engagement: 'score',
   };
 
+  // Past the window the measurement is still accepted — it just lands frozen,
+  // as audit trail. The checkbox below makes that consequence explicit rather
+  // than letting someone discover it when they try to correct a typo.
   const isReadOnly = (() => {
     const selectedDate = new Date(measurementDate);
     const today = new Date();
@@ -53,33 +65,25 @@ export const MetricsInput: React.FC<MetricsInputProps> = ({ featureId, onMetricR
 
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/product-features/${featureId}/impact-metrics`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          metricType,
-          actualValue: parsedValue,
-          unit: unitMap[metricType as keyof typeof unitMap],
-          measurementDate,
-          notes,
-          readonly: isReadOnly,
-        }),
+      const metric = await api.product.recordImpactMetric(featureId, {
+        metricType,
+        actualValue: parsedValue,
+        unit: unitMap[metricType],
+        measurementDate,
+        notes: notes || undefined,
       });
 
-      if (res.ok) {
-        setActualValue('');
-        setNotes('');
-        setMeasurementDate(new Date().toISOString().split('T')[0]);
-        toast.success('Metric recorded successfully');
-        onMetricRecorded();
-      } else {
-        const errorText = await res.text().catch(() => res.statusText);
-        toast.error(`Failed to record metric: ${errorText}`);
-      }
+      setActualValue('');
+      setNotes('');
+      setMeasurementDate(new Date().toISOString().split('T')[0]);
+      setAcknowledgeReadOnly(false);
+      toast.success(metric.editable
+        ? 'Metric recorded successfully'
+        : 'Metric recorded as read-only audit trail');
+      onMetricRecorded();
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to record metric';
-      toast.error(errorMessage);
-      console.error('Error recording metric:', error);
+      const message = error instanceof Error ? error.message : 'Failed to record metric';
+      toast.error(`Failed to record metric: ${message}`);
     } finally {
       setIsLoading(false);
     }
@@ -90,12 +94,13 @@ export const MetricsInput: React.FC<MetricsInputProps> = ({ featureId, onMetricR
       <h3 className="font-semibold">Record Post-Launch Metric</h3>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label htmlFor={ids.type} className="block text-sm font-medium text-gray-700 mb-1">
           Metric Type
         </label>
         <select
+          id={ids.type}
           value={metricType}
-          onChange={(e) => setMetricType(e.target.value)}
+          onChange={(e) => setMetricType(e.target.value as ImpactMetricType)}
           className="w-full px-3 py-2 border border-gray-300 rounded-lg"
         >
           <option value="adoption">Adoption %</option>
@@ -107,10 +112,11 @@ export const MetricsInput: React.FC<MetricsInputProps> = ({ featureId, onMetricR
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label htmlFor={ids.value} className="block text-sm font-medium text-gray-700 mb-1">
           Actual Value
         </label>
         <input
+          id={ids.value}
           type="number"
           value={actualValue}
           onChange={(e) => setActualValue(e.target.value)}
@@ -122,10 +128,11 @@ export const MetricsInput: React.FC<MetricsInputProps> = ({ featureId, onMetricR
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label htmlFor={ids.date} className="block text-sm font-medium text-gray-700 mb-1">
           Measurement Date
         </label>
         <input
+          id={ids.date}
           type="date"
           value={measurementDate}
           onChange={(e) => {
@@ -154,10 +161,11 @@ export const MetricsInput: React.FC<MetricsInputProps> = ({ featureId, onMetricR
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label htmlFor={ids.notes} className="block text-sm font-medium text-gray-700 mb-1">
           Notes (optional)
         </label>
         <textarea
+          id={ids.notes}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"

@@ -698,6 +698,56 @@ export type InsightSource = 'portal' | 'email' | 'support' | 'sales' | 'intervie
 export type FeatureStatus = 'idea' | 'discovery' | 'planned' | 'in_progress' | 'launched' | 'archived';
 export type Timeframe = 'now' | 'next' | 'later';
 export type PortalStatus = 'under_consideration' | 'planned' | 'launched';
+
+export type ImpactStatus = 'not_launched' | 'launched' | 'measuring' | 'analyzed';
+
+export type ImpactMetricType = 'adoption' | 'satisfaction' | 'revenue' | 'bug_rate' | 'engagement';
+
+export interface PbImpactMetric {
+  id: string;
+  feature_id: string;
+  metric_type: ImpactMetricType;
+  /** Snapshot of the forecast in force when this was recorded, not the live one. */
+  forecast_value: number | null;
+  actual_value: number | null;
+  unit: string | null;
+  measurement_date: string;
+  data_source: string;
+  notes: string | null;
+  created_at: string;
+  created_by_id: string | null;
+  /** (actual - forecast) / forecast * 100. Null when there is no usable forecast. */
+  variance: number | null;
+  /** False once past the 30-day window — the row is audit trail from then on. */
+  editable: boolean;
+}
+
+export interface PbFeatureImpact {
+  feature_id: string;
+  impact_status: ImpactStatus | null;
+  forecast_adoption: number | null;
+  forecast_revenue: number | null;
+  actual_adoption: number | null;
+  actual_revenue: number | null;
+  metrics: Partial<Record<ImpactMetricType, PbImpactMetric[]>>;
+}
+
+export interface PbImpactDashboardFeature {
+  id: string;
+  name: string;
+  forecast_adoption: number | null;
+  forecast_revenue: number | null;
+  actual_adoption: number | null;
+  actual_revenue: number | null;
+  impact_status: ImpactStatus | null;
+}
+
+export interface PbImpactDashboard {
+  total_features_analyzed: number;
+  avg_adoption_variance: number | null;
+  avg_revenue_variance: number | null;
+  features: PbImpactDashboardFeature[];
+}
 export type ObjectiveStatus = 'on_track' | 'at_risk' | 'off_track' | 'done';
 export type OutcomeVerdict = 'achieved' | 'partial' | 'missed' | 'too_early';
 
@@ -811,6 +861,13 @@ export interface PbFeature {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  /** Where this feature sits in the post-launch measurement lifecycle. */
+  impact_status: ImpactStatus | null;
+  forecast_adoption: number | null;
+  forecast_revenue: number | null;
+  /** Rolled up from the newest matching row in feature_impact_metrics. */
+  actual_adoption: number | null;
+  actual_revenue: number | null;
   owner_name?: string | null;
   project_name?: string | null;
   project_key?: string | null;

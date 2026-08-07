@@ -28,13 +28,14 @@ beforeAll(async () => {
     });
   featureId = feat.body.id;
 
-  // Set impact_status for testing
-  await request(app)
-    .put(`/api/product-features/${featureId}`)
+  // Set impact_status for testing. Note the path: the feature update route is
+  // /product/features/:id — the impact endpoints live under /product-features.
+  const statusRes = await request(app)
+    .put(`/api/product/features/${featureId}`)
     .set(headers)
-    .send({
-      impact_status: 'launched',
-    });
+    .send({ impact_status: 'launched' });
+  expect(statusRes.status).toBe(200);
+  expect(statusRes.body.impact_status).toBe('launched');
 });
 
 describe('POST /api/product-features/:id/impact-metrics', () => {
@@ -61,7 +62,7 @@ describe('POST /api/product-features/:id/impact-metrics', () => {
       .send({ metricType: 'adoption', actualValue: -5 });
 
     expect(res.status).toBe(400);
-    expect(res.body.message).toContain('≥ 0');
+    expect(res.body.error).toContain('≥ 0');
   });
 
   test('rejects missing metricType', async () => {
@@ -71,7 +72,7 @@ describe('POST /api/product-features/:id/impact-metrics', () => {
       .send({ actualValue: 10 });
 
     expect(res.status).toBe(400);
-    expect(res.body.message).toContain('required');
+    expect(res.body.error).toContain('required');
   });
 
   test('rejects missing actualValue', async () => {
@@ -81,10 +82,13 @@ describe('POST /api/product-features/:id/impact-metrics', () => {
       .send({ metricType: 'adoption' });
 
     expect(res.status).toBe(400);
-    expect(res.body.message).toContain('required');
+    expect(res.body.error).toContain('required');
   });
 
-  test('rejects measurements >30 days old', async () => {
+  // The spec says measurements >30 days old "become read-only (audit trail
+  // only)" — recorded but frozen, not refused. Backfilling a launch month once
+  // analytics settle is a normal thing to do.
+  test('accepts measurements >30 days old but marks them non-editable', async () => {
     const thirtyOneDaysAgo = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000)
       .toISOString()
       .split('T')[0];
@@ -99,8 +103,51 @@ describe('POST /api/product-features/:id/impact-metrics', () => {
         measurementDate: thirtyOneDaysAgo,
       });
 
+    expect(res.status).toBe(200);
+    expect(res.body.data.measurement_date).toBe(thirtyOneDaysAgo);
+    expect(res.body.data.editable).toBe(false);
+    await expect(FeatureImpactMetrics.canEdit(res.body.data.id)).resolves.toBe(false);
+  });
+
+  test('rejects a measurement_date in the future', async () => {
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split('T')[0];
+
+    const res = await request(app)
+      .post(`/api/product-features/${featureId}/impact-metrics`)
+      .set(headers)
+      .send({ metricType: 'adoption', actualValue: 15, measurementDate: tomorrow });
+
     expect(res.status).toBe(400);
-    expect(res.body.message).toContain('>30 days old');
+    expect(res.body.error).toMatch(/future/i);
+  });
+
+  test('rejects an unknown metricType', async () => {
+    const res = await request(app)
+      .post(`/api/product-features/${featureId}/impact-metrics`)
+      .set(headers)
+      .send({ metricType: 'vibes', actualValue: 10 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid metricType/i);
+  });
+
+  test('requires authentication', async () => {
+    const res = await request(app)
+      .post(`/api/product-features/${featureId}/impact-metrics`)
+      .send({ metricType: 'adoption', actualValue: 10 });
+
+    expect(res.status).toBe(401);
+  });
+
+  test('returns 404 for a non-existent feature', async () => {
+    const res = await request(app)
+      .post('/api/product-features/no-such-feature/impact-metrics')
+      .set(headers)
+      .send({ metricType: 'adoption', actualValue: 10 });
+
+    expect(res.status).toBe(404);
   });
 
   test('accepts measurement from 29 days ago', async () => {
@@ -120,6 +167,50 @@ describe('POST /api/product-features/:id/impact-metrics', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.data.measurement_date).toBe(twentyNineDaysAgo);
+    expect(res.body.data.editable).toBe(true);
+  });
+
+  test('snapshots the live forecast onto the metric row', async () => {
+    await request(app)
+      .put(`/api/product-features/${featureId}/forecast-metrics`)
+      .set(headers)
+      .send({ forecastAdoption: 200 });
+
+    const res = await request(app)
+      .post(`/api/product-features/${featureId}/impact-metrics`)
+      .set(headers)
+      .send({ metricType: 'adoption', actualValue: 250, unit: 'percentage' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.forecast_value).toBe(200);
+
+    // A later forecast revision must not rewrite an already-recorded variance.
+    await request(app)
+      .put(`/api/product-features/${featureId}/forecast-metrics`)
+      .set(headers)
+      .send({ forecastAdoption: 999 });
+
+    const reread = await request(app)
+      .get(`/api/product-features/${featureId}/impact-metrics`)
+      .set(headers);
+    const row = reread.body.data.metrics.adoption.find(m => m.id === res.body.data.id);
+    expect(row.forecast_value).toBe(200);
+    // (250 - 200) / 200 * 100 = 25
+    expect(row.variance).toBeCloseTo(25, 5);
+  });
+
+  test('rolls the newest measurement up onto the feature row', async () => {
+    await request(app)
+      .post(`/api/product-features/${featureId}/impact-metrics`)
+      .set(headers)
+      .send({ metricType: 'revenue', actualValue: 4321, unit: 'dollars' });
+
+    const res = await request(app)
+      .get(`/api/product-features/${featureId}/impact-metrics`)
+      .set(headers);
+
+    // Without this rollup the impact dashboard can never see the feature.
+    expect(res.body.data.actual_revenue).toBe(4321);
   });
 });
 
@@ -176,16 +267,56 @@ describe('PUT /api/product-features/:id/forecast-metrics', () => {
     expect(res.body.data.forecast_revenue).toBe(100000);
   });
 
-  test('accepts partial forecast data', async () => {
+  test('leaves the omitted forecast untouched rather than clearing it', async () => {
+    await request(app)
+      .put(`/api/product-features/${featureId}/forecast-metrics`)
+      .set(headers)
+      .send({ forecastAdoption: 50, forecastRevenue: 100000 });
+
     const res = await request(app)
       .put(`/api/product-features/${featureId}/forecast-metrics`)
       .set(headers)
-      .send({
-        forecastAdoption: 45,
-      });
+      .send({ forecastAdoption: 45 });
 
     expect(res.status).toBe(200);
     expect(res.body.data.forecast_adoption).toBe(45);
+    expect(res.body.data.forecast_revenue).toBe(100000);
+  });
+
+  test('clears a forecast on an explicit null', async () => {
+    const res = await request(app)
+      .put(`/api/product-features/${featureId}/forecast-metrics`)
+      .set(headers)
+      .send({ forecastRevenue: null });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.forecast_revenue).toBeNull();
+  });
+
+  test('rejects a negative forecast', async () => {
+    const res = await request(app)
+      .put(`/api/product-features/${featureId}/forecast-metrics`)
+      .set(headers)
+      .send({ forecastAdoption: -10 });
+
+    expect(res.status).toBe(400);
+  });
+
+  test('returns 404 for a non-existent feature', async () => {
+    const res = await request(app)
+      .put('/api/product-features/no-such-feature/forecast-metrics')
+      .set(headers)
+      .send({ forecastAdoption: 10 });
+
+    expect(res.status).toBe(404);
+  });
+
+  test('requires authentication', async () => {
+    const res = await request(app)
+      .put(`/api/product-features/${featureId}/forecast-metrics`)
+      .send({ forecastAdoption: 10 });
+
+    expect(res.status).toBe(401);
   });
 });
 
@@ -202,24 +333,29 @@ describe('GET /api/product-features/impact-dashboard', () => {
     expect(Array.isArray(res.body.data.features)).toBe(true);
   });
 
-  test('calculates variance correctly', async () => {
-    // Update feature with forecast and actual values
+  test('includes a measured feature and averages its variance', async () => {
     await request(app)
       .put(`/api/product-features/${featureId}/forecast-metrics`)
       .set(headers)
-      .send({
-        forecastAdoption: 100,
-        forecastRevenue: 100000,
-      });
+      .send({ forecastAdoption: 100, forecastRevenue: 100000 });
 
-    // Set actual adoption through database
+    await request(app)
+      .post(`/api/product-features/${featureId}/impact-metrics`)
+      .set(headers)
+      .send({ metricType: 'adoption', actualValue: 120, unit: 'percentage' });
+
     const res = await request(app)
       .get(`/api/product-features/impact-dashboard`)
       .set(headers);
 
     expect(res.status).toBe(200);
-    // Dashboard should be created successfully even if variances are null
-    expect(typeof res.body.data.total_features_analyzed).toBe('number');
+    // The rollup has to make the feature visible here — this is exactly what a
+    // metrics-table-only write silently failed to do.
+    const row = res.body.data.features.find(f => f.id === featureId);
+    expect(row).toBeDefined();
+    expect(row.actual_adoption).toBe(120);
+    expect(res.body.data.total_features_analyzed).toBeGreaterThan(0);
+    expect(typeof res.body.data.avg_adoption_variance).toBe('number');
   });
 });
 

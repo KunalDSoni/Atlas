@@ -445,8 +445,8 @@ export function FeatureDetailSheet({
                 <div className="space-y-4">
                   <ForecastCard
                     featureId={feature.id}
-                    forecastAdoption={(feature as any).forecast_adoption}
-                    forecastRevenue={(feature as any).forecast_revenue}
+                    forecastAdoption={feature.forecast_adoption}
+                    forecastRevenue={feature.forecast_revenue}
                     onSave={() => void load()}
                   />
                   <MetricsInput

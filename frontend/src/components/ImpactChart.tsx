@@ -5,7 +5,8 @@ interface ImpactData {
   name: string;
   forecast: number;
   actual: number;
-  variance: number;
+  /** Null when there is no forecast to compare against — distinct from 0%. */
+  variance: number | null;
 }
 
 interface ImpactChartProps {
@@ -28,7 +29,7 @@ const CustomTooltip: React.FC<TooltipProps> = ({ active, payload }) => {
         <p className="text-xs text-blue-600">Forecast: {data.forecast}</p>
         <p className="text-xs text-green-600">Actual: {data.actual}</p>
         <p className="text-xs text-purple-600">
-          Variance: {data.variance !== 0 ? `${data.variance.toFixed(1)}%` : 'N/A'}
+          Variance: {data.variance === null ? 'N/A' : `${data.variance.toFixed(1)}%`}
         </p>
       </div>
     );
@@ -45,7 +46,7 @@ export const ImpactChart: React.FC<ImpactChartProps> = ({ data, title }) => {
   // Use absolute value of variance to display as a bar
   const chartData = data.map((item) => ({
     ...item,
-    varianceAbs: Math.abs(item.variance),
+    varianceAbs: item.variance === null ? 0 : Math.abs(item.variance),
   }));
 
   return (

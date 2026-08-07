@@ -15,6 +15,7 @@ import type {
   WikiAttachment, ApiToken, Webhook, CustomField,
   WorkLog, WorkflowStatus,
   PbCompany, PbCustomer, PbInsight, PbFeature, PbFeatureOutcome, PbObjective,
+  ImpactMetricType, PbFeatureImpact, PbImpactDashboard, PbImpactMetric,
   PbOutcomesResponse, PbTheme, PbThemeSuggestion, PortalFeature, PortalMe, PortalSubmission,
   PublicRequest, RequestType, Queue, QueueIssue, SlaGoal, SlaState,
   ArticleSuggestion, CuratedArticle, ServiceDeskReport,
@@ -510,6 +511,25 @@ export const api = {
     unlinkIssue: (linkId: string) => del<{ ok: boolean }>(`/product/feature-issues/${linkId}`),
     voteFeature: (featureId: string) =>
       post<{ voted: boolean; vote_count: number }>(`/product/features/${featureId}/vote`),
+
+    // Impact measurement. These endpoints wrap their payload in `{ data }`
+    // rather than returning it bare like the rest of the API — unwrap here so
+    // callers never have to know about the seam.
+    impact: (featureId: string) =>
+      get<{ data: PbFeatureImpact }>(`/product-features/${featureId}/impact-metrics`).then(r => r.data),
+    recordImpactMetric: (featureId: string, body: {
+      metricType: ImpactMetricType;
+      actualValue: number;
+      unit?: string;
+      dataSource?: string;
+      notes?: string;
+      measurementDate?: string;
+    }) => post<{ data: PbImpactMetric }>(`/product-features/${featureId}/impact-metrics`, body).then(r => r.data),
+    /** Omitted fields keep their current value; explicit null clears one. */
+    saveForecast: (featureId: string, body: { forecastAdoption?: number | null; forecastRevenue?: number | null }) =>
+      put<{ data: PbFeature }>(`/product-features/${featureId}/forecast-metrics`, body).then(r => r.data),
+    impactDashboard: () =>
+      get<{ data: PbImpactDashboard }>('/product-features/impact-dashboard').then(r => r.data),
 
     // Outcomes — the metric can be set before launch; measured/verdict records
     // the later review. The queue window is caller-configurable and defaults to

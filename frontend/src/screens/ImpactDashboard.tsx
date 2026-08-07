@@ -1,67 +1,53 @@
 import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { ImpactChart } from '../components/ImpactChart';
+import { ImpactChart } from '@/components/ImpactChart';
+import { api } from '@/lib/api';
+import type { PbImpactDashboard } from '@/lib/types';
 
-interface FeatureImpact {
-  id: string;
-  name: string;
-  forecast_adoption?: number;
-  actual_adoption?: number;
-  forecast_revenue?: number;
-  actual_revenue?: number;
-}
-
-interface ImpactSummary {
-  total_features_analyzed: number;
-  avg_adoption_variance?: number;
-  avg_revenue_variance?: number;
-  features: FeatureImpact[];
+/** Renders a variance that may legitimately be 0 — `0%` is a result, not "no data". */
+function formatVariance(v: number | null | undefined): string {
+  return v === null || v === undefined ? 'N/A' : `${v.toFixed(1)}%`;
 }
 
 export const ImpactDashboard: React.FC = () => {
-  const [summary, setSummary] = useState<ImpactSummary | null>(null);
+  const [summary, setSummary] = useState<PbImpactDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     const loadDashboard = async () => {
       try {
-        const res = await fetch('/api/product-features/impact-dashboard');
-        if (!res.ok) {
-          throw new Error(`Failed to fetch impact dashboard: ${res.statusText}`);
-        }
-        const data = await res.json();
-        setSummary(data.data);
+        const data = await api.product.impactDashboard();
+        if (cancelled) return;
+        setSummary(data);
         setError(null);
       } catch (err) {
+        if (cancelled) return;
         const errorMessage = err instanceof Error ? err.message : 'Failed to fetch impact dashboard';
         setError(errorMessage);
         toast.error(errorMessage);
-        console.error('Failed to fetch impact dashboard:', err);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
-    loadDashboard();
+    void loadDashboard();
+    return () => { cancelled = true; };
   }, []);
 
   if (loading) return <div className="p-6">Loading...</div>;
   if (error) return <div className="p-6 text-red-600">Error: {error}</div>;
   if (!summary) return <div className="p-6">No data</div>;
 
-  const chartData = summary.features.map((f: any) => {
-    const forecast = f.forecast_adoption || 0;
-    const actual = f.actual_adoption || 0;
-    const variance = forecast && forecast !== 0
-      ? ((actual - forecast) / forecast * 100)
-      : 0;
-
+  const chartData = summary.features.map((f) => {
+    const forecast = f.forecast_adoption ?? 0;
+    const actual = f.actual_adoption ?? 0;
     return {
       name: f.name.substring(0, 20),
       forecast,
       actual,
-      variance,
+      variance: forecast === 0 ? null : ((actual - forecast) / forecast) * 100,
     };
   });
 
@@ -74,15 +60,11 @@ export const ImpactDashboard: React.FC = () => {
         </div>
         <div className="p-4 bg-white border border-gray-200 rounded-lg">
           <div className="text-sm text-gray-600">Avg Adoption Variance</div>
-          <div className="text-3xl font-bold">
-            {summary.avg_adoption_variance ? `${summary.avg_adoption_variance.toFixed(1)}%` : 'N/A'}
-          </div>
+          <div className="text-3xl font-bold">{formatVariance(summary.avg_adoption_variance)}</div>
         </div>
         <div className="p-4 bg-white border border-gray-200 rounded-lg">
           <div className="text-sm text-gray-600">Avg Revenue Variance</div>
-          <div className="text-3xl font-bold">
-            {summary.avg_revenue_variance ? `${summary.avg_revenue_variance.toFixed(1)}%` : 'N/A'}
-          </div>
+          <div className="text-3xl font-bold">{formatVariance(summary.avg_revenue_variance)}</div>
         </div>
       </div>
 
@@ -90,3 +72,6 @@ export const ImpactDashboard: React.FC = () => {
     </div>
   );
 };
+
+// Default export to match the lazy-loaded screen convention in App.tsx.
+export default ImpactDashboard;

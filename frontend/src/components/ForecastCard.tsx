@@ -1,48 +1,51 @@
-import React, { useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import { toast } from 'sonner';
+import { api } from '@/lib/api';
 
 interface ForecastCardProps {
   featureId: string;
-  forecastAdoption?: number;
-  forecastRevenue?: number;
+  forecastAdoption?: number | null;
+  forecastRevenue?: number | null;
   onSave: () => void;
 }
 
 export const ForecastCard: React.FC<ForecastCardProps> = ({
   featureId,
-  forecastAdoption = 0,
-  forecastRevenue = 0,
+  forecastAdoption,
+  forecastRevenue,
   onSave,
 }) => {
-  const [adoption, setAdoption] = useState(forecastAdoption);
-  const [revenue, setRevenue] = useState(forecastRevenue);
+  const [adoption, setAdoption] = useState(forecastAdoption ?? 0);
+  const [revenue, setRevenue] = useState(forecastRevenue ?? 0);
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const fieldId = useId();
+  const adoptionFieldId = `${fieldId}-adoption`;
+  const revenueFieldId = `${fieldId}-revenue`;
+
+  // onSave() refetches the feature upstream, so the props change under us.
+  // Without this the card keeps showing the pre-save values until remount —
+  // and worse, a later edit would submit stale numbers. Skip while editing so
+  // a background refresh cannot yank the field out from under the typist.
+  useEffect(() => {
+    if (isEditing) return;
+    setAdoption(forecastAdoption ?? 0);
+    setRevenue(forecastRevenue ?? 0);
+  }, [forecastAdoption, forecastRevenue, isEditing]);
 
   const handleSave = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/product-features/${featureId}/forecast-metrics`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          forecastAdoption: adoption || null,
-          forecastRevenue: revenue || null,
-        }),
+      await api.product.saveForecast(featureId, {
+        forecastAdoption: adoption,
+        forecastRevenue: revenue,
       });
-
-      if (res.ok) {
-        setIsEditing(false);
-        onSave();
-        toast.success('Forecast saved successfully');
-      } else {
-        const errorText = await res.text().catch(() => res.statusText);
-        toast.error(`Failed to save forecast: ${errorText}`);
-      }
+      setIsEditing(false);
+      onSave();
+      toast.success('Forecast saved successfully');
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to save forecast';
-      toast.error(errorMessage);
-      console.error('Error saving forecast:', error);
+      const message = error instanceof Error ? error.message : 'Failed to save forecast';
+      toast.error(`Failed to save forecast: ${message}`);
     } finally {
       setIsLoading(false);
     }
@@ -65,10 +68,11 @@ export const ForecastCard: React.FC<ForecastCardProps> = ({
       {isEditing ? (
         <div className="space-y-3">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor={adoptionFieldId} className="block text-sm font-medium text-gray-700 mb-1">
               Expected Adoption %
             </label>
             <input
+              id={adoptionFieldId}
               type="number"
               value={adoption}
               onChange={(e) => setAdoption(parseFloat(e.target.value) || 0)}
@@ -79,10 +83,11 @@ export const ForecastCard: React.FC<ForecastCardProps> = ({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor={revenueFieldId} className="block text-sm font-medium text-gray-700 mb-1">
               Expected Revenue ($)
             </label>
             <input
+              id={revenueFieldId}
               type="number"
               value={revenue}
               onChange={(e) => setRevenue(parseFloat(e.target.value) || 0)}

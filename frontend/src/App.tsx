@@ -31,6 +31,7 @@ const ProductRoadmap = lazy(() => import('@/screens/product-roadmap'));
 const ProductObjectives = lazy(() => import('@/screens/product-objectives'));
 const ProductOutcomes = lazy(() => import('@/screens/product-outcomes'));
 const ProductCustomers = lazy(() => import('@/screens/product-customers'));
+const ImpactDashboard = lazy(() => import('@/screens/ImpactDashboard'));
 const Portal = lazy(() => import('@/screens/portal'));
 const PortalFeature = lazy(() => import('@/screens/portal-feature'));
 const PortalMine = lazy(() => import('@/screens/portal-mine'));
@@ -111,6 +112,7 @@ function ProtectedLayout() {
               <Route path="/product/objectives" element={<ProductObjectives />} />
               <Route path="/product/outcomes" element={<ProductOutcomes />} />
               <Route path="/product/customers" element={<ProductCustomers />} />
+              <Route path="/product/impact" element={<ImpactDashboard />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/admin" element={<RequireAdmin><AdminOverview /></RequireAdmin>} />
