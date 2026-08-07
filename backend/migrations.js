@@ -1017,6 +1017,140 @@ const MIGRATIONS = [
       },
     ],
   },
+  {
+    id: '027_feature_impact_tracking',
+    description: 'Add impact tracking fields to product features',
+    steps: [
+      {
+        addColumn: {
+          table: 'pb_features',
+          column: 'impact_status',
+          sqlite: "ALTER TABLE pb_features ADD COLUMN impact_status VARCHAR(50) DEFAULT 'not_launched'",
+          mysql: "ALTER TABLE pb_features ADD COLUMN impact_status VARCHAR(50) DEFAULT 'not_launched'",
+        },
+      },
+      {
+        addColumn: {
+          table: 'pb_features',
+          column: 'forecast_adoption',
+          sqlite: 'ALTER TABLE pb_features ADD COLUMN forecast_adoption FLOAT',
+          mysql: 'ALTER TABLE pb_features ADD COLUMN forecast_adoption FLOAT',
+        },
+      },
+      {
+        addColumn: {
+          table: 'pb_features',
+          column: 'forecast_revenue',
+          sqlite: 'ALTER TABLE pb_features ADD COLUMN forecast_revenue FLOAT',
+          mysql: 'ALTER TABLE pb_features ADD COLUMN forecast_revenue FLOAT',
+        },
+      },
+      {
+        addColumn: {
+          table: 'pb_features',
+          column: 'actual_adoption',
+          sqlite: 'ALTER TABLE pb_features ADD COLUMN actual_adoption FLOAT',
+          mysql: 'ALTER TABLE pb_features ADD COLUMN actual_adoption FLOAT',
+        },
+      },
+      {
+        addColumn: {
+          table: 'pb_features',
+          column: 'actual_revenue',
+          sqlite: 'ALTER TABLE pb_features ADD COLUMN actual_revenue FLOAT',
+          mysql: 'ALTER TABLE pb_features ADD COLUMN actual_revenue FLOAT',
+        },
+      },
+      {
+        run: async (adapter) => {
+          if (adapter.driver !== 'sqlite') return;
+          const rows = await adapter.all(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='pb_features'");
+          const ddl = rows[0] && rows[0].sql;
+          if (!ddl || /impact_status.*CHECK/i.test(ddl)) return;
+
+          const rebuilt = ddl
+            .replace(/CREATE\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?["'`[]?pb_features["'`\]]?/i,
+              'CREATE TABLE pb_features_rebuild_027')
+            .replace(/\)(\s*$|;)/,
+              ",CHECK(impact_status IN ('not_launched','launched','measuring','analyzed')))");
+
+          if (!/pb_features_rebuild_027/.test(rebuilt)) {
+            throw new Error('027: could not derive the rebuilt pb_features DDL');
+          }
+
+          const indexes = await adapter.all(
+            "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='pb_features' AND sql IS NOT NULL");
+
+          await adapter.exec('DROP TABLE IF EXISTS pb_features_rebuild_027');
+          await adapter.exec(rebuilt);
+          await adapter.exec('INSERT INTO pb_features_rebuild_027 SELECT * FROM pb_features');
+          await adapter.exec('DROP TABLE pb_features');
+          await adapter.exec('ALTER TABLE pb_features_rebuild_027 RENAME TO pb_features');
+          for (const i of indexes) {
+            await adapter.exec(i.sql);
+          }
+        },
+      },
+      {
+        run: async (adapter) => {
+          if (adapter.driver !== 'mysql') return;
+          const rows = await adapter.all(
+            `SELECT CONSTRAINT_NAME FROM information_schema.CHECK_CONSTRAINTS
+             WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'pb_features'`);
+
+          const hasConstraint = rows.some(r => /impact_status/i.test(r.CONSTRAINT_NAME));
+          if (hasConstraint) return;
+
+          await adapter.exec(
+            "ALTER TABLE pb_features ADD CONSTRAINT chk_impact_status " +
+            "CHECK (impact_status IN ('not_launched','launched','measuring','analyzed'))");
+        },
+      },
+    ],
+  },
+  {
+    id: '028_feature_impact_metrics_table',
+    description: 'Create feature impact metrics table',
+    steps: [
+      {
+        sql: {
+          sqlite: `CREATE TABLE IF NOT EXISTS feature_impact_metrics (
+            id VARCHAR(36) PRIMARY KEY,
+            feature_id VARCHAR(36) NOT NULL,
+            metric_type VARCHAR(50) NOT NULL,
+            forecast_value FLOAT,
+            actual_value FLOAT CHECK(actual_value IS NULL OR actual_value >= 0),
+            unit VARCHAR(50),
+            measurement_date DATE CHECK(measurement_date IS NULL OR DATE(measurement_date) <= DATE()),
+            data_source VARCHAR(50) DEFAULT 'manual',
+            notes TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_by_id VARCHAR(36),
+            KEY idx_feature (feature_id),
+            KEY idx_date (measurement_date)
+          )`,
+          mysql: `CREATE TABLE IF NOT EXISTS feature_impact_metrics (
+            id VARCHAR(36) PRIMARY KEY,
+            feature_id VARCHAR(36) NOT NULL,
+            metric_type VARCHAR(50) NOT NULL,
+            forecast_value FLOAT,
+            actual_value FLOAT,
+            unit VARCHAR(50),
+            measurement_date DATE,
+            data_source VARCHAR(50) DEFAULT 'manual',
+            notes TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_by_id VARCHAR(36),
+            KEY idx_feature (feature_id),
+            KEY idx_date (measurement_date),
+            CHECK (actual_value IS NULL OR actual_value >= 0),
+            CHECK (measurement_date IS NULL OR measurement_date <= CURDATE())
+          )`,
+        },
+      },
+    ],
+  },
 ];
 
 const LEDGER_SQL = {
