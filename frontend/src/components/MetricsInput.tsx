@@ -12,6 +12,7 @@ export const MetricsInput: React.FC<MetricsInputProps> = ({ featureId, onMetricR
   const [measurementDate, setMeasurementDate] = useState(new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [acknowledgeReadOnly, setAcknowledgeReadOnly] = useState(false);
 
   const unitMap = {
     adoption: 'percentage',
@@ -127,14 +128,28 @@ export const MetricsInput: React.FC<MetricsInputProps> = ({ featureId, onMetricR
         <input
           type="date"
           value={measurementDate}
-          onChange={(e) => setMeasurementDate(e.target.value)}
+          onChange={(e) => {
+            setMeasurementDate(e.target.value);
+            setAcknowledgeReadOnly(false);
+          }}
           className="w-full px-3 py-2 border border-gray-300 rounded-lg"
           max={new Date().toISOString().split('T')[0]}
         />
         {isReadOnly && (
-          <p className="mt-1 text-xs text-amber-600">
-            Warning: This measurement is >30 days old and will be marked as read-only for audit trail purposes.
-          </p>
+          <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded">
+            <p className="text-xs text-amber-700 mb-2">
+              Warning: This measurement date is >30 days in the past. It will be marked as read-only for audit trail purposes and cannot be edited after recording.
+            </p>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={acknowledgeReadOnly}
+                onChange={(e) => setAcknowledgeReadOnly(e.target.checked)}
+                className="w-4 h-4"
+              />
+              <span className="text-xs text-amber-700">I acknowledge this metric will be read-only</span>
+            </label>
+          </div>
         )}
       </div>
 
@@ -153,8 +168,9 @@ export const MetricsInput: React.FC<MetricsInputProps> = ({ featureId, onMetricR
 
       <button
         onClick={handleSubmit}
-        disabled={!actualValue || isLoading}
+        disabled={!actualValue || isLoading || (isReadOnly && !acknowledgeReadOnly)}
         className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+        title={isReadOnly && !acknowledgeReadOnly ? 'Please acknowledge the read-only status' : ''}
       >
         {isLoading ? 'Recording...' : 'Record Metric'}
       </button>
