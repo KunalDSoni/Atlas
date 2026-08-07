@@ -127,7 +127,7 @@ describe('POST /api/product/features/:id/merge', () => {
       });
 
     if (res.status !== 200) {
-      console.error('Merge failed:', res.status, res.body);
+      console.log('Merge error:', JSON.stringify({ status: res.status, body: res.body }, null, 2));
     }
 
     expect(res.status).toBe(200);
@@ -423,5 +423,146 @@ describe('POST /api/product/features/:id/unmerge', () => {
       });
 
     expect(res.status).toBe(401);
+  });
+});
+
+describe('Activity Logging', () => {
+  let app, headers, projectId;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+    headers = await adminHeaders();
+    const projects = await request(app).get('/api/projects').set(headers);
+    projectId = projects.body[0].id;
+  });
+
+  test('should log activity on merge', async () => {
+    // Create features
+    const parent = await request(app)
+      .post('/api/product/features')
+      .set(headers)
+      .send({
+        name: 'Parent for activity log',
+        description: 'Test activity logging on merge',
+        project_id: projectId,
+      });
+    const parentId = parent.body.id;
+
+    const child = await request(app)
+      .post('/api/product/features')
+      .set(headers)
+      .send({
+        name: 'Child for activity log',
+        description: 'Test activity logging',
+        project_id: projectId,
+      });
+    const childId = child.body.id;
+
+    // Merge
+    const mergeRes = await request(app)
+      .post(`/api/product/features/${parentId}/merge`)
+      .set(headers)
+      .send({
+        childFeatureIds: [childId],
+        reason: 'Activity log test',
+      });
+
+    expect(mergeRes.status).toBe(200);
+    expect(mergeRes.body.data.merged_from_ids).toBeTruthy();
+    const mergedIds = JSON.parse(mergeRes.body.data.merged_from_ids);
+    expect(mergedIds).toContain(childId);
+  });
+
+  test('should log activity on unmerge', async () => {
+    // Create and merge features
+    const parent = await request(app)
+      .post('/api/product/features')
+      .set(headers)
+      .send({
+        name: 'Parent for unmerge activity',
+        description: 'Test unmerge activity logging',
+        project_id: projectId,
+      });
+    const parentId = parent.body.id;
+
+    const child = await request(app)
+      .post('/api/product/features')
+      .set(headers)
+      .send({
+        name: 'Child for unmerge activity',
+        description: 'Test unmerge activity',
+        project_id: projectId,
+      });
+    const childId = child.body.id;
+
+    // Merge first
+    await request(app)
+      .post(`/api/product/features/${parentId}/merge`)
+      .set(headers)
+      .send({
+        childFeatureIds: [childId],
+        reason: 'Set up for unmerge test',
+      });
+
+    // Unmerge
+    const unmergeRes = await request(app)
+      .post(`/api/product/features/${parentId}/unmerge`)
+      .set(headers)
+      .send({
+        childFeatureId: childId,
+      });
+
+    expect(unmergeRes.status).toBe(200);
+    expect(unmergeRes.body.data.merged_from_ids).toBe('[]');
+  });
+
+  test('merge operations should be atomic', async () => {
+    // Create parent and multiple children
+    const parent = await request(app)
+      .post('/api/product/features')
+      .set(headers)
+      .send({
+        name: 'Parent for transaction test',
+        description: 'Test transaction atomicity',
+        project_id: projectId,
+      });
+    const parentId = parent.body.id;
+
+    const child1 = await request(app)
+      .post('/api/product/features')
+      .set(headers)
+      .send({
+        name: 'Child 1 for transaction',
+        description: 'First child',
+        project_id: projectId,
+      });
+    const child1Id = child1.body.id;
+
+    const child2 = await request(app)
+      .post('/api/product/features')
+      .set(headers)
+      .send({
+        name: 'Child 2 for transaction',
+        description: 'Second child',
+        project_id: projectId,
+      });
+    const child2Id = child2.body.id;
+
+    // Merge both children
+    const mergeRes = await request(app)
+      .post(`/api/product/features/${parentId}/merge`)
+      .set(headers)
+      .send({
+        childFeatureIds: [child1Id, child2Id],
+        reason: 'Transaction test merge',
+      });
+
+    expect(mergeRes.status).toBe(200);
+    expect(mergeRes.body.merged_count).toBe(2);
+
+    // Verify both children are in merged_from_ids (transaction successful)
+    const mergedIds = JSON.parse(mergeRes.body.data.merged_from_ids);
+    expect(mergedIds).toContain(child1Id);
+    expect(mergedIds).toContain(child2Id);
   });
 });

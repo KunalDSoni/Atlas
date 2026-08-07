@@ -581,6 +581,15 @@ const SCHEMA_SQL = [
     field_id TEXT NOT NULL REFERENCES custom_fields(id),
     value TEXT,
     UNIQUE(issue_id, field_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS activity (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    actor_id TEXT NOT NULL REFERENCES users(id),
+    resource_type TEXT NOT NULL,
+    resource_id TEXT NOT NULL,
+    changes TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
   )`
 ];
 
@@ -1157,6 +1166,15 @@ const MYSQL_SCHEMA_SQL = [
     field_id VARCHAR(36) NOT NULL,
     value TEXT,
     UNIQUE KEY uq_issue_field (issue_id, field_id)
+  ) DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS activity (
+    id VARCHAR(36) PRIMARY KEY,
+    type VARCHAR(50) NOT NULL,
+    actor_id VARCHAR(36) NOT NULL,
+    resource_type VARCHAR(50) NOT NULL,
+    resource_id VARCHAR(36) NOT NULL,
+    changes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   ) DEFAULT CHARSET=utf8mb4`
 ];
 

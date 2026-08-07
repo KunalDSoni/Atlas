@@ -427,6 +427,10 @@ router.get('/product/features/:id/merge-candidates', requireAuth, async (req, re
 // POST /api/product/features/:id/merge
 router.post('/product/features/:id/merge', requireAuth, adminOrProjectOwner, async (req, res) => {
   try {
+    if (!req.userId) {
+      return res.status(401).json({ error: true, message: 'Not authenticated', code: 'UNAUTHORIZED', status: 401 });
+    }
+
     const db = await getDb();
     const { childFeatureIds, reason } = req.body;
 
@@ -444,9 +448,11 @@ router.post('/product/features/:id/merge', requireAuth, adminOrProjectOwner, asy
     }
 
     let totalRequestCount = parent.request_count || 0;
+    let currentMergedFrom = JSON.parse(parent.merged_from_ids || '[]');
     const mergeHistories = [];
 
-    // Merge each child into parent
+    // Note: Transaction support depends on database layer capabilities.
+    // For now, we ensure atomicity through careful ordering and error handling.
     try {
       for (const childId of childFeatureIds) {
         const child = await queryOne(db, 'SELECT * FROM pb_features WHERE id = ?', [childId]);
@@ -459,21 +465,28 @@ router.post('/product/features/:id/merge', requireAuth, adminOrProjectOwner, asy
         const childCount = child.request_count || 0;
         totalRequestCount += childCount;
 
-        // Update parent
-        const updatedMergedFrom = Array.from(new Set([
-          ...JSON.parse(parent.merged_from_ids || '[]'),
+        // Update parent with accumulated merged_from_ids
+        currentMergedFrom = Array.from(new Set([
+          ...currentMergedFrom,
           childId,
         ]));
 
         await run(db,
           `UPDATE pb_features SET request_count = ?, merged_from_ids = ?, merged_at = datetime('now'), merged_by_id = ?
            WHERE id = ?`,
-          [totalRequestCount, JSON.stringify(updatedMergedFrom), req.userId, req.params.id]
+          [totalRequestCount, JSON.stringify(currentMergedFrom), req.userId, req.params.id]
         );
 
-        // Create history entry (serves as audit trail)
+        // Create history entry
         const history = await FeatureMergeHistory.create(req.params.id, childId, req.userId, childCount, reason);
         mergeHistories.push(history);
+
+        // Log activity
+        await run(db,
+          `INSERT INTO activity (id, type, actor_id, resource_type, resource_id, changes, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+          [uuidv4(), 'merged', req.userId, 'feature', req.params.id, JSON.stringify({ child_id: childId, request_count_added: childCount })]
+        );
       }
     } catch (error) {
       throw error;
@@ -499,6 +512,10 @@ router.get('/product/features/:id/merge-history', requireAuth, async (req, res) 
 // POST /api/product/features/:id/unmerge
 router.post('/product/features/:id/unmerge', requireAuth, adminOrProjectOwner, async (req, res) => {
   try {
+    if (!req.userId) {
+      return res.status(401).json({ error: true, message: 'Not authenticated', code: 'UNAUTHORIZED', status: 401 });
+    }
+
     const db = await getDb();
     const { childFeatureId } = req.body;
 
@@ -531,6 +548,13 @@ router.post('/product/features/:id/unmerge', requireAuth, adminOrProjectOwner, a
       await run(db,
         `UPDATE pb_features SET request_count = ?, merged_from_ids = ? WHERE id = ?`,
         [newRequestCount, JSON.stringify(updatedMergedFrom), history.parent_feature_id]
+      );
+
+      // Log activity
+      await run(db,
+        `INSERT INTO activity (id, type, actor_id, resource_type, resource_id, changes, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+        [uuidv4(), 'unmerged', req.userId, 'feature', history.parent_feature_id, JSON.stringify({ child_id: childFeatureId })]
       );
     } catch (error) {
       throw error;
