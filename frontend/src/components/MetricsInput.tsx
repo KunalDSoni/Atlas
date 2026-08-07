@@ -21,6 +21,15 @@ export const MetricsInput: React.FC<MetricsInputProps> = ({ featureId, onMetricR
     engagement: 'score',
   };
 
+  const isReadOnly = (() => {
+    const selectedDate = new Date(measurementDate);
+    const today = new Date();
+    const thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    thirtyDaysAgo.setHours(0, 0, 0, 0);
+    return selectedDate < thirtyDaysAgo;
+  })();
+
   const handleSubmit = async () => {
     if (!actualValue) {
       toast.error('Please enter an actual value');
@@ -52,6 +61,7 @@ export const MetricsInput: React.FC<MetricsInputProps> = ({ featureId, onMetricR
           unit: unitMap[metricType as keyof typeof unitMap],
           measurementDate,
           notes,
+          readonly: isReadOnly,
         }),
       });
 
@@ -121,6 +131,11 @@ export const MetricsInput: React.FC<MetricsInputProps> = ({ featureId, onMetricR
           className="w-full px-3 py-2 border border-gray-300 rounded-lg"
           max={new Date().toISOString().split('T')[0]}
         />
+        {isReadOnly && (
+          <p className="mt-1 text-xs text-amber-600">
+            Warning: This measurement is >30 days old and will be marked as read-only for audit trail purposes.
+          </p>
+        )}
       </div>
 
       <div>
