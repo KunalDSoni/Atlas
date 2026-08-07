@@ -27,12 +27,20 @@ beforeAll(async () => {
       status: 'launched',
     });
   featureId = feat.body.id;
+
+  // Set impact_status for testing
+  await request(app)
+    .put(`/api/product-features/${featureId}`)
+    .set(headers)
+    .send({
+      impact_status: 'launched',
+    });
 });
 
-describe('POST /api/product/features/:id/impact-metrics', () => {
+describe('POST /api/product-features/:id/impact-metrics', () => {
   test('records impact metric successfully', async () => {
     const res = await request(app)
-      .post(`/api/product/features/${featureId}/impact-metrics`)
+      .post(`/api/product-features/${featureId}/impact-metrics`)
       .set(headers)
       .send({
         metricType: 'adoption',
@@ -48,7 +56,7 @@ describe('POST /api/product/features/:id/impact-metrics', () => {
 
   test('rejects negative actual value', async () => {
     const res = await request(app)
-      .post(`/api/product/features/${featureId}/impact-metrics`)
+      .post(`/api/product-features/${featureId}/impact-metrics`)
       .set(headers)
       .send({ metricType: 'adoption', actualValue: -5 });
 
@@ -58,7 +66,7 @@ describe('POST /api/product/features/:id/impact-metrics', () => {
 
   test('rejects missing metricType', async () => {
     const res = await request(app)
-      .post(`/api/product/features/${featureId}/impact-metrics`)
+      .post(`/api/product-features/${featureId}/impact-metrics`)
       .set(headers)
       .send({ actualValue: 10 });
 
@@ -68,25 +76,63 @@ describe('POST /api/product/features/:id/impact-metrics', () => {
 
   test('rejects missing actualValue', async () => {
     const res = await request(app)
-      .post(`/api/product/features/${featureId}/impact-metrics`)
+      .post(`/api/product-features/${featureId}/impact-metrics`)
       .set(headers)
       .send({ metricType: 'adoption' });
 
     expect(res.status).toBe(400);
     expect(res.body.message).toContain('required');
   });
+
+  test('rejects measurements >30 days old', async () => {
+    const thirtyOneDaysAgo = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split('T')[0];
+
+    const res = await request(app)
+      .post(`/api/product-features/${featureId}/impact-metrics`)
+      .set(headers)
+      .send({
+        metricType: 'adoption',
+        actualValue: 15,
+        unit: 'percentage',
+        measurementDate: thirtyOneDaysAgo,
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toContain('>30 days old');
+  });
+
+  test('accepts measurement from 29 days ago', async () => {
+    const twentyNineDaysAgo = new Date(Date.now() - 29 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split('T')[0];
+
+    const res = await request(app)
+      .post(`/api/product-features/${featureId}/impact-metrics`)
+      .set(headers)
+      .send({
+        metricType: 'adoption',
+        actualValue: 20,
+        unit: 'percentage',
+        measurementDate: twentyNineDaysAgo,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.measurement_date).toBe(twentyNineDaysAgo);
+  });
 });
 
-describe('GET /api/product/features/:id/impact-metrics', () => {
+describe('GET /api/product-features/:id/impact-metrics', () => {
   test('returns impact metrics grouped by type', async () => {
     // Record a metric first
     await request(app)
-      .post(`/api/product/features/${featureId}/impact-metrics`)
+      .post(`/api/product-features/${featureId}/impact-metrics`)
       .set(headers)
       .send({ metricType: 'adoption', actualValue: 30, unit: 'percentage' });
 
     const res = await request(app)
-      .get(`/api/product/features/${featureId}/impact-metrics`)
+      .get(`/api/product-features/${featureId}/impact-metrics`)
       .set(headers);
 
     expect(res.status).toBe(200);
@@ -96,7 +142,7 @@ describe('GET /api/product/features/:id/impact-metrics', () => {
 
   test('returns feature details with impact data', async () => {
     const res = await request(app)
-      .get(`/api/product/features/${featureId}/impact-metrics`)
+      .get(`/api/product-features/${featureId}/impact-metrics`)
       .set(headers);
 
     expect(res.status).toBe(200);
@@ -108,17 +154,17 @@ describe('GET /api/product/features/:id/impact-metrics', () => {
 
   test('returns 404 for non-existent feature', async () => {
     const res = await request(app)
-      .get(`/api/product/features/non-existent-id/impact-metrics`)
+      .get(`/api/product-features/non-existent-id/impact-metrics`)
       .set(headers);
 
     expect(res.status).toBe(404);
   });
 });
 
-describe('PUT /api/product/features/:id/forecast-metrics', () => {
+describe('PUT /api/product-features/:id/forecast-metrics', () => {
   test('sets forecast metrics successfully', async () => {
     const res = await request(app)
-      .put(`/api/product/features/${featureId}/forecast-metrics`)
+      .put(`/api/product-features/${featureId}/forecast-metrics`)
       .set(headers)
       .send({
         forecastAdoption: 50,
@@ -132,7 +178,7 @@ describe('PUT /api/product/features/:id/forecast-metrics', () => {
 
   test('accepts partial forecast data', async () => {
     const res = await request(app)
-      .put(`/api/product/features/${featureId}/forecast-metrics`)
+      .put(`/api/product-features/${featureId}/forecast-metrics`)
       .set(headers)
       .send({
         forecastAdoption: 45,
@@ -143,10 +189,10 @@ describe('PUT /api/product/features/:id/forecast-metrics', () => {
   });
 });
 
-describe('GET /api/product/features/impact-dashboard', () => {
+describe('GET /api/product-features/impact-dashboard', () => {
   test('returns dashboard summary', async () => {
     const res = await request(app)
-      .get(`/api/product/features/impact-dashboard`)
+      .get(`/api/product-features/impact-dashboard`)
       .set(headers);
 
     expect(res.status).toBe(200);
@@ -159,7 +205,7 @@ describe('GET /api/product/features/impact-dashboard', () => {
   test('calculates variance correctly', async () => {
     // Update feature with forecast and actual values
     await request(app)
-      .put(`/api/product/features/${featureId}/forecast-metrics`)
+      .put(`/api/product-features/${featureId}/forecast-metrics`)
       .set(headers)
       .send({
         forecastAdoption: 100,
@@ -168,7 +214,7 @@ describe('GET /api/product/features/impact-dashboard', () => {
 
     // Set actual adoption through database
     const res = await request(app)
-      .get(`/api/product/features/impact-dashboard`)
+      .get(`/api/product-features/impact-dashboard`)
       .set(headers);
 
     expect(res.status).toBe(200);

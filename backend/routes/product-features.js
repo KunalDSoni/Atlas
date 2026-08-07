@@ -8,10 +8,10 @@
 // POST   /api/product/features/:id/push        - Create a new issue in a project and link it
 // DELETE /api/product/feature-issues/:id       - Unlink a delivery issue
 // POST   /api/product/features/:id/vote        - Toggle current user's vote
-// POST   /api/product/features/:id/impact-metrics     - Record impact measurement
-// GET    /api/product/features/:id/impact-metrics     - Get metrics with variance
-// PUT    /api/product/features/:id/forecast-metrics   - Set pre-launch forecast
-// GET    /api/product/features/impact-dashboard       - Dashboard summary
+// POST   /api/product-features/:id/impact-metrics     - Record impact measurement
+// GET    /api/product-features/:id/impact-metrics     - Get metrics with variance
+// PUT    /api/product-features/:id/forecast-metrics   - Set pre-launch forecast
+// GET    /api/product-features/impact-dashboard       - Dashboard summary
 //
 // Computed scores (never stored):
 //   user_impact = Σ linked-insight importance × company tier weight (strategic 3 / growth 2 / else 1)
@@ -152,8 +152,8 @@ router.post('/product/features', requireAuth, async (req, res) => {
   } catch (e) { serverError(res, e); }
 });
 
-// GET /api/product/features/impact-dashboard
-router.get('/product/features/impact-dashboard', requireAuth, async (req, res) => {
+// GET /api/product-features/impact-dashboard
+router.get('/product-features/impact-dashboard', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
     const features = await queryAll(
@@ -244,12 +244,12 @@ router.put('/product/features/:id', requireAuth, async (req, res) => {
     if (body.portal_status !== undefined && body.portal_status !== null && !PORTAL_STATUSES.includes(body.portal_status)) return res.status(400).json({ error: 'invalid portal_status' });
 
     const fields = ['project_id', 'name', 'description', 'status', 'timeframe', 'portal_status',
-                    'owner_id', 'effort', 'value', 'reach', 'impact', 'confidence', 'release_id'];
+                    'owner_id', 'effort', 'value', 'reach', 'impact', 'confidence', 'release_id', 'impact_status'];
     const updated = {};
     fields.forEach(fld => { updated[fld] = body[fld] !== undefined ? body[fld] : existing[fld]; });
     const launchedAt = updated.status === 'launched' && !existing.launched_at
       ? sqlTimestamp() : existing.launched_at;
-    await run(db, `UPDATE pb_features SET project_id = ?, name = ?, description = ?, status = ?, timeframe = ?, portal_status = ?, owner_id = ?, effort = ?, value = ?, reach = ?, impact = ?, confidence = ?, release_id = ?, launched_at = ?, updated_at = datetime('now') WHERE id = ?`,
+    await run(db, `UPDATE pb_features SET project_id = ?, name = ?, description = ?, status = ?, timeframe = ?, portal_status = ?, owner_id = ?, effort = ?, value = ?, reach = ?, impact = ?, confidence = ?, release_id = ?, impact_status = ?, launched_at = ?, updated_at = datetime('now') WHERE id = ?`,
       [...fields.map(fld => updated[fld]), launchedAt, req.params.id]);
 
     // A follower asked to hear when the public promise changes. Fan out only
@@ -614,10 +614,10 @@ router.post('/product/features/:id/unmerge', requireAuth, adminOrProjectOwner, a
   }
 });
 
-// POST /api/product/features/:id/impact-metrics
-router.post('/product/features/:id/impact-metrics', requireAuth, async (req, res) => {
+// POST /api/product-features/:id/impact-metrics
+router.post('/product-features/:id/impact-metrics', requireAuth, async (req, res) => {
   try {
-    const { metricType, actualValue, unit, dataSource = 'manual', notes } = req.body;
+    const { metricType, actualValue, unit, dataSource = 'manual', notes, measurementDate } = req.body;
 
     if (!metricType || actualValue === undefined) {
       return res.status(400).json({ error: true, message: 'metricType and actualValue required' });
@@ -627,6 +627,31 @@ router.post('/product/features/:id/impact-metrics', requireAuth, async (req, res
       return res.status(400).json({ error: true, message: 'Actual value must be ≥ 0' });
     }
 
+    // Validate measurement_date is not older than 30 days
+    if (measurementDate) {
+      const metricDate = new Date(measurementDate);
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      if (metricDate < thirtyDaysAgo) {
+        return res.status(400).json({ error: true, message: 'Cannot record metrics for measurements >30 days old' });
+      }
+    }
+
+    // Validate feature exists and has valid impact_status
+    const db = await getDb();
+    const feature = await queryOne(db, 'SELECT * FROM pb_features WHERE id = ?', [req.params.id]);
+    if (!feature) {
+      return res.status(404).json({ error: true, message: 'Feature not found' });
+    }
+
+    if (!feature.impact_status) {
+      return res.status(400).json({ error: true, message: 'Feature impact_status must be set' });
+    }
+
+    const validStatuses = ['not_launched', 'launched', 'measuring', 'analyzed'];
+    if (!validStatuses.includes(feature.impact_status)) {
+      return res.status(400).json({ error: true, message: 'Invalid feature impact_status' });
+    }
+
     const metric = await FeatureImpactMetrics.create(
       req.params.id,
       metricType,
@@ -634,17 +659,17 @@ router.post('/product/features/:id/impact-metrics', requireAuth, async (req, res
       unit,
       dataSource,
       notes,
-      req.userId
+      req.userId,
+      measurementDate
     );
 
     // Log activity
-    const db = await getDb();
     await run(
       db,
       `INSERT INTO activity (id, type, actor_id, resource_type, resource_id, changes, created_at)
        VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
       [uuidv4(), 'impact_measured', req.userId, 'feature', req.params.id,
-       JSON.stringify({ metric_type: metricType, actual_value: actualValue })]
+       JSON.stringify({ metric_type: metricType, actual_value: actualValue, measurement_date: measurementDate })]
     );
 
     res.json({ data: metric });
@@ -653,8 +678,8 @@ router.post('/product/features/:id/impact-metrics', requireAuth, async (req, res
   }
 });
 
-// GET /api/product/features/:id/impact-metrics
-router.get('/product/features/:id/impact-metrics', requireAuth, async (req, res) => {
+// GET /api/product-features/:id/impact-metrics
+router.get('/product-features/:id/impact-metrics', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
     const feature = await queryOne(db, 'SELECT * FROM pb_features WHERE id = ?', [req.params.id]);
@@ -687,8 +712,8 @@ router.get('/product/features/:id/impact-metrics', requireAuth, async (req, res)
   }
 });
 
-// PUT /api/product/features/:id/forecast-metrics
-router.put('/product/features/:id/forecast-metrics', requireAuth, async (req, res) => {
+// PUT /api/product-features/:id/forecast-metrics
+router.put('/product-features/:id/forecast-metrics', requireAuth, async (req, res) => {
   try {
     const { forecastAdoption, forecastRevenue, forecastNotes } = req.body;
     const db = await getDb();

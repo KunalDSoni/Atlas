@@ -138,7 +138,7 @@ export const MetricsInput: React.FC<MetricsInputProps> = ({ featureId, onMetricR
         {isReadOnly && (
           <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded">
             <p className="text-xs text-amber-700 mb-2">
-              Warning: This measurement date is >30 days in the past. It will be marked as read-only for audit trail purposes and cannot be edited after recording.
+              Warning: This measurement date is {'>30'} days in the past. It will be marked as read-only for audit trail purposes and cannot be edited after recording.
             </p>
             <label className="flex items-center gap-2 cursor-pointer">
               <input

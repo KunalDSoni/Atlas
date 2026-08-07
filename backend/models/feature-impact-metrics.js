@@ -2,9 +2,9 @@ const { getDb, queryOne, queryAll, run } = require('../database');
 const { v4: uuidv4 } = require('uuid');
 
 class FeatureImpactMetrics {
-  static async create(featureId, metricType, actualValue, unit, dataSource, notes, userId) {
+  static async create(featureId, metricType, actualValue, unit, dataSource, notes, userId, measurementDate) {
     const id = uuidv4();
-    const today = new Date().toISOString().split('T')[0];
+    const date = measurementDate || new Date().toISOString().split('T')[0];
 
     const db = await getDb();
     const sql = `
@@ -19,7 +19,7 @@ class FeatureImpactMetrics {
       metricType,
       actualValue,
       unit || null,
-      today,
+      date,
       dataSource || 'manual',
       notes || null,
       userId || null,
