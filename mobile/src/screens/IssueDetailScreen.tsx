@@ -7,6 +7,8 @@ import { fetchProjectStatuses } from '../api/statuses';
 import { fetchProjectMembers } from '../api/members';
 import { StatusPicker } from '../components/StatusPicker';
 import { AssigneePicker } from '../components/AssigneePicker';
+import { CommentList } from '../components/CommentList';
+import { CommentInput } from '../components/CommentInput';
 import { MainStackParamList } from '../navigation/MainStack';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'IssueDetail'>;
@@ -50,6 +52,10 @@ export function IssueDetailScreen({ route }: Props) {
 
   const issue = issueQuery.data;
 
+  const handleCommentAdded = () => {
+    issueQuery.refetch();
+  };
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.key}>{issue.issue_key}</Text>
@@ -69,6 +75,10 @@ export function IssueDetailScreen({ route }: Props) {
         value={issue.assignee_id}
         onChange={(assignee_id) => updateMutation.mutate({ assignee_id })}
       />
+
+      {/* Comments Section */}
+      <CommentList issueId={issueId} />
+      <CommentInput issueId={issueId} onCommentAdded={handleCommentAdded} />
     </ScrollView>
   );
 }
