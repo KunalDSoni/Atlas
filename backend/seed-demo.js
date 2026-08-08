@@ -108,8 +108,11 @@ async function seedDemo(db) {
 
   const sprintId = uuidv4();
   const now = Date.now();
-  const startDate = new Date(now - 8 * 24 * 60 * 60 * 1000).toISOString();
-  const endDate = new Date(now + 6 * 24 * 60 * 60 * 1000).toISOString();
+  // MySQL's DATETIME columns reject the 'T'/'Z' from a raw toISOString() —
+  // trim to 'YYYY-MM-DD HH:MM:SS', the same format used at database.js:2380
+  // and routes/reports.js:487. Do not simplify this back to .toISOString().
+  const startDate = new Date(now - 8 * 24 * 60 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+  const endDate = new Date(now + 6 * 24 * 60 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
   await run(
     db,
     `INSERT INTO sprints (id, project_id, name, slug, goal, status, start_date, end_date, created_at)
