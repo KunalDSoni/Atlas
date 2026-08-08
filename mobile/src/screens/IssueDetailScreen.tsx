@@ -8,6 +8,10 @@ import { fetchProjectMembers } from '../api/members';
 import { fetchTimer, startTimer, pauseTimer } from '../api/timers';
 import { StatusPicker } from '../components/StatusPicker';
 import { AssigneePicker } from '../components/AssigneePicker';
+import { CommentList } from '../components/CommentList';
+import { CommentInput } from '../components/CommentInput';
+import { WatchersList } from '../components/WatchersList';
+import { AttachmentList } from '../components/AttachmentList';
 import { MainStackParamList } from '../navigation/MainStack';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'IssueDetail'>;
@@ -68,6 +72,10 @@ export function IssueDetailScreen({ route }: Props) {
 
   const issue = issueQuery.data;
 
+  const handleCommentAdded = () => {
+    issueQuery.refetch();
+  };
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.key}>{issue.issue_key}</Text>
@@ -107,6 +115,16 @@ export function IssueDetailScreen({ route }: Props) {
       {timerQuery.data?.runaway && (
         <Text style={styles.warning}>Timer running over 12 hours — still working?</Text>
       )}
+
+      {/* Watchers Section */}
+      <WatchersList issueId={issueId} />
+
+      {/* Attachments Section */}
+      <AttachmentList issueId={issueId} />
+
+      {/* Comments Section */}
+      <CommentList issueId={issueId} />
+      <CommentInput issueId={issueId} onCommentAdded={handleCommentAdded} />
     </ScrollView>
   );
 }
