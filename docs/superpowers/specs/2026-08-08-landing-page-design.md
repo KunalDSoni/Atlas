@@ -131,8 +131,9 @@ Twelve blocks, top to bottom — eight distinct kinds, since blocks 5 through 9
 are five instances of the same alternating row component.
 
 **1 · Navigation.** Sticky, translucent, hairline bottom border. Atlas wordmark,
-four anchor links, theme toggle, `Sign in` ghost button, `Try the live demo`
-primary button. Below 860px the links collapse into a sheet.
+four anchor links, `Sign in` ghost button, `Try the live demo` primary button.
+Below 860px the links collapse into a sheet. No theme toggle — see the note on
+light theme below.
 
 **2 · Hero.** Centred. Eyebrow pill, headline, sub-headline, dual CTA, then a
 small-caps trust strip naming the seven product areas.
@@ -151,9 +152,15 @@ entirely in HTML and CSS, with three working tabs.
 | Insights | Feedback inbox with demand meters, company chips, and a linked objective with progress |
 
 Tab state is React state. The frame reads from the same design tokens as the
-app, so it themes light and dark for free and can never go stale the way a
-committed screenshot does. Under `prefers-reduced-motion` all transitions are
-suppressed.
+app, so it can never go stale the way a committed screenshot does. Under
+`prefers-reduced-motion` all transitions are suppressed.
+
+**Light theme only.** `theme-provider.tsx` states that Atlas is light-theme only
+and strips any `.dark` class on mount. Dark values exist in `index.css` but
+nothing consumes them. The landing page matches the app: no theme toggle in the
+nav, no dark styling. If dark mode is ever enabled product-wide, the landing
+page inherits it for free because it uses only semantic tokens — but turning it
+on is separate work and out of scope here.
 
 **4 · Delivery / Discovery split.** Two cards on a tinted band, stating the
 product's actual thesis: the discovery-to-delivery handoff is where most teams
@@ -295,7 +302,8 @@ behind a login and are not indexed.
 - The filter input has a real label; the result count is announced via
   `aria-live="polite"`.
 - Visible focus rings on every interactive element.
-- Both themes contrast-checked at WCAG AA for body text and UI elements.
+- Contrast checked at WCAG AA for body text and UI elements in the light theme,
+  which is the only theme the app ships.
 - All motion gated behind `prefers-reduced-motion`.
 - Decorative SVG is `aria-hidden`; the burndown chart carries a text
   description.
@@ -370,7 +378,8 @@ authenticated screens.
    a login form.
 2. That visitor reaches a populated Atlas workspace in one click.
 3. All 165 capabilities are present and searchable.
-4. The page is correct and legible in both light and dark themes.
+4. The page is correct and legible in the light theme, matching the rest of the
+   app, and introduces no theme toggle.
 5. A signed-in user never sees the landing page.
 6. `cd frontend && npm run lint` passes.
 7. `cd backend && npm test` passes.
