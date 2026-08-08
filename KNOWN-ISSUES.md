@@ -1,5 +1,64 @@
 # Known Issues
 
+## OPEN — an abandoned stopwatch timer without a business-hours profile logs its full wall-clock span on Done
+
+**Symptom.** If a user starts the issue stopwatch (`docs/superpowers/specs/2026-08-08-issue-stopwatch-timer-design.md`)
+and never pauses it — the issue reaches a Done-category status days later,
+still with an open `timer_segments` row — the committed work log records the
+entire multi-day wall-clock span as tracked time (e.g. a segment opened
+Friday and left running is committed as ~64 hours on Monday), rather than
+being clipped to real working hours. This is the same overcounting problem
+the pre-existing auto-tracking feature already solves for its own derived
+calculation via `businessMinutesBetween`.
+
+**Root cause.** `closeStaleSegments(db, { issueId })` — the path used by the
+Done-transition handler in `backend/routes/issues.js` — correctly delegates
+to the per-tracker, business-hours-aware repair
+(`closeStaleSegments(db, { userId })`) before doing its own unconditional
+close. That per-user repair clips a stale segment to its workday end
+**only when a `business_hours` profile resolves** for that
+project/user. When no profile resolves — the case `workdayEndFor` returns
+`null` for (`backend/utils/timers.js`): no profile configured, the
+segment's start day isn't a work day, or the start is already after that
+day's close hour — the segment is deliberately left open rather than
+truncated, per the spec's rule against fabricating an implicit cutoff. It
+then falls through to the Done handler's unconditional close, which commits
+the segment's raw span with no clipping at all.
+
+This iteration ships **no settings UI** for `business_hours` (an explicit,
+documented non-goal of the design), so on an unconfigured project — the
+default — every abandoned timer hits the unclipped path, not the clipped
+one.
+
+**Why this shipped anyway.** The fix implemented during the final review
+(commit `5262268`) correctly closes the gap for the case a business-hours
+profile *is* configured, and the multi-day-abandoned-segment reproduction
+that motivated the fix is a real regression test now
+(`backend/tests/backend/auto-worklog.test.js`, "a segment abandoned days
+ago is clipped to its workday end on Done"). Closing the remaining,
+unconfigured-project case is a product decision — whether an unclippable
+abandoned segment should fall back to the pre-existing derived
+auto-calculation, be flagged for human review instead of auto-committing,
+or something else — not a mechanical fix, and the spec's explicit
+"never fabricate a cutoff" rule forecloses the simplest options. Shipping
+with this documented, rather than picking one of those design directions
+unreviewed, was the deliberate call.
+
+**Mitigation until fixed.** The live-timer UI (web and mobile) already
+surfaces a "still running past 12 hours" warning while the issue is open —
+the practical exposure is bounded by how long an issue stays open with an
+unpaused timer before someone notices, not the theoretical worst case.
+Configuring a `business_hours` profile via the API (no UI yet) fully
+eliminates this for a given project or user today.
+
+**If you pick this up:** the fix point is the Done-transition handler in
+`backend/routes/issues.js`, right after the per-tracker repair loop and
+before the unconditional `closeStaleSegments(db, { issueId: updated.id })`
+call — decide there whether a still-open, unclippable segment should be
+excluded from `commitTimer` and let `applyAutoWorklog` cover that tracker's
+share instead, consistent with the non-goal that this feature must never
+invent a business-hours default.
+
 ## RESOLVED — a fresh deployment had no way to create the first project
 
 **Symptom.** On a real deployment (`SEED_DEMO_DATA=false`) an admin logged in and
