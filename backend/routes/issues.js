@@ -23,6 +23,7 @@ const sla = require('../utils/sla-clocks');
 const { issueLink } = require('../utils/links');
 const { applyAutoWorklog, liveInProgressMinutes } = require('../utils/auto-worklog');
 const { categoryOf } = require('../utils/flow');
+const { closeStaleSegments, commitTimer, issueTimerUserIds } = require('../utils/timers');
 
 const requireBoardAdmin = requireRole('admin', 'board_admin');
 
@@ -484,8 +485,26 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
       const statuses = await projectStatuses(db, updated.project_id);
       const newCategory = categoryOf(updated.status, statuses);
       if (newCategory === 'done') {
-        await applyAutoWorklog(db, updated, statuses, req.userId);
+        // Reaching done is positive evidence the work stopped, so close every
+        // user's running segment — not just the actor's.
+        await closeStaleSegments(db, { issueId: updated.id });
+
+        // Explicitly tracked time is authoritative. When anyone ran a stopwatch
+        // on this issue, commit per tracker and skip the status-derived
+        // calculation entirely; committing sets auto_worklog_locked, so a later
+        // reopen -> redo -> done will not overwrite it.
+        const trackers = await issueTimerUserIds(db, updated.id);
+        if (trackers.length > 0) {
+          for (const trackerId of trackers) {
+            await commitTimer(db, updated.id, trackerId);
+          }
+        } else {
+          await applyAutoWorklog(db, updated, statuses, req.userId);
+        }
       } else if (newCategory === 'todo') {
+        // A genuine restart gives the derived calculation a clean slate.
+        // Timer segments and their committed work logs are deliberately kept:
+        // that time was really worked.
         await run(db, 'UPDATE issues SET auto_worklog_locked = 0 WHERE id = ?', [updated.id]);
       }
 

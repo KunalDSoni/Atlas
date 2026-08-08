@@ -196,3 +196,81 @@ describe('GET /api/issues/:id includes in_progress_minutes_live', () => {
     expect(res.body.in_progress_minutes_live).toBeGreaterThan(0);
   });
 });
+
+describe('timer precedence over the status-derived calculation', () => {
+  const { v4: uuid4 } = require('uuid');
+
+  async function addTimerSegment(issueId, userId, startedAt, endedAt) {
+    await run(db, 'INSERT INTO timer_segments (id, issue_id, user_id, started_at, ended_at, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [uuid4(), issueId, userId, startedAt, endedAt, startedAt]);
+  }
+
+  test('Done with timer segments writes a timer row and no auto row', async () => {
+    const issue = await mkIssue('Timer wins on done');
+    const me = await request(getApp()).get('/api/auth/me').set(headers);
+    await request(getApp()).put(`/api/issues/${issue.id}`).set(headers).send({ status: 'in_progress' });
+    await run(db, "UPDATE activity_log SET created_at = '2026-07-06 09:00:00' WHERE issue_id = ? AND field = 'status' AND new_value = 'in_progress'", [issue.id]);
+    await addTimerSegment(issue.id, me.body.id, '2026-07-06 09:00:00', '2026-07-06 09:45:00');
+
+    await request(getApp()).put(`/api/issues/${issue.id}`).set(headers).send({ status: 'done' });
+
+    const timerLogs = await queryAll(db, "SELECT * FROM work_logs WHERE issue_id = ? AND source = 'timer'", [issue.id]);
+    expect(timerLogs).toHaveLength(1);
+    expect(Number(timerLogs[0].minutes)).toBe(45);
+
+    const autoLogs = await queryAll(db, "SELECT * FROM work_logs WHERE issue_id = ? AND source = 'auto'", [issue.id]);
+    expect(autoLogs).toHaveLength(0);
+  });
+
+  test('Done with no timer segments still runs the auto calculation unchanged', async () => {
+    const issue = await mkIssue('Auto still works');
+    await request(getApp()).put(`/api/issues/${issue.id}`).set(headers).send({ status: 'in_progress' });
+    await run(db, "UPDATE activity_log SET created_at = '2026-07-06 09:00:00' WHERE issue_id = ? AND field = 'status' AND new_value = 'in_progress'", [issue.id]);
+
+    await request(getApp()).put(`/api/issues/${issue.id}`).set(headers).send({ status: 'done' });
+
+    const autoLogs = await queryAll(db, "SELECT * FROM work_logs WHERE issue_id = ? AND source = 'auto'", [issue.id]);
+    expect(autoLogs).toHaveLength(1);
+  });
+
+  test('Done closes an open segment rather than leaving it running', async () => {
+    const issue = await mkIssue('Done closes open timer');
+    await request(getApp()).post(`/api/issues/${issue.id}/timer/start`).set(headers);
+
+    await request(getApp()).put(`/api/issues/${issue.id}`).set(headers).send({ status: 'done' });
+
+    const open = await queryAll(db, 'SELECT * FROM timer_segments WHERE issue_id = ? AND ended_at IS NULL', [issue.id]);
+    expect(open).toHaveLength(0);
+  });
+
+  test('each tracker gets their own timer work log', async () => {
+    const issue = await mkIssue('Two trackers on done');
+    const me = await request(getApp()).get('/api/auth/me').set(headers);
+    const otherId = uuid4();
+    await run(db, 'INSERT INTO users (id, email, name, password, role) VALUES (?, ?, ?, ?, ?)',
+      [otherId, `d-${otherId}@example.com`, 'Done Tester', 'x', 'user']);
+    await addTimerSegment(issue.id, me.body.id, '2026-07-06 09:00:00', '2026-07-06 10:00:00');
+    await addTimerSegment(issue.id, otherId, '2026-07-06 09:00:00', '2026-07-06 09:30:00');
+
+    await request(getApp()).put(`/api/issues/${issue.id}`).set(headers).send({ status: 'done' });
+
+    const logs = await queryAll(db, "SELECT * FROM work_logs WHERE issue_id = ? AND source = 'timer' ORDER BY minutes DESC", [issue.id]);
+    expect(logs).toHaveLength(2);
+    expect(Number(logs[0].minutes)).toBe(60);
+    expect(Number(logs[1].minutes)).toBe(30);
+  });
+
+  test('moving back to todo clears the lock but preserves committed timer work logs', async () => {
+    const issue = await mkIssue('Todo preserves timer log');
+    const me = await request(getApp()).get('/api/auth/me').set(headers);
+    await addTimerSegment(issue.id, me.body.id, '2026-07-06 09:00:00', '2026-07-06 10:00:00');
+    await request(getApp()).put(`/api/issues/${issue.id}`).set(headers).send({ status: 'done' });
+
+    await request(getApp()).put(`/api/issues/${issue.id}`).set(headers).send({ status: 'todo' });
+
+    const updated = await queryOne(db, 'SELECT auto_worklog_locked FROM issues WHERE id = ?', [issue.id]);
+    expect(Number(updated.auto_worklog_locked)).toBe(0);
+    const logs = await queryAll(db, "SELECT * FROM work_logs WHERE issue_id = ? AND source = 'timer'", [issue.id]);
+    expect(logs).toHaveLength(1); // the time was really worked; it stays
+  });
+});
