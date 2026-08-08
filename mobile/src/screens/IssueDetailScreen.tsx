@@ -9,6 +9,7 @@ import { StatusPicker } from '../components/StatusPicker';
 import { AssigneePicker } from '../components/AssigneePicker';
 import { CommentList } from '../components/CommentList';
 import { CommentInput } from '../components/CommentInput';
+import { WatchersList } from '../components/WatchersList';
 import { MainStackParamList } from '../navigation/MainStack';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'IssueDetail'>;
@@ -75,6 +76,9 @@ export function IssueDetailScreen({ route }: Props) {
         value={issue.assignee_id}
         onChange={(assignee_id) => updateMutation.mutate({ assignee_id })}
       />
+
+      {/* Watchers Section */}
+      <WatchersList issueId={issueId} />
 
       {/* Comments Section */}
       <CommentList issueId={issueId} />
