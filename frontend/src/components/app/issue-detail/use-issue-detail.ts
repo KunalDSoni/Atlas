@@ -179,6 +179,8 @@ export function useIssueDetail(
       // Only one timer runs per user, so starting here may have stopped one
       // elsewhere. Say so rather than letting time silently move.
       setPausedNotice(state.paused_issue ? `Paused your timer on ${state.paused_issue.issue_key}` : null);
+    } catch (e) {
+      toast.error('Could not start timer', { description: e instanceof Error ? e.message : undefined });
     } finally {
       setTimerBusy(false);
     }
@@ -190,6 +192,8 @@ export function useIssueDetail(
     try {
       setTimer(await api.timers.pause(issue.id));
       setPausedNotice(null);
+    } catch (e) {
+      toast.error('Could not pause timer', { description: e instanceof Error ? e.message : undefined });
     } finally {
       setTimerBusy(false);
     }
