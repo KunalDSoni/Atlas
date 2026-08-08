@@ -128,12 +128,14 @@ async function startTimer(db, issueId, userId) {
 
   // One running timer per user, globally. Enforced here rather than by a
   // partial unique index because MySQL has no partial indexes.
-  const otherOpen = await queryOne(db,
+  const otherOpen = await queryAll(db,
     'SELECT * FROM timer_segments WHERE user_id = ? AND ended_at IS NULL ORDER BY started_at DESC', [userId]);
   let pausedIssue = null;
-  if (otherOpen) {
-    await run(db, 'UPDATE timer_segments SET ended_at = ? WHERE id = ?', [nowStamp(), otherOpen.id]);
-    pausedIssue = await queryOne(db, 'SELECT id, issue_key FROM issues WHERE id = ?', [otherOpen.issue_id]);
+  for (const seg of otherOpen) {
+    await run(db, 'UPDATE timer_segments SET ended_at = ? WHERE id = ?', [nowStamp(), seg.id]);
+    if (!pausedIssue) {
+      pausedIssue = await queryOne(db, 'SELECT id, issue_key FROM issues WHERE id = ?', [seg.issue_id]);
+    }
   }
 
   const stamp = nowStamp();
