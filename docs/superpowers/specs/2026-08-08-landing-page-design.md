@@ -272,7 +272,11 @@ URL state — the tabs are illustrative, not navigational.
 |---|---|
 | Demo route returns 404 (unconfigured) | Button falls back to navigating to `/login`; no error shown |
 | Demo route returns 429 (rate limited) | Inline message: "Too many demo sessions right now. Try again in a minute." |
-| Demo route 5xx | Inline message with a `Sign in` link as the escape hatch |
+| Demo route 5xx | Generic inline message |
+
+Every inline error — the 429 included — carries a `Sign in instead` link. A visitor
+who cannot get a demo session is exactly the one who benefits from being offered the
+alternative, so the escape hatch is unconditional rather than reserved for 5xx.
 | Re-seed throws | Logged server-side; the session is still issued against whatever data exists — a stale demo beats a broken button |
 | Filter matches nothing | "No capability matches that." |
 
