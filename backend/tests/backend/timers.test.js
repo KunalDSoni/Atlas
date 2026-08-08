@@ -277,3 +277,90 @@ describe('commitTimer', () => {
     expect(ids.sort()).toEqual([adminId, otherUserId].sort());
   });
 });
+
+describe('timer routes', () => {
+  test('POST start then GET returns a running timer', async () => {
+    const issue = await mkIssue('Route start');
+    const startRes = await request(getApp()).post(`/api/issues/${issue.id}/timer/start`).set(headers);
+    expect(startRes.status).toBe(200);
+    expect(startRes.body.running).toBe(true);
+    expect(startRes.body.started_at).toBeTruthy();
+
+    const getRes = await request(getApp()).get(`/api/issues/${issue.id}/timer`).set(headers);
+    expect(getRes.body.running).toBe(true);
+
+    await request(getApp()).post(`/api/issues/${issue.id}/timer/pause`).set(headers);
+  });
+
+  test('POST pause stops the timer', async () => {
+    const issue = await mkIssue('Route pause');
+    await request(getApp()).post(`/api/issues/${issue.id}/timer/start`).set(headers);
+    const pauseRes = await request(getApp()).post(`/api/issues/${issue.id}/timer/pause`).set(headers);
+
+    expect(pauseRes.status).toBe(200);
+    expect(pauseRes.body.running).toBe(false);
+  });
+
+  test('starting on a second issue reports the issue it paused', async () => {
+    const first = await mkIssue('Route displace first');
+    const second = await mkIssue('Route displace second');
+    await request(getApp()).post(`/api/issues/${first.id}/timer/start`).set(headers);
+    const res = await request(getApp()).post(`/api/issues/${second.id}/timer/start`).set(headers);
+
+    expect(res.body.paused_issue.id).toBe(first.id);
+    expect(res.body.paused_issue.issue_key).toBe(first.issue_key);
+
+    await request(getApp()).post(`/api/issues/${second.id}/timer/pause`).set(headers);
+  });
+
+  test('start on a nonexistent issue is 404', async () => {
+    const res = await request(getApp()).post('/api/issues/does-not-exist/timer/start').set(headers);
+    expect(res.status).toBe(404);
+  });
+
+  test('timer endpoints require auth', async () => {
+    const issue = await mkIssue('Route auth');
+    const res = await request(getApp()).post(`/api/issues/${issue.id}/timer/start`);
+    expect(res.status).toBe(401);
+  });
+
+  test('GET /api/me/timer returns the running timer, then null after pause', async () => {
+    const issue = await mkIssue('Route me timer');
+    await request(getApp()).post(`/api/issues/${issue.id}/timer/start`).set(headers);
+
+    const running = await request(getApp()).get('/api/me/timer').set(headers);
+    expect(running.body.issue_id).toBe(issue.id);
+    expect(running.body.issue_key).toBe(issue.issue_key);
+
+    await request(getApp()).post(`/api/issues/${issue.id}/timer/pause`).set(headers);
+    const stopped = await request(getApp()).get('/api/me/timer').set(headers);
+    expect(stopped.body).toBeNull();
+  });
+
+  test('POST commit writes a timer work log and reports minutes', async () => {
+    const issue = await mkIssue('Route commit');
+    await addSegment(issue.id, adminId, '2026-07-06 09:00:00', '2026-07-06 10:00:00');
+
+    const res = await request(getApp()).post(`/api/issues/${issue.id}/timer/commit`).set(headers);
+    expect(res.status).toBe(200);
+    expect(res.body.minutes).toBe(60);
+
+    const logs = await queryAll(db, "SELECT * FROM work_logs WHERE issue_id = ? AND source = 'timer'", [issue.id]);
+    expect(logs).toHaveLength(1);
+  });
+
+  test('a user cannot pause another user is timer', async () => {
+    // Each route acts on req.userId only, so a second user pausing sees a
+    // no-op on their own (nonexistent) segment rather than stopping the first.
+    const issue = await mkIssue('Route isolation');
+    await request(getApp()).post(`/api/issues/${issue.id}/timer/start`).set(headers);
+
+    const otherHeaders = await require('./setup').userHeaders();
+    await request(getApp()).post(`/api/issues/${issue.id}/timer/pause`).set(otherHeaders);
+
+    const stillRunning = await request(getApp()).get(`/api/issues/${issue.id}/timer`).set(headers);
+    expect(stillRunning.body.running).toBe(true);
+
+    await request(getApp()).post(`/api/issues/${issue.id}/timer/pause`).set(headers);
+  });
+});
