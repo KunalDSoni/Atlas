@@ -135,4 +135,11 @@ function businessMinutesBetween(start, end, profile) {
   return Math.round(totalMs / 60_000);
 }
 
-module.exports = { categoryOf, statusTimeline, hoursBetween, percentile, businessMinutesBetween, resolveBusinessHours };
+// localMidnightUtc / isoWeekdayInTz are exported for utils/timers.js, which
+// needs the same timezone-aware calendar-day math to decide whether an
+// abandoned stopwatch segment started on an earlier local day.
+module.exports = {
+  categoryOf, statusTimeline, hoursBetween, percentile,
+  businessMinutesBetween, resolveBusinessHours,
+  localMidnightUtc, isoWeekdayInTz,
+};

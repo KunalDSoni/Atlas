@@ -130,3 +130,30 @@ describe('businessMinutesBetween', () => {
     expect(businessMinutesBetween('2026-07-06 02:30:00', '2026-07-06 06:30:00', ist)).toBe(180);
   });
 });
+
+describe('localMidnightUtc / isoWeekdayInTz (exported for utils/timers.js)', () => {
+  const { localMidnightUtc, isoWeekdayInTz } = require('../../utils/flow');
+
+  test('localMidnightUtc resolves local midnight for a whole-hour timezone', () => {
+    // 2026-07-06 14:00 UTC is 2026-07-06 in UTC; local midnight is 00:00 UTC.
+    const d = new Date('2026-07-06T14:00:00Z');
+    expect(localMidnightUtc(d, 'UTC').toISOString()).toBe('2026-07-06T00:00:00.000Z');
+  });
+
+  test('localMidnightUtc handles a half-hour offset timezone', () => {
+    // Asia/Kolkata is UTC+5:30. 2026-07-06 14:00 UTC = 19:30 IST on 2026-07-06,
+    // so local midnight is 2026-07-05 18:30 UTC.
+    const d = new Date('2026-07-06T14:00:00Z');
+    expect(localMidnightUtc(d, 'Asia/Kolkata').toISOString()).toBe('2026-07-05T18:30:00.000Z');
+  });
+
+  test('isoWeekdayInTz returns 1 for Monday', () => {
+    // 2026-07-06 is a Monday.
+    expect(isoWeekdayInTz(new Date('2026-07-06T12:00:00Z'), 'UTC')).toBe(1);
+  });
+
+  test('isoWeekdayInTz returns 7 for Sunday', () => {
+    // 2026-07-05 is a Sunday.
+    expect(isoWeekdayInTz(new Date('2026-07-05T12:00:00Z'), 'UTC')).toBe(7);
+  });
+});
