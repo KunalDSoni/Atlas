@@ -43,6 +43,14 @@ Read these before writing code. Every one was checked against the repo; guessing
 
 **Issue status values** — seeded issues in `database.js` use lowercase statuses (`todo`, `inprogress`, `done`) and lowercase types (`story`, `task`, `bug`, `epic`). Match that, or the demo board renders empty columns.
 
+**CHECK constraints are real and enforced.** `issues.epic_color` is declared `CHECK(epic_color IN ('purple','blue','teal','green','yellow','orange','red','pink'))` in both the SQLite (`database.js:108`) and MySQL (`:694`) schemas. It takes a named colour, never a hex string. SQLite enforces CHECK, and `sqlite` is the default driver.
+
+**`translateForMysql` only rewrites POSITIVE date offsets.** Its regex matches `datetime('now', '+N days')` and has no negative case, so `datetime('now', '-N days')` reaches MySQL untranslated and is a syntax error. Production runs MySQL (`render.yaml`). Compute past dates in JavaScript and bind them as parameters rather than widening the shared helper, which every other caller depends on.
+
+**Bind dates as `YYYY-MM-DD HH:MM:SS`, never raw `toISOString()`.** `translateForMysql` rewrites SQL text only — it never touches bound parameters. A raw `toISOString()` yields `2026-08-01T12:34:56.789Z`, and MySQL `DATETIME` rejects both the `T` separator and the trailing `Z`: strict mode errors, non-strict mode silently writes a zero date. SQLite accepts it either way, so this is invisible in local testing. The codebase's convention is `.toISOString().replace('T', ' ').slice(0, 19)` — see `database.js:2380` and `routes/reports.js:487`.
+
+**The three facts above share one root cause worth internalising:** SQLite is the dev default and MySQL is production, so any date arithmetic, date formatting, or CHECK-constrained value that is only exercised locally will pass tests and fail in production. Verify such code against the MySQL schema definitions in `database.js`, not just against a local run.
+
 ---
 
 ## File Structure
@@ -206,13 +214,21 @@ async function seedDemo(db) {
     [uuidv4(), projectId, userId]
   );
 
+  // Sprint window computed in JS, not with datetime('now', '-8 days'):
+  // translateForMysql only rewrites POSITIVE offsets, so a negative one would
+  // reach MySQL untranslated and fail. Widening that shared helper would
+  // change behaviour for every other caller, so bind the dates instead.
+  const nowMs = Date.now();
+  const sprintStart = new Date(nowMs - 8 * 24 * 60 * 60 * 1000).toISOString();
+  const sprintEnd = new Date(nowMs + 6 * 24 * 60 * 60 * 1000).toISOString();
+
   const sprintId = uuidv4();
   await run(
     db,
     `INSERT INTO sprints (id, project_id, name, slug, goal, status, start_date, end_date, created_at)
      VALUES (?, ?, 'Sprint 14', 'sprint-14', 'Ship the public landing page', 'active',
-             datetime('now', '-8 days'), datetime('now', '+6 days'), datetime('now'))`,
-    [sprintId, projectId]
+             ?, ?, datetime('now'))`,
+    [sprintId, projectId, sprintStart, sprintEnd]
   );
 
   for (let i = 0; i < ISSUES.length; i++) {
@@ -233,12 +249,17 @@ async function seedDemo(db) {
   }
 
   // One epic, outside the sprint, so the epics screen is not empty.
+  //
+  // epic_color takes a NAMED colour, not a hex string: both schemas declare
+  // CHECK(epic_color IN ('purple','blue','teal','green','yellow','orange',
+  // 'red','pink')). SQLite enforces CHECK and is the default driver, so a hex
+  // value throws here — after the rows above are already written.
   await run(
     db,
     `INSERT INTO issues
        (id, project_id, issue_key, issue_number, title, type, status, priority,
         reporter_id, epic_color, board_order, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 'Platform readiness', 'epic', 'todo', 'medium', ?, '#6e5dc6', ?,
+     VALUES (?, ?, ?, ?, 'Platform readiness', 'epic', 'todo', 'medium', ?, 'purple', ?,
              datetime('now'), datetime('now'))`,
     [uuidv4(), projectId, `${DEMO_PROJECT_KEY}-${ISSUES.length + 1}`, ISSUES.length + 1, userId, ISSUES.length]
   );
