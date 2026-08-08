@@ -430,9 +430,15 @@ router.post('/demo', loginRateLimit, async (req, res) => {
       await seedDemo(db);
     }
 
+    // The role is pinned HERE, not merely assumed from the seed. seedDemo
+    // adopts a pre-existing account at DEMO_EMAIL without inspecting it, so
+    // without this filter, pointing DEMO_EMAIL at an admin's address would
+    // hand an unauthenticated admin session to anyone who clicks the button.
+    // The 500 is deliberately uninformative — it must not reveal whether the
+    // account is missing, deactivated, or the wrong role.
     const user = await queryOne(
       db,
-      'SELECT * FROM users WHERE email = ? AND is_active = 1',
+      "SELECT * FROM users WHERE email = ? AND is_active = 1 AND role = 'user'",
       [process.env.DEMO_EMAIL]
     );
     if (!user) return res.status(500).json({ error: 'Demo account is unavailable' });

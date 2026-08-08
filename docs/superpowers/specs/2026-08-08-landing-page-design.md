@@ -83,8 +83,12 @@ Guards, all required:
    that do not opt in behave exactly as they do today.
 2. **Rate limited** using the existing `loginRateLimit` middleware, so the
    endpoint cannot be used to farm sessions.
-3. **Role `user`, never `admin` or `board_admin`.** A visitor can move cards and
-   file issues inside the demo project. They cannot reach `/admin`, delete
+3. **Role `user`, never `admin` or `board_admin`** — enforced at the route, not
+   assumed from the seed. The lookup filters on `role = 'user'`, and the seeder
+   refuses to adopt a pre-existing account whose role is anything else. Without
+   both, pointing `DEMO_EMAIL` at an existing admin's address would hand an
+   unauthenticated admin session to any visitor. A demo visitor can move cards
+   and file issues inside the demo project; they cannot reach `/admin`, delete
    accounts, or read the audit log.
 4. **Audit logged** as `Demo session started`, matching the `/login` pattern.
 
