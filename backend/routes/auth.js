@@ -99,9 +99,16 @@ router.post('/demo', loginRateLimit, async (req, res) => {
       await seedDemo(db);
     }
 
+    // Pin role = 'user' in the lookup itself, not just at seed time. DEMO_EMAIL
+    // is operator-supplied config; if it is ever pointed at an existing
+    // non-user account (e.g. a real admin's address, by mistake), this
+    // endpoint must still refuse to hand out that session — it is reachable
+    // with zero credentials by anyone on the internet. seed-demo.js also
+    // refuses to adopt such an account, but that is defense in depth, not a
+    // substitute for constraining this query.
     const user = await queryOne(
       db,
-      'SELECT * FROM users WHERE email = ? AND is_active = 1',
+      "SELECT * FROM users WHERE email = ? AND is_active = 1 AND role = 'user'",
       [process.env.DEMO_EMAIL]
     );
     if (!user) return res.status(500).json({ error: 'Demo account is unavailable' });

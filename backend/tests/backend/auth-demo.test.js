@@ -79,6 +79,50 @@ describe('POST /api/auth/demo', () => {
   });
 });
 
+// Regression guard for: DEMO_EMAIL pointed at an existing non-user account
+// (e.g. a real admin's address, by operator mistake) must never result in
+// that account's session being handed out credential-free.
+describe('POST /api/auth/demo role safety', () => {
+  test('DEMO_EMAIL pointed at an existing admin account does not yield an admin session', async () => {
+    const { getDb, queryOne } = require('../../database');
+    const db = await getDb();
+
+    // Verify the fixture is actually admin before relying on it below.
+    const admin = await queryOne(db, 'SELECT role FROM users WHERE email = ?', ['kunal@example.com']);
+    expect(admin).toBeTruthy();
+    expect(admin.role).toBe('admin');
+
+    const { _reset } = require('../../middleware/ratelimit');
+    _reset();
+    process.env.DEMO_EMAIL = 'kunal@example.com';
+
+    const res = await request(app).post('/api/auth/demo');
+
+    // Either the route refuses outright, or — if it somehow issues a
+    // session — that session must not be role admin. The status-code
+    // assertion is the primary guard; the role assertion is a fallback in
+    // case the failure mode changes shape later.
+    expect(res.status).not.toBe(200);
+    if (res.status === 200) {
+      expect(res.body.role).not.toBe('admin');
+    }
+
+    _reset();
+  });
+});
+
+describe('seedDemo role safety', () => {
+  test('throws when DEMO_EMAIL names an existing non-user account', async () => {
+    const { getDb } = require('../../database');
+    const { seedDemo } = require('../../seed-demo');
+    const db = await getDb();
+
+    process.env.DEMO_EMAIL = 'kunal@example.com'; // seeded as role admin
+
+    await expect(seedDemo(db)).rejects.toThrow(/non-demo account/);
+  });
+});
+
 // The demo route is rate limited and, by design, never clears the bucket on
 // success (see routes/auth.js) — every request shares one key because the
 // request carries no email. That means this assertion cannot depend on how

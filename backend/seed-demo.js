@@ -42,8 +42,19 @@ async function isDemoStale(db) {
 /** Creates the demo user if absent. Returns its id either way. */
 async function ensureDemoUser(db) {
   const email = process.env.DEMO_EMAIL;
-  const existing = await queryOne(db, 'SELECT id FROM users WHERE email = ?', [email]);
-  if (existing) return existing.id;
+  const existing = await queryOne(db, 'SELECT id, role FROM users WHERE email = ?', [email]);
+  if (existing) {
+    // Refuse to adopt an account this wasn't meant for — e.g. DEMO_EMAIL
+    // mistakenly pointed at a real admin's address. Silently reusing it
+    // would let /api/auth/demo hand out that account's session to anyone,
+    // credential-free. Fail loudly here instead of quietly rewriting the
+    // existing account's role, which would mutate a real user's permissions
+    // as a side effect of a config typo.
+    if (existing.role !== 'user') {
+      throw new Error(`DEMO_EMAIL points at a non-demo account (role: ${existing.role}); refusing to seed`);
+    }
+    return existing.id;
+  }
 
   const id = uuidv4();
   // The password is never used — /api/auth/demo issues a session directly and
