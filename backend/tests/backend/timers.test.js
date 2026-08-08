@@ -107,19 +107,44 @@ describe('closeStaleSegments', () => {
 
   test('does NOT truncate a same-day segment still running past business hours', async () => {
     // Regression guard: auto-close must never kill a live, in-progress timer.
-    const issue = await mkIssue('Same day still running');
-    await run(db, 'UPDATE projects SET business_hours = ? WHERE id = ?',
-      [JSON.stringify({ timezone: 'UTC', work_days: [1, 2, 3, 4, 5, 6, 7], start_hour: 0, end_hour: 1 }), projectId]);
-    // Started 30 minutes ago (today), profile closes at 01:00 — almost certainly
-    // already past, but the day has not rolled over, so it must stay open.
-    const segId = await addSegment(issue.id, adminId, stampAgo(30));
+    //
+    // This fixture deliberately pins "now" with fake timers instead of using
+    // stampAgo(). A profile with normal hours (9-18) and a segment started
+    // earlier TODAY, well inside business hours, means workdayEndFor() would
+    // happily compute a valid, non-null boundary (18:00) for this segment if
+    // the earlier-calendar-day check in closeStaleSegments were removed — so
+    // this fixture actually exercises that check. (An earlier version of this
+    // test used a start_hour:0/end_hour:1 profile with stampAgo(30); that
+    // fixture passed even with the earlier-day check deleted, because
+    // workdayEndFor's own `end <= start` guard independently caught it —
+    // masking the very regression this test exists to catch.)
+    jest.useFakeTimers({
+      doNotFake: [
+        'hrtime', 'nextTick', 'performance', 'queueMicrotask',
+        'requestAnimationFrame', 'cancelAnimationFrame', 'requestIdleCallback',
+        'cancelIdleCallback', 'setImmediate', 'clearImmediate',
+        'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout',
+      ],
+    });
+    jest.setSystemTime(new Date('2026-07-06T14:00:00Z')); // Monday, 2pm UTC
 
-    await closeStaleSegments(db, { userId: adminId });
+    try {
+      const issue = await mkIssue('Same day still running');
+      await run(db, 'UPDATE projects SET business_hours = ? WHERE id = ?',
+        [JSON.stringify({ timezone: 'UTC', work_days: [1, 2, 3, 4, 5], start_hour: 9, end_hour: 18 }), projectId]);
+      // Started 10am "today" (per the pinned clock) — same local calendar day
+      // as "now", well before the 18:00 close.
+      const segId = await addSegment(issue.id, adminId, '2026-07-06 10:00:00');
 
-    const seg = await queryOne(db, 'SELECT * FROM timer_segments WHERE id = ?', [segId]);
-    expect(seg.ended_at).toBeNull();
+      await closeStaleSegments(db, { userId: adminId });
 
-    await run(db, 'UPDATE projects SET business_hours = NULL WHERE id = ?', [projectId]);
+      const seg = await queryOne(db, 'SELECT * FROM timer_segments WHERE id = ?', [segId]);
+      expect(seg.ended_at).toBeNull();
+
+      await run(db, 'UPDATE projects SET business_hours = NULL WHERE id = ?', [projectId]);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test('leaves a segment open and flags runaway when no profile is configured', async () => {
