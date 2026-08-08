@@ -364,3 +364,23 @@ describe('timer routes', () => {
     await request(getApp()).post(`/api/issues/${issue.id}/timer/pause`).set(headers);
   });
 });
+
+describe('time-tracking rollup splits timer time separately', () => {
+  test('a timer work log lands in timer_minutes, not manual_minutes', async () => {
+    const issue = await mkIssue('Rollup split');
+    const me = await request(getApp()).get('/api/auth/me').set(headers);
+    await request(getApp()).put(`/api/issues/${issue.id}`).set(headers)
+      .send({ assignee_id: me.body.id });
+
+    await run(db, "INSERT INTO work_logs (id, issue_id, user_id, minutes, source) VALUES (?, ?, ?, ?, 'timer')",
+      [uuidv4(), issue.id, me.body.id, 42]);
+
+    const res = await request(getApp())
+      .get(`/api/projects/${projectId}/reports/time-tracking`).set(headers);
+    expect(res.status).toBe(200);
+
+    const mine = res.body.by_user.find((u) => u.user_id === me.body.id);
+    expect(mine.timer_minutes).toBeGreaterThanOrEqual(42);
+    expect(mine.total_minutes).toBe(mine.auto_minutes + mine.manual_minutes + mine.timer_minutes);
+  });
+});

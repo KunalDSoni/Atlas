@@ -603,20 +603,30 @@ router.get('/projects/:projectId/reports/time-tracking', requireAuth, async (req
     const byUser = new Map();
     for (const r of rows) {
       const minutes = Number(r.minutes);
+
+      // Three-way, not a ternary: work_logs.source is 'manual' | 'auto' |
+      // 'timer', and an else-branch would silently report tracked stopwatch
+      // time as manual time.
+      const bucket = r.source === 'auto' ? 'auto_minutes'
+        : r.source === 'timer' ? 'timer_minutes'
+        : 'manual_minutes';
+
       const sprintKey = r.sprint_id || 'backlog';
       if (!bySprint.has(sprintKey)) {
-        bySprint.set(sprintKey, { sprint_id: r.sprint_id, sprint_name: r.sprint_name || 'Backlog', auto_minutes: 0, manual_minutes: 0 });
+        bySprint.set(sprintKey, { sprint_id: r.sprint_id, sprint_name: r.sprint_name || 'Backlog', auto_minutes: 0, manual_minutes: 0, timer_minutes: 0 });
       }
-      bySprint.get(sprintKey)[r.source === 'auto' ? 'auto_minutes' : 'manual_minutes'] += minutes;
+      bySprint.get(sprintKey)[bucket] += minutes;
 
       const userKey = r.user_id || 'unassigned';
       if (!byUser.has(userKey)) {
-        byUser.set(userKey, { user_id: r.user_id, name: r.name || 'Unassigned', auto_minutes: 0, manual_minutes: 0 });
+        byUser.set(userKey, { user_id: r.user_id, name: r.name || 'Unassigned', auto_minutes: 0, manual_minutes: 0, timer_minutes: 0 });
       }
-      byUser.get(userKey)[r.source === 'auto' ? 'auto_minutes' : 'manual_minutes'] += minutes;
+      byUser.get(userKey)[bucket] += minutes;
     }
 
-    const finalize = (m) => [...m.values()].map((v) => ({ ...v, total_minutes: v.auto_minutes + v.manual_minutes }));
+    const finalize = (m) => [...m.values()].map((v) => ({
+      ...v, total_minutes: v.auto_minutes + v.manual_minutes + v.timer_minutes,
+    }));
     res.json({ by_sprint: finalize(bySprint), by_user: finalize(byUser) });
   } catch (e) { serverError(res, e); }
 });
@@ -641,19 +651,21 @@ router.get('/projects/:projectId/reports/time-tracking/export/csv', requireAuth,
     const byUser = new Map();
     for (const r of rows) {
       const minutes = Number(r.minutes);
+      // Same three-way split as the JSON endpoint above.
+      const bucket = r.source === 'auto' ? 'auto' : r.source === 'timer' ? 'timer' : 'manual';
       const sprintKey = r.sprint_id || 'backlog';
-      if (!bySprint.has(sprintKey)) bySprint.set(sprintKey, { name: r.sprint_name || 'Backlog', auto: 0, manual: 0 });
-      bySprint.get(sprintKey)[r.source === 'auto' ? 'auto' : 'manual'] += minutes;
+      if (!bySprint.has(sprintKey)) bySprint.set(sprintKey, { name: r.sprint_name || 'Backlog', auto: 0, manual: 0, timer: 0 });
+      bySprint.get(sprintKey)[bucket] += minutes;
       const userKey = r.user_id || 'unassigned';
-      if (!byUser.has(userKey)) byUser.set(userKey, { name: r.name || 'Unassigned', auto: 0, manual: 0 });
-      byUser.get(userKey)[r.source === 'auto' ? 'auto' : 'manual'] += minutes;
+      if (!byUser.has(userKey)) byUser.set(userKey, { name: r.name || 'Unassigned', auto: 0, manual: 0, timer: 0 });
+      byUser.get(userKey)[bucket] += minutes;
     }
 
-    const lines = ['Sprint,Auto Minutes,Manual Minutes,Total Minutes'];
-    for (const s of bySprint.values()) lines.push([s.name, s.auto, s.manual, s.auto + s.manual].join(','));
+    const lines = ['Sprint,Auto Minutes,Manual Minutes,Timer Minutes,Total Minutes'];
+    for (const s of bySprint.values()) lines.push([s.name, s.auto, s.manual, s.timer, s.auto + s.manual + s.timer].join(','));
     lines.push('');
-    lines.push('User,Auto Minutes,Manual Minutes,Total Minutes');
-    for (const u of byUser.values()) lines.push([u.name, u.auto, u.manual, u.auto + u.manual].join(','));
+    lines.push('User,Auto Minutes,Manual Minutes,Timer Minutes,Total Minutes');
+    for (const u of byUser.values()) lines.push([u.name, u.auto, u.manual, u.timer, u.auto + u.manual + u.timer].join(','));
 
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${project.key}-time-tracking.csv"`);
