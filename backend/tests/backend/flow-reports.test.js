@@ -178,6 +178,37 @@ describe('GET /reports/time-tracking', () => {
     const userRow = res.body.by_user.find((u) => u.user_id === issue.reporter_id);
     expect(userRow.total_minutes).toBeGreaterThanOrEqual(60);
   });
+
+  test('credits a timer work log to the user who tracked it, not the issue\'s current assignee', async () => {
+    // Regression guard: the by-user breakdown used to group by i.assignee_id,
+    // so tracked time authored by a different user than the current assignee
+    // (e.g. two people splitting a ticket) was silently credited to whoever
+    // the assignee happens to be now, defeating the whole point of the
+    // stopwatch's per-user attribution.
+    const otherHeaders = await require('./setup').userHeaders();
+    const other = await request(getApp()).get('/api/auth/me').set(otherHeaders);
+
+    const issueRes = await request(getApp())
+      .post(`/api/projects/${projectId}/issues`).set(headers)
+      .send({ title: 'Timer credited to tracker, not assignee', type: 'task' });
+    const issue = issueRes.body;
+    // Assignee is the admin (issue.reporter_id); the timer time below is
+    // tracked by a DIFFERENT user and must still be credited to them.
+    await request(getApp()).put(`/api/issues/${issue.id}`).set(headers).send({ assignee_id: issue.reporter_id });
+
+    await run(db, "INSERT INTO work_logs (id, issue_id, user_id, minutes, source) VALUES (?, ?, ?, ?, 'timer')",
+      [uuidv4(), issue.id, other.body.id, 77]);
+
+    const res = await request(getApp()).get(`/api/projects/${projectId}/reports/time-tracking`).set(headers);
+    expect(res.status).toBe(200);
+
+    const trackerRow = res.body.by_user.find((u) => u.user_id === other.body.id);
+    expect(trackerRow).toBeTruthy();
+    expect(trackerRow.timer_minutes).toBeGreaterThanOrEqual(77);
+
+    const assigneeRow = res.body.by_user.find((u) => u.user_id === issue.reporter_id);
+    if (assigneeRow) expect(assigneeRow.timer_minutes).toBe(0); // not credited to the assignee
+  });
 });
 
 describe('GET /reports/time-tracking/export/csv', () => {

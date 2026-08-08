@@ -591,12 +591,12 @@ router.get('/projects/:projectId/reports/time-tracking', requireAuth, async (req
   try {
     const db = await getDb();
     const rows = await queryAll(db, `
-      SELECT i.sprint_id, s.name AS sprint_name, i.assignee_id AS user_id, u.name,
+      SELECT i.sprint_id, s.name AS sprint_name, w.user_id AS user_id, u.name,
              w.source, w.minutes
       FROM work_logs w
       JOIN issues i ON i.id = w.issue_id
       LEFT JOIN sprints s ON s.id = i.sprint_id
-      LEFT JOIN users u ON u.id = i.assignee_id
+      LEFT JOIN users u ON u.id = w.user_id
       WHERE i.project_id = ?`, [req.params.projectId]);
 
     const bySprint = new Map();
@@ -639,12 +639,12 @@ router.get('/projects/:projectId/reports/time-tracking/export/csv', requireAuth,
 
     // Reuse the same aggregation as the JSON endpoint above.
     const rows = await queryAll(db, `
-      SELECT i.sprint_id, s.name AS sprint_name, i.assignee_id AS user_id, u.name,
+      SELECT i.sprint_id, s.name AS sprint_name, w.user_id AS user_id, u.name,
              w.source, w.minutes
       FROM work_logs w
       JOIN issues i ON i.id = w.issue_id
       LEFT JOIN sprints s ON s.id = i.sprint_id
-      LEFT JOIN users u ON u.id = i.assignee_id
+      LEFT JOIN users u ON u.id = w.user_id
       WHERE i.project_id = ?`, [req.params.projectId]);
 
     const bySprint = new Map();
