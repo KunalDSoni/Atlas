@@ -10,6 +10,7 @@ import { AssigneePicker } from '../components/AssigneePicker';
 import { CommentList } from '../components/CommentList';
 import { CommentInput } from '../components/CommentInput';
 import { WatchersList } from '../components/WatchersList';
+import { AttachmentList } from '../components/AttachmentList';
 import { MainStackParamList } from '../navigation/MainStack';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'IssueDetail'>;
@@ -79,6 +80,9 @@ export function IssueDetailScreen({ route }: Props) {
 
       {/* Watchers Section */}
       <WatchersList issueId={issueId} />
+
+      {/* Attachments Section */}
+      <AttachmentList issueId={issueId} />
 
       {/* Comments Section */}
       <CommentList issueId={issueId} />
