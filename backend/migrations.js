@@ -1131,6 +1131,54 @@ const MIGRATIONS = [
       },
     ],
   },
+  {
+    id: '029_issue_timers',
+    description: 'Append-only stopwatch segments per issue and user',
+    steps: [
+      {
+        sql: {
+          sqlite: `CREATE TABLE IF NOT EXISTS timer_segments (
+            id TEXT PRIMARY KEY,
+            issue_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            -- Append-only: started_at is written once, ended_at once on pause,
+            -- and neither is ever updated again. Totals are summed on read, so
+            -- there is no stored accumulator that a crash can desynchronise.
+            started_at DATETIME NOT NULL,
+            ended_at DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          )`,
+          mysql: `CREATE TABLE IF NOT EXISTS timer_segments (
+            id VARCHAR(36) PRIMARY KEY,
+            issue_id VARCHAR(36) NOT NULL,
+            user_id VARCHAR(36) NOT NULL,
+            started_at DATETIME NOT NULL,
+            ended_at DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            -- MySQL declares indexes inline; the SQLite side gets its own
+            -- statements below. Names match so the two schemas stay comparable.
+            KEY idx_timer_segments_issue (issue_id),
+            KEY idx_timer_segments_user_open (user_id, ended_at)
+          ) DEFAULT CHARSET=utf8mb4`,
+        },
+      },
+      {
+        // "One running timer per user" is enforced in application code, not by a
+        // partial unique index: MySQL has no partial indexes and this same list
+        // runs against both drivers.
+        sql: {
+          sqlite: `CREATE INDEX IF NOT EXISTS idx_timer_segments_issue ON timer_segments(issue_id)`,
+          mysql: `SELECT 1`,
+        },
+      },
+      {
+        sql: {
+          sqlite: `CREATE INDEX IF NOT EXISTS idx_timer_segments_user_open ON timer_segments(user_id, ended_at)`,
+          mysql: `SELECT 1`,
+        },
+      },
+    ],
+  },
 ];
 
 const LEDGER_SQL = {
