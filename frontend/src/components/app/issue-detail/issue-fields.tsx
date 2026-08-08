@@ -6,6 +6,7 @@ const NO_EPIC = '__no_epic__';
 const NO_VERSION = '__no_version__';
 const NO_COMPONENT = '__no_component__';
 
+import { useEffect, useState } from 'react';
 import { Clock, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -22,7 +23,21 @@ import type { IssueStatus, Priority } from '@/lib/types';
 import type { IssueDetail } from './use-issue-detail';
 
 export function IssueFields({ detail }: { detail: IssueDetail }) {
-  const { issue, members, sprints, epics, worklogs, versions, components, logOpen, logHours, logComment, estimateHours, loggingWork, setLogOpen, setLogHours, setLogComment, setEstimateHours, canEdit, workflow, user, patch, logWork, removeWorkLog, editWorkLog, saveEstimate } = detail;
+  const { issue, members, sprints, epics, worklogs, versions, components, logOpen, logHours, logComment, estimateHours, loggingWork, setLogOpen, setLogHours, setLogComment, setEstimateHours, canEdit, workflow, user, patch, logWork, removeWorkLog, editWorkLog, saveEstimate, timer, timerBusy, pausedNotice, startTimer, pauseTimer } = detail;
+
+  // The server is only contacted on start/pause/commit — never polled. The
+  // display advances locally from the server's elapsed_minutes, which already
+  // includes the open segment as of the last fetch; the tick extends that
+  // value rather than recomputing from started_at, which would double-count.
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    setTick(0);
+    if (!timer?.running) return;
+    const id = setInterval(() => setTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, [timer?.running, timer?.started_at]);
+  const liveElapsed = (timer?.elapsed_minutes ?? 0) + (timer?.running ? tick : 0);
+
   if (!issue) return null;
 
   return (
@@ -245,6 +260,41 @@ export function IssueFields({ detail }: { detail: IssueDetail }) {
                       </div>
                     </div>
                   )}
+                  {issue.in_progress_minutes_live !== null && (
+                    <p className="text-xs text-muted-foreground">
+                      In progress: {formatDuration(issue.in_progress_minutes_live)}
+                    </p>
+                  )}
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant={timer?.running ? 'secondary' : 'default'}
+                      onClick={timer?.running ? pauseTimer : startTimer}
+                      disabled={timerBusy}
+                      aria-label={timer?.running ? 'Pause timer' : 'Start timer'}
+                    >
+                      {timerBusy
+                        ? <Loader2 className="size-4 animate-spin" />
+                        : timer?.running ? 'Pause' : 'Start timer'}
+                    </Button>
+                    {timer && (timer.running || timer.elapsed_minutes > 0) && (
+                      <span className="text-sm tabular-nums">
+                        {formatDuration(liveElapsed)}
+                      </span>
+                    )}
+                  </div>
+
+                  {pausedNotice && (
+                    <p className="text-xs text-muted-foreground">{pausedNotice}</p>
+                  )}
+
+                  {timer?.runaway && (
+                    <p className="text-xs text-destructive">
+                      Timer has been running over 12 hours — still working?{' '}
+                      <button className="underline" onClick={pauseTimer}>Pause it</button>
+                    </p>
+                  )}
+
                   {canEdit && (
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">Log work</Label>
@@ -284,9 +334,9 @@ export function IssueFields({ detail }: { detail: IssueDetail }) {
                               <span className="text-muted-foreground">
                                 logged {formatDuration(wlog.minutes)} · {timeAgo(wlog.created_at)}
                               </span>
-                              {wlog.source === 'auto' && (
+                              {wlog.source !== 'manual' && (
                                 <span className="ml-1.5 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">
-                                  auto
+                                  {wlog.source}
                                 </span>
                               )}
                             </p>
