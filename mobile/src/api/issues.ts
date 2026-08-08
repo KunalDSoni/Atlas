@@ -12,6 +12,8 @@ export type Issue = {
   assignee_name: string | null;
   assignee_color: string | null;
   project_id: string;
+  time_spent: number | null;
+  in_progress_minutes_live: number | null;
 };
 
 export function fetchProjectIssues(projectId: string): Promise<Issue[]> {

@@ -5,10 +5,12 @@ import { IssueDetailScreen } from '../screens/IssueDetailScreen';
 import * as issuesApi from '../api/issues';
 import * as statusesApi from '../api/statuses';
 import * as membersApi from '../api/members';
+import * as timersApi from '../api/timers';
 
 jest.mock('../api/issues');
 jest.mock('../api/statuses');
 jest.mock('../api/members');
+jest.mock('../api/timers');
 
 function renderWithClient(ui: React.ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -21,6 +23,7 @@ test('renders issue and saves a status change', async () => {
   (issuesApi.fetchIssue as jest.Mock).mockResolvedValue({
     id: 'i1', issue_key: 'ATLAS-1', title: 'Fix bug', description: 'desc', status: 'todo',
     type: 'task', priority: 'medium', assignee_id: null, assignee_name: null, assignee_color: null, project_id: 'p1',
+    time_spent: 0, in_progress_minutes_live: null,
   });
   (statusesApi.fetchProjectStatuses as jest.Mock).mockResolvedValue([
     { id: 's1', key: 'todo', label: 'To Do', category: 'todo', position: 0 },
@@ -28,6 +31,9 @@ test('renders issue and saves a status change', async () => {
   ]);
   (membersApi.fetchProjectMembers as jest.Mock).mockResolvedValue([]);
   (issuesApi.updateIssue as jest.Mock).mockResolvedValue({});
+  (timersApi.fetchTimer as jest.Mock).mockResolvedValue({
+    running: false, started_at: null, elapsed_minutes: 0, runaway: false, by_user: [],
+  });
 
   const { findByText, getByText } = await renderWithClient(<IssueDetailScreen route={route as any} navigation={{} as any} />);
 
@@ -41,6 +47,7 @@ test('assigning a member sends the user_id, not the project_members row id', asy
   (issuesApi.fetchIssue as jest.Mock).mockResolvedValue({
     id: 'i1', issue_key: 'ATLAS-1', title: 'Fix bug', description: 'desc', status: 'todo',
     type: 'task', priority: 'medium', assignee_id: null, assignee_name: null, assignee_color: null, project_id: 'p1',
+    time_spent: 0, in_progress_minutes_live: null,
   });
   (statusesApi.fetchProjectStatuses as jest.Mock).mockResolvedValue([
     { id: 's1', key: 'todo', label: 'To Do', category: 'todo', position: 0 },
@@ -51,6 +58,9 @@ test('assigning a member sends the user_id, not the project_members row id', asy
     { id: 'pm-row-1', user_id: 'user-42', name: 'Alex Rivera', avatar_color: '#123456' },
   ]);
   (issuesApi.updateIssue as jest.Mock).mockResolvedValue({});
+  (timersApi.fetchTimer as jest.Mock).mockResolvedValue({
+    running: false, started_at: null, elapsed_minutes: 0, runaway: false, by_user: [],
+  });
 
   const { findByText, getByText } = await renderWithClient(<IssueDetailScreen route={route as any} navigation={{} as any} />);
 
@@ -59,4 +69,45 @@ test('assigning a member sends the user_id, not the project_members row id', asy
 
   await waitFor(() => expect(issuesApi.updateIssue).toHaveBeenCalledWith('i1', { assignee_id: 'user-42' }));
   expect(issuesApi.updateIssue).not.toHaveBeenCalledWith('i1', { assignee_id: 'pm-row-1' });
+});
+
+describe('IssueDetailScreen time section', () => {
+  test('shows the in-progress value and a Start timer control', async () => {
+    (issuesApi.fetchIssue as jest.Mock).mockResolvedValue({
+      id: 'i1', issue_key: 'ATLAS-1', title: 'Fix bug', description: 'desc', status: 'todo',
+      type: 'task', priority: 'medium', assignee_id: null, assignee_name: null, assignee_color: null, project_id: 'p1',
+      time_spent: 0, in_progress_minutes_live: 90,
+    });
+    (statusesApi.fetchProjectStatuses as jest.Mock).mockResolvedValue([
+      { id: 's1', key: 'todo', label: 'To Do', category: 'todo', position: 0 },
+    ]);
+    (membersApi.fetchProjectMembers as jest.Mock).mockResolvedValue([]);
+    (timersApi.fetchTimer as jest.Mock).mockResolvedValue({
+      running: false, started_at: null, elapsed_minutes: 0, runaway: false, by_user: [],
+    });
+
+    const { findByText } = await renderWithClient(<IssueDetailScreen route={route as any} navigation={{} as any} />);
+
+    expect(await findByText(/In progress/)).toBeTruthy();
+    expect(await findByText('Start timer')).toBeTruthy();
+  });
+
+  test('shows Pause while a timer is running', async () => {
+    (issuesApi.fetchIssue as jest.Mock).mockResolvedValue({
+      id: 'i1', issue_key: 'ATLAS-1', title: 'Fix bug', description: 'desc', status: 'todo',
+      type: 'task', priority: 'medium', assignee_id: null, assignee_name: null, assignee_color: null, project_id: 'p1',
+      time_spent: 0, in_progress_minutes_live: null,
+    });
+    (statusesApi.fetchProjectStatuses as jest.Mock).mockResolvedValue([
+      { id: 's1', key: 'todo', label: 'To Do', category: 'todo', position: 0 },
+    ]);
+    (membersApi.fetchProjectMembers as jest.Mock).mockResolvedValue([]);
+    (timersApi.fetchTimer as jest.Mock).mockResolvedValue({
+      running: true, started_at: '2026-07-06 09:00:00', elapsed_minutes: 30, runaway: false, by_user: [],
+    });
+
+    const { findByText } = await renderWithClient(<IssueDetailScreen route={route as any} navigation={{} as any} />);
+
+    expect(await findByText('Pause')).toBeTruthy();
+  });
 });

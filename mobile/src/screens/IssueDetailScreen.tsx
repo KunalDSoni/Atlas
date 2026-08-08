@@ -5,11 +5,18 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { fetchIssue, updateIssue } from '../api/issues';
 import { fetchProjectStatuses } from '../api/statuses';
 import { fetchProjectMembers } from '../api/members';
+import { fetchTimer, startTimer, pauseTimer } from '../api/timers';
 import { StatusPicker } from '../components/StatusPicker';
 import { AssigneePicker } from '../components/AssigneePicker';
 import { MainStackParamList } from '../navigation/MainStack';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'IssueDetail'>;
+
+function formatMinutes(minutes: number) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
 
 export function IssueDetailScreen({ route }: Props) {
   const { issueId } = route.params;
@@ -34,6 +41,17 @@ export function IssueDetailScreen({ route }: Props) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
       queryClient.invalidateQueries({ queryKey: ['issues', projectId] });
+    },
+  });
+
+  const timerQuery = useQuery({ queryKey: ['timer', issueId], queryFn: () => fetchTimer(issueId) });
+
+  const timerMutation = useMutation({
+    mutationFn: (action: 'start' | 'pause') =>
+      action === 'start' ? startTimer(issueId) : pauseTimer(issueId),
+    onSuccess: (state) => {
+      queryClient.setQueryData(['timer', issueId], state);
+      queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
     },
   });
 
@@ -69,6 +87,26 @@ export function IssueDetailScreen({ route }: Props) {
         value={issue.assignee_id}
         onChange={(assignee_id) => updateMutation.mutate({ assignee_id })}
       />
+
+      <Text style={styles.sectionLabel}>Time</Text>
+      {issue.in_progress_minutes_live !== null && (
+        <Text style={styles.timeValue}>
+          In progress: {formatMinutes(issue.in_progress_minutes_live)}
+        </Text>
+      )}
+      {!!timerQuery.data && timerQuery.data.elapsed_minutes > 0 && (
+        <Text style={styles.timeValue}>
+          Tracked: {formatMinutes(timerQuery.data.elapsed_minutes)}
+        </Text>
+      )}
+      <Button
+        title={timerQuery.data?.running ? 'Pause' : 'Start timer'}
+        disabled={timerMutation.isPending}
+        onPress={() => timerMutation.mutate(timerQuery.data?.running ? 'pause' : 'start')}
+      />
+      {timerQuery.data?.runaway && (
+        <Text style={styles.warning}>Timer running over 12 hours — still working?</Text>
+      )}
     </ScrollView>
   );
 }
@@ -81,4 +119,6 @@ const styles = StyleSheet.create({
   description: { fontSize: 14, color: '#333', marginBottom: 20 },
   sectionLabel: { fontSize: 13, fontWeight: '600', color: '#666', marginTop: 16, marginBottom: 8 },
   errorText: { padding: 16, textAlign: 'center', color: '#b91c1c' },
+  timeValue: { fontSize: 14, color: '#333', marginBottom: 8 },
+  warning: { fontSize: 12, color: '#b91c1c', marginTop: 8 },
 });
