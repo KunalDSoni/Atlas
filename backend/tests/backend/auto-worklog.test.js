@@ -273,4 +273,106 @@ describe('timer precedence over the status-derived calculation', () => {
     const logs = await queryAll(db, "SELECT * FROM work_logs WHERE issue_id = ? AND source = 'timer'", [issue.id]);
     expect(logs).toHaveLength(1); // the time was really worked; it stays
   });
+
+  test('a stale auto row from a completion before any timer was used is removed once a later done commits tracked time', async () => {
+    // Regression guard: a PRIOR done-transition (no timer involved yet)
+    // writes a source='auto' row. commitTimer only ever deletes its own
+    // source='timer' rows for its own user — it never touches source='auto'
+    // — so without an explicit cleanup, reopening and completing again with
+    // the stopwatch used this time leaves BOTH rows behind and double-counts.
+    const issue = await mkIssue('Auto then timer replaces it, not adds to it');
+    const me = await request(getApp()).get('/api/auth/me').set(headers);
+
+    // First completion with no timer at all: produces a real auto row.
+    await request(getApp()).put(`/api/issues/${issue.id}`).set(headers).send({ status: 'in_progress' });
+    await run(db, "UPDATE activity_log SET created_at = '2026-07-06 09:00:00' WHERE issue_id = ? AND field = 'status' AND new_value = 'in_progress'", [issue.id]);
+    await request(getApp()).put(`/api/issues/${issue.id}`).set(headers).send({ status: 'done' });
+
+    const firstAuto = await queryAll(db, "SELECT * FROM work_logs WHERE issue_id = ? AND source = 'auto'", [issue.id]);
+    expect(firstAuto).toHaveLength(1);
+    expect(Number(firstAuto[0].minutes)).toBeGreaterThan(0);
+
+    // Reopen, track real time with the stopwatch this time, complete again.
+    await request(getApp()).put(`/api/issues/${issue.id}`).set(headers).send({ status: 'todo' });
+    await addTimerSegment(issue.id, me.body.id, '2026-07-08 09:00:00', '2026-07-08 09:30:00'); // 30
+    await request(getApp()).put(`/api/issues/${issue.id}`).set(headers).send({ status: 'done' });
+
+    const logs = await queryAll(db, 'SELECT * FROM work_logs WHERE issue_id = ?', [issue.id]);
+    expect(logs).toHaveLength(1); // exactly one row survives, not two
+    expect(logs[0].source).toBe('timer');
+    expect(Number(logs[0].minutes)).toBe(30);
+
+    const updated = await queryOne(db, 'SELECT time_spent FROM issues WHERE id = ?', [issue.id]);
+    expect(Number(updated.time_spent)).toBe(30); // not the stale auto minutes plus 30
+  });
+
+  test('a zero-minute timer session does not lock the issue out of the derived calculation', async () => {
+    // Regression guard: starting and immediately pausing a timer rounds to 0
+    // minutes. commitTimer must not lock the issue against applyAutoWorklog
+    // for a session that logged nothing, and the Done handler must fall
+    // through to the derived calculation rather than getting permanently
+    // stuck with neither auto nor timer time logged.
+    const issue = await mkIssue('Zero-minute timer falls through to auto');
+    const me = await request(getApp()).get('/api/auth/me').set(headers);
+    await request(getApp()).put(`/api/issues/${issue.id}`).set(headers).send({ status: 'in_progress' });
+    await run(db, "UPDATE activity_log SET created_at = '2026-07-06 09:00:00' WHERE issue_id = ? AND field = 'status' AND new_value = 'in_progress'", [issue.id]);
+    // Started and immediately paused: identical start/end, exactly 0 elapsed.
+    await addTimerSegment(issue.id, me.body.id, '2026-07-06 09:00:00', '2026-07-06 09:00:00');
+
+    await request(getApp()).put(`/api/issues/${issue.id}`).set(headers).send({ status: 'done' });
+
+    const timerLogs = await queryAll(db, "SELECT * FROM work_logs WHERE issue_id = ? AND source = 'timer'", [issue.id]);
+    expect(timerLogs).toHaveLength(0);
+    const autoLogs = await queryAll(db, "SELECT * FROM work_logs WHERE issue_id = ? AND source = 'auto'", [issue.id]);
+    expect(autoLogs).toHaveLength(1);
+    expect(Number(autoLogs[0].minutes)).toBeGreaterThan(0);
+
+    const updated = await queryOne(db, 'SELECT time_spent, auto_worklog_locked FROM issues WHERE id = ?', [issue.id]);
+    expect(Number(updated.time_spent)).toBeGreaterThan(0);
+    expect(Number(updated.auto_worklog_locked)).toBe(0); // not locked; a real reopen->done cycle can regenerate it
+  });
+
+  test('a segment abandoned days ago is clipped to its workday end on Done, not committed at the full wall-clock span', async () => {
+    // Regression guard: closeStaleSegments's issueId-scoped branch (used by
+    // the Done handler) used to close every open segment at `now`
+    // unconditionally, with none of the earlier-day/workday-end clipping the
+    // userId-scoped branch already applies on every read. A segment
+    // abandoned for days would then be committed as tracked time across the
+    // full multi-day span, including nights and weekends.
+    jest.useFakeTimers({
+      doNotFake: [
+        'hrtime', 'nextTick', 'performance', 'queueMicrotask',
+        'requestAnimationFrame', 'cancelAnimationFrame', 'requestIdleCallback',
+        'cancelIdleCallback', 'setImmediate', 'clearImmediate',
+        'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout',
+      ],
+    });
+    jest.setSystemTime(new Date('2026-07-06T14:00:00Z')); // Monday, 2pm UTC — "now"
+
+    try {
+      await run(db, 'UPDATE projects SET business_hours = ? WHERE id = ?',
+        [JSON.stringify({ timezone: 'UTC', work_days: [1, 2, 3, 4, 5], start_hour: 9, end_hour: 18 }), projectId]);
+
+      const issue = await mkIssue('Stale timer clipped on done');
+      const me = await request(getApp()).get('/api/auth/me').set(headers);
+      // Started Friday 09:30 (3 days before the pinned "now"), never paused —
+      // abandoned over the weekend. Friday is a work day, so the workday-end
+      // clip should stop it at Friday 18:00 (510 minutes), not the ~4,470
+      // wall-clock minutes to Monday 2pm.
+      await addTimerSegment(issue.id, me.body.id, '2026-07-03 09:30:00', null);
+
+      await request(getApp()).put(`/api/issues/${issue.id}`).set(headers).send({ status: 'done' });
+
+      const timerLogs = await queryAll(db, "SELECT * FROM work_logs WHERE issue_id = ? AND source = 'timer'", [issue.id]);
+      expect(timerLogs).toHaveLength(1);
+      expect(Number(timerLogs[0].minutes)).toBe(510); // Friday 09:30 -> Friday 18:00, not to Monday 14:00
+
+      const seg = await queryOne(db, 'SELECT * FROM timer_segments WHERE issue_id = ?', [issue.id]);
+      expect(seg.ended_at).toBe('2026-07-03 18:00:00');
+
+      await run(db, 'UPDATE projects SET business_hours = NULL WHERE id = ?', [projectId]);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });

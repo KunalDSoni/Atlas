@@ -24,6 +24,7 @@ const { issueLink } = require('../utils/links');
 const { applyAutoWorklog, liveInProgressMinutes } = require('../utils/auto-worklog');
 const { categoryOf } = require('../utils/flow');
 const { closeStaleSegments, commitTimer, issueTimerUserIds } = require('../utils/timers');
+const { recomputeTimeSpent } = require('../utils/worklog-sync');
 
 const requireBoardAdmin = requireRole('admin', 'board_admin');
 
@@ -486,19 +487,45 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
       const newCategory = categoryOf(updated.status, statuses);
       if (newCategory === 'done') {
         // Reaching done is positive evidence the work stopped, so close every
-        // user's running segment — not just the actor's.
+        // user's running segment — not just the actor's. Repair each
+        // tracker's stale segments with the same earlier-day/workday-end
+        // logic the userId-scoped branch already applies on every read
+        // BEFORE the unconditional issueId-scoped close below — otherwise a
+        // segment abandoned days ago gets closed at `now` and the whole
+        // multi-day span (including weekends) is committed as tracked time.
+        // Once that repair has run, anything still open can only be a
+        // same-day segment (the person really was working right up to
+        // Done), which the issueId-scoped call below closes unconditionally.
+        const trackerIds = await issueTimerUserIds(db, updated.id);
+        for (const trackerId of trackerIds) {
+          await closeStaleSegments(db, { userId: trackerId });
+        }
         await closeStaleSegments(db, { issueId: updated.id });
 
-        // Explicitly tracked time is authoritative. When anyone ran a stopwatch
-        // on this issue, commit per tracker and skip the status-derived
-        // calculation entirely; committing sets auto_worklog_locked, so a later
-        // reopen -> redo -> done will not overwrite it.
-        const trackers = await issueTimerUserIds(db, updated.id);
-        if (trackers.length > 0) {
-          for (const trackerId of trackers) {
-            await commitTimer(db, updated.id, trackerId);
-          }
+        // Explicitly tracked time is authoritative. Commit every tracker
+        // first (this also closes/pauses their segments and writes their
+        // work_logs rows), then decide based on the actual minutes tracked
+        // — not merely on whether timer_segments rows exist — whether to
+        // skip the status-derived calculation. A tracker who started and
+        // immediately paused (0 elapsed minutes) commits nothing and must
+        // not count as "a stopwatch was used"; otherwise the issue ends up
+        // with neither auto nor timer time logged, permanently.
+        let trackedMinutes = 0;
+        for (const trackerId of trackerIds) {
+          trackedMinutes += await commitTimer(db, updated.id, trackerId);
+        }
+        if (trackedMinutes > 0) {
+          // A PRIOR done-transition (before any timer was used, or before
+          // this tracked session) may have left a stale 'auto' row behind.
+          // commitTimer only ever deletes source='timer' rows for its own
+          // user, so without this the old auto row survives alongside the
+          // new timer row and double-counts in time_spent and the reports.
+          await run(db, "DELETE FROM work_logs WHERE issue_id = ? AND source = 'auto'", [updated.id]);
+          await recomputeTimeSpent(db, updated.id);
         } else {
+          // No tracker, or every tracker's session rounded to 0 minutes —
+          // fall through to the derived calculation exactly as if the
+          // stopwatch had never been touched.
           await applyAutoWorklog(db, updated, statuses, req.userId);
         }
       } else if (newCategory === 'todo') {

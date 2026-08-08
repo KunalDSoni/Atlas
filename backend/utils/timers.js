@@ -213,11 +213,15 @@ async function commitTimer(db, issueId, userId) {
     await run(db,
       "INSERT INTO work_logs (id, issue_id, user_id, minutes, comment, source) VALUES (?, ?, ?, ?, ?, 'timer')",
       [uuidv4(), issueId, userId, total, 'Tracked with timer']);
-  }
 
-  // Tracked time is authoritative: skip the status-derived calculation for this
-  // issue from now on (read by utils/auto-worklog.js's applyAutoWorklog).
-  await run(db, 'UPDATE issues SET auto_worklog_locked = 1 WHERE id = ?', [issueId]);
+    // Tracked time is authoritative: skip the status-derived calculation for
+    // this issue from now on (read by utils/auto-worklog.js's
+    // applyAutoWorklog). Only lock when a real session was committed — a
+    // zero-minute start/immediately-pause must not permanently lock the
+    // issue out of the derived calculation with nothing logged from either
+    // source.
+    await run(db, 'UPDATE issues SET auto_worklog_locked = 1 WHERE id = ?', [issueId]);
+  }
   await recomputeTimeSpent(db, issueId);
   return total;
 }
