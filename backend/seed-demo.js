@@ -107,12 +107,15 @@ async function seedDemo(db) {
   );
 
   const sprintId = uuidv4();
+  const now = Date.now();
+  const startDate = new Date(now - 8 * 24 * 60 * 60 * 1000).toISOString();
+  const endDate = new Date(now + 6 * 24 * 60 * 60 * 1000).toISOString();
   await run(
     db,
     `INSERT INTO sprints (id, project_id, name, slug, goal, status, start_date, end_date, created_at)
      VALUES (?, ?, 'Sprint 14', 'sprint-14', 'Ship the public landing page', 'active',
-             datetime('now', '-8 days'), datetime('now', '+6 days'), datetime('now'))`,
-    [sprintId, projectId]
+             ?, ?, datetime('now'))`,
+    [sprintId, projectId, startDate, endDate]
   );
 
   for (let i = 0; i < ISSUES.length; i++) {
@@ -138,7 +141,7 @@ async function seedDemo(db) {
     `INSERT INTO issues
        (id, project_id, issue_key, issue_number, title, type, status, priority,
         reporter_id, epic_color, board_order, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 'Platform readiness', 'epic', 'todo', 'medium', ?, '#6e5dc6', ?,
+     VALUES (?, ?, ?, ?, 'Platform readiness', 'epic', 'todo', 'medium', ?, 'purple', ?,
              datetime('now'), datetime('now'))`,
     [uuidv4(), projectId, `${DEMO_PROJECT_KEY}-${ISSUES.length + 1}`, ISSUES.length + 1, userId, ISSUES.length]
   );
