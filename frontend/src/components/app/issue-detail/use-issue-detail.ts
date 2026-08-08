@@ -12,7 +12,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
 import { useWorkflow } from '@/hooks/use-workflow';
 import { canCreateIssues } from '@/lib/domain';
-import type { ActivityEntry, Attachment, Comment, EpicSummary, Issue, MentioningPage, ProjectComponent, Sprint, User, Version, WorkLog } from '@/lib/types';
+import type { ActivityEntry, Attachment, Comment, EpicSummary, Issue, MentioningPage, ProjectComponent, Sprint, TimerState, User, Version, WorkLog } from '@/lib/types';
 
 export function useIssueDetail(
   issueId: string | null,
@@ -42,6 +42,9 @@ export function useIssueDetail(
   const [subtaskTitle, setSubtaskTitle] = useState('');
   const [addingSubtask, setAddingSubtask] = useState(false);
   const [worklogs, setWorklogs] = useState<WorkLog[]>([]);
+  const [timer, setTimer] = useState<TimerState | null>(null);
+  const [timerBusy, setTimerBusy] = useState(false);
+  const [pausedNotice, setPausedNotice] = useState<string | null>(null);
   const [versions, setVersions] = useState<Version[]>([]);
   const [components, setComponents] = useState<ProjectComponent[]>([]);
   const [logOpen, setLogOpen] = useState(false);
@@ -61,7 +64,7 @@ export function useIssueDetail(
       const detail = await api.issues.get(issueId);
       setIssue(detail);
       setEstimateHours(detail.original_estimate ? String(Math.round((detail.original_estimate / 60) * 10) / 10) : '');
-      const [c, a, act, w, u, sp, ep, ch, all, wl, vs, comps, pgs] = await Promise.all([
+      const [c, a, act, w, u, sp, ep, ch, all, wl, tm, vs, comps, pgs] = await Promise.all([
         api.comments.list(issueId).catch(() => []),
         api.attachments.list(issueId).catch(() => []),
         api.activity.list(issueId).catch(() => []),
@@ -72,6 +75,7 @@ export function useIssueDetail(
         detail.type !== 'subtask' ? api.epics.children(detail.id).catch(() => []) : Promise.resolve([]),
         detail.type === 'epic' ? api.issues.list(detail.project_id).catch(() => []) : Promise.resolve([]),
         api.worklogs.list(issueId).catch(() => []),
+        api.timers.get(issueId).catch(() => null),
         api.versions.list(detail.project_id).catch(() => []),
         api.components.list(detail.project_id).catch(() => []),
         api.issues.pages(issueId).catch(() => []),
@@ -86,6 +90,7 @@ export function useIssueDetail(
       setChildren(ch);
       setCandidates(all.filter((i) => i.type !== 'epic' && i.type !== 'subtask' && !i.parent_id));
       setWorklogs(wl);
+      setTimer(tm);
       setVersions(vs);
       setComponents(comps);
       setMentioningPages(pgs);
@@ -162,6 +167,31 @@ export function useIssueDetail(
       toast.error('Could not log work', { description: e instanceof Error ? e.message : undefined });
     } finally {
       setLoggingWork(false);
+    }
+  }
+
+  async function startTimer() {
+    if (!issue) return;
+    setTimerBusy(true);
+    try {
+      const state = await api.timers.start(issue.id);
+      setTimer(state);
+      // Only one timer runs per user, so starting here may have stopped one
+      // elsewhere. Say so rather than letting time silently move.
+      setPausedNotice(state.paused_issue ? `Paused your timer on ${state.paused_issue.issue_key}` : null);
+    } finally {
+      setTimerBusy(false);
+    }
+  }
+
+  async function pauseTimer() {
+    if (!issue) return;
+    setTimerBusy(true);
+    try {
+      setTimer(await api.timers.pause(issue.id));
+      setPausedNotice(null);
+    } finally {
+      setTimerBusy(false);
     }
   }
 
@@ -249,7 +279,7 @@ export function useIssueDetail(
 
   const watching = watchers.some((w) => w.id === user?.id);
 
-  return { issue, comments, attachments, activity, watchers, members, sprints, epics, children, candidates, mentioningPages, loading, capturing, commentBody, posting, subtaskTitle, addingSubtask, worklogs, versions, components, logOpen, logHours, logComment, estimateHours, loggingWork, editOpen, setIssue, setComments, setAttachments, setActivity, setWatchers, setMembers, setSprints, setEpics, setChildren, setCandidates, setMentioningPages, setLoading, setCapturing, setCommentBody, setPosting, setSubtaskTitle, setAddingSubtask, setWorklogs, setVersions, setComponents, setLogOpen, setLogHours, setLogComment, setEstimateHours, setLoggingWork, setEditOpen, canEdit, workflow, watching, user, load, patch, addComment, addSubtask, logWork, removeWorkLog, editWorkLog, saveEstimate, toggleWatch, uploadFiles, removeIssue, captureAsInsight, onChanged, onOpenIssue };
+  return { issue, comments, attachments, activity, watchers, members, sprints, epics, children, candidates, mentioningPages, loading, capturing, commentBody, posting, subtaskTitle, addingSubtask, worklogs, timer, timerBusy, pausedNotice, versions, components, logOpen, logHours, logComment, estimateHours, loggingWork, editOpen, setIssue, setComments, setAttachments, setActivity, setWatchers, setMembers, setSprints, setEpics, setChildren, setCandidates, setMentioningPages, setLoading, setCapturing, setCommentBody, setPosting, setSubtaskTitle, setAddingSubtask, setWorklogs, setVersions, setComponents, setLogOpen, setLogHours, setLogComment, setEstimateHours, setLoggingWork, setEditOpen, canEdit, workflow, watching, user, load, patch, addComment, addSubtask, logWork, startTimer, pauseTimer, removeWorkLog, editWorkLog, saveEstimate, toggleWatch, uploadFiles, removeIssue, captureAsInsight, onChanged, onOpenIssue };
 }
 
 export type IssueDetail = ReturnType<typeof useIssueDetail>;

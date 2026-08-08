@@ -347,8 +347,34 @@ export interface WorkLog {
   created_at: string;
   user_name: string | null;
   user_color: string | null;
-  source: 'manual' | 'auto';
+  source: 'manual' | 'auto' | 'timer';
   locked_from_auto: number;
+}
+
+export interface TimerUserTotal {
+  user_id: string;
+  name: string;
+  minutes: number;
+}
+
+export interface TimerState {
+  running: boolean;
+  started_at: string | null;
+  elapsed_minutes: number;
+  /** Open for more than 12h — surfaced as a warning, never auto-corrected. */
+  runaway: boolean;
+  by_user: TimerUserTotal[];
+  /** Set on a start response when it displaced a timer on another issue. */
+  paused_issue?: { id: string; issue_key: string } | null;
+}
+
+export interface MyTimer {
+  issue_id: string;
+  issue_key: string;
+  title: string;
+  started_at: string;
+  elapsed_minutes: number;
+  runaway: boolean;
 }
 
 export interface Comment {
