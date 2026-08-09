@@ -42,8 +42,9 @@ test('Issue type filter works on sprint detail', async ({ page }) => {
   await login(page);
   await page.goto('/sprints');
 
-  // Find the first sprint and click on it
-  const sprintName = page.locator('h3').first();
+  // Find the first sprint and click on it. The card title is a div, not a
+  // heading, so target the link's own data-sprint-slug hook instead.
+  const sprintName = page.locator('[data-sprint-slug]').first();
   await sprintName.click();
 
   // Wait for the sprint detail page to load
@@ -59,8 +60,10 @@ test('Issue type filter works on sprint detail', async ({ page }) => {
   // Click the filter dropdown (button with "All types" text)
   await page.getByRole('button', { name: 'Filter by issue type' }).click();
 
-  // Select only "Bug" type
-  await page.getByLabel('Bug').click();
+  // Select only "Bug" type. Scope to the menu item: the issue rows render
+  // type icons with the same "Bug" label, so an unscoped lookup is ambiguous.
+  await page.waitForSelector('[role="menuitemcheckbox"]');
+  await page.locator('[role="menuitemcheckbox"]').filter({ hasText: 'Bug' }).first().click();
 
   // Wait for the filter to be applied
   await page.waitForTimeout(100);
@@ -90,8 +93,9 @@ test('Cannot change status of completed sprint', async ({ page }) => {
   await page.getByRole('option', { name: 'completed' }).click();
   await page.waitForTimeout(200);
 
-  // Verify the sprint is now completed
-  const completedSprintCard = page.locator(`[data-testid*="${name}"], h3:has-text("${name}")`).first();
+  // Verify the sprint is now completed. The card title renders as a div, so
+  // find the card by its sprint link rather than by a heading.
+  const completedSprintCard = page.getByRole('link', { name }).first();
   await completedSprintCard.scrollIntoViewIfNeeded();
 
   // Verify no status dropdown in the card for completed sprint
@@ -126,8 +130,9 @@ test('Can filter sprint issues by type', async ({ page }) => {
   await login(page);
   await page.goto('/sprints');
 
-  // Find the first sprint and click on it
-  const sprintName = page.locator('h3').first();
+  // Find the first sprint and click on it. The card title is a div, not a
+  // heading, so target the link's own data-sprint-slug hook instead.
+  const sprintName = page.locator('[data-sprint-slug]').first();
   await sprintName.click();
 
   // Wait for the sprint detail page to load
@@ -165,8 +170,9 @@ test('Selecting no types shows all issues', async ({ page }) => {
   await login(page);
   await page.goto('/sprints');
 
-  // Find the first sprint and click on it
-  const sprintName = page.locator('h3').first();
+  // Find the first sprint and click on it. The card title is a div, not a
+  // heading, so target the link's own data-sprint-slug hook instead.
+  const sprintName = page.locator('[data-sprint-slug]').first();
   await sprintName.click();
 
   // Wait for the sprint detail page to load

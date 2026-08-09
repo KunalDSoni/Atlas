@@ -1,8 +1,28 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { login, assertNoCrash } from './helpers';
 
 // Feature merge E2E tests verifying the complete merge workflow
 // Tests use existing test credentials and handle async waits properly
+
+// Creating a feature deliberately opens that feature's detail sheet
+// (product-features.tsx calls setDetailId after a successful create), so the
+// modal covers the "New feature" button. Any test that creates more than one
+// feature has to dismiss the sheet, or the next create click never lands.
+async function createFeature(page: Page, name: string, description: string) {
+  await page.getByRole('button', { name: 'New feature' }).click();
+  await page.locator('input[placeholder="Feature name"]').fill(name);
+  await page.locator('textarea[placeholder="Description"]').fill(description);
+  await page.getByRole('button', { name: 'Create' }).click();
+  // .first(): creating several features in a row stacks multiple toasts, and an
+  // unscoped match is a strict-mode violation once the second one appears.
+  await expect(page.getByText('Feature created').first()).toBeVisible({ timeout: 5_000 });
+  await page.getByRole('button', { name: 'Create' }).waitFor({ state: 'hidden' });
+
+  // Close the detail sheet the create just opened, so the page is usable again.
+  await expect(page.locator('[role="dialog"]')).toBeVisible({ timeout: 5_000 });
+  await page.keyboard.press('Escape');
+  await expect(page.locator('[role="dialog"]')).toBeHidden({ timeout: 5_000 });
+}
 
 /**
  * Test 1: Merge Feature and Undo Within 24h Window
@@ -17,21 +37,11 @@ test.describe('Feature merge and undo', () => {
 
     // Create parent feature
     const parentName = `Parent Feature ${Date.now()}`;
-    await page.getByRole('button', { name: 'New feature' }).click();
-    await page.locator('input[placeholder="Feature name"]').fill(parentName);
-    await page.locator('textarea[placeholder="Description"]').fill('Parent feature for merge test');
-    await page.getByRole('button', { name: 'Create' }).click();
-    await expect(page.getByText('Feature created')).toBeVisible({ timeout: 5_000 });
-    await page.getByRole('button', { name: 'Create' }).waitFor({ state: 'hidden' });
+    await createFeature(page, parentName, 'Parent feature for merge test');
 
     // Create child feature
     const childName = `Child Feature ${Date.now()}`;
-    await page.getByRole('button', { name: 'New feature' }).click();
-    await page.locator('input[placeholder="Feature name"]').fill(childName);
-    await page.locator('textarea[placeholder="Description"]').fill('Child feature to merge into parent');
-    await page.getByRole('button', { name: 'Create' }).click();
-    await expect(page.getByText('Feature created')).toBeVisible({ timeout: 5_000 });
-    await page.getByRole('button', { name: 'Create' }).waitFor({ state: 'hidden' });
+    await createFeature(page, childName, 'Child feature to merge into parent');
 
     // Verify both features appear in the list
     await page.goto('/product/features');
@@ -58,28 +68,13 @@ test.describe('Prevent re-merging', () => {
     const featCName = `Feature C ${Date.now()}`;
 
     // Create Feature A
-    await page.getByRole('button', { name: 'New feature' }).click();
-    await page.locator('input[placeholder="Feature name"]').fill(featAName);
-    await page.locator('textarea[placeholder="Description"]').fill('Test feature A');
-    await page.getByRole('button', { name: 'Create' }).click();
-    await expect(page.getByText('Feature created')).toBeVisible({ timeout: 5_000 });
-    await page.getByRole('button', { name: 'Create' }).waitFor({ state: 'hidden' });
+    await createFeature(page, featAName, 'Test feature A');
 
     // Create Feature B
-    await page.getByRole('button', { name: 'New feature' }).click();
-    await page.locator('input[placeholder="Feature name"]').fill(featBName);
-    await page.locator('textarea[placeholder="Description"]').fill('Test feature B');
-    await page.getByRole('button', { name: 'Create' }).click();
-    await expect(page.getByText('Feature created')).toBeVisible({ timeout: 5_000 });
-    await page.getByRole('button', { name: 'Create' }).waitFor({ state: 'hidden' });
+    await createFeature(page, featBName, 'Test feature B');
 
     // Create Feature C
-    await page.getByRole('button', { name: 'New feature' }).click();
-    await page.locator('input[placeholder="Feature name"]').fill(featCName);
-    await page.locator('textarea[placeholder="Description"]').fill('Test feature C');
-    await page.getByRole('button', { name: 'Create' }).click();
-    await expect(page.getByText('Feature created')).toBeVisible({ timeout: 5_000 });
-    await page.getByRole('button', { name: 'Create' }).waitFor({ state: 'hidden' });
+    await createFeature(page, featCName, 'Test feature C');
 
     // Verify all features are listed
     await page.goto('/product/features');
