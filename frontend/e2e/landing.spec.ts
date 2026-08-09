@@ -41,10 +41,18 @@ test.describe('landing page', () => {
     const search = page.getByLabel(/search capabilities/i);
     const items = page.locator('#capabilities li');
 
-    const total = await items.count();
-    expect(total).toBe(165);
+    // `/` waits on the auth check and then lazy-loads the landing chunk, so for
+    // the first frames the page is a Suspense spinner with no list at all.
+    // locator.count() snapshots without retrying and reads 0 there, which is
+    // how this passed locally and failed on the colder CI runner. The assertion
+    // has to be the thing that waits — never a bare count().
+    const total = 165;
+    await expect(items).toHaveCount(total);
 
     await search.fill('sprint');
+    // Same hazard: wait for the filter to actually shrink the list before
+    // snapshotting its length.
+    await expect(items).not.toHaveCount(total);
     const filtered = await items.count();
     expect(filtered).toBeGreaterThan(0);
     expect(filtered).toBeLessThan(total);
