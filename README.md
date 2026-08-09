@@ -22,6 +22,17 @@ cd ../backend && npm install && node server.js
 For frontend development with hot reload, run the backend and then
 `cd frontend && npm run dev` — Vite proxies `/api` to port 3001.
 
+### The public landing page
+
+`/` serves a public marketing page to signed-out visitors and redirects
+signed-in users to `/dashboard`. `/login` is still the sign-in form; it is
+just no longer the front door.
+
+To enable the one-click demo button, set `DEMO_EMAIL` (see `.env.example`).
+The demo account is created with role `user`, and its workspace re-seeds on
+the first visit after `DEMO_RESET_HOURS`. Leaving `DEMO_EMAIL` unset disables
+`POST /api/auth/demo` entirely, and the button falls back to `/login`.
+
 ## Feature Overview
 
 ### ✅ Fully Implemented

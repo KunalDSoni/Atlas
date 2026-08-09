@@ -30,6 +30,11 @@ services:
         value: atlas
       - key: SEED_DEMO_DATA
         value: "false"
+      # Set to enable the public one-click demo. Unset -> /api/auth/demo 404s.
+      - key: DEMO_EMAIL
+        sync: false
+      - key: DEMO_NAME
+        value: Demo user
       - key: ADMIN_NAME
         value: Kunal Soni
       - key: ADMIN_EMAIL
