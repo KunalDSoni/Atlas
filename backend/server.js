@@ -105,7 +105,8 @@ app.get('/api/health/ready', async (req, res) => {
 });
 
 // Serve frontend
-app.use(express.static(path.join(__dirname, '..', 'frontend', 'build')));
+const BUILD_DIR = path.join(__dirname, '..', 'frontend', 'build');
+app.use(express.static(BUILD_DIR));
 
 // ===== API ROUTES (by module) =====
 
@@ -236,7 +237,14 @@ app.use('/api', deflectionRoutes);
 
 // SPA fallback (Express 5 compatible)
 app.get('/{*splat}', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'frontend', 'build', 'index.html'));
+  // A root plus a relative name, never one absolute path: send() applies its
+  // dotfile rule to the entire path it is handed, so an absolute path 404s the
+  // whole SPA whenever the checkout itself lives under a dot-directory — a git
+  // worktree in .claude/, a build under ~/.cache. Passing `root` scopes the
+  // check to 'index.html', keeping the protection on the requested file rather
+  // than on wherever the app happens to be installed. express.static above is
+  // already safe for the same reason: it only checks the request path.
+  res.sendFile('index.html', { root: BUILD_DIR });
 });
 
 // Start server
