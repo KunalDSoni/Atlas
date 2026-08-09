@@ -31,16 +31,21 @@ export const MetricsInput: React.FC<MetricsInputProps> = ({ featureId, onMetricR
     engagement: 'score',
   };
 
+  // Calendar dates are compared as ISO strings, never as Date objects: the
+  // field holds a YYYY-MM-DD string, and `new Date('YYYY-MM-DD')` parses it as
+  // UTC midnight. Comparing that against a local-midnight Date made every date
+  // read one day off for timezones ahead of UTC. The API decides both of these
+  // rules the same way (feature-impact-metrics.js anchors to UTC midnight), so
+  // matching it here keeps the client's warning and its guard honest.
+  const todayIso = () => new Date().toISOString().slice(0, 10);
+
   // Past the window the measurement is still accepted — it just lands frozen,
   // as audit trail. The checkbox below makes that consequence explicit rather
   // than letting someone discover it when they try to correct a typo.
   const isReadOnly = (() => {
-    const selectedDate = new Date(measurementDate);
-    const today = new Date();
-    const thirtyDaysAgo = new Date(today);
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    thirtyDaysAgo.setHours(0, 0, 0, 0);
-    return selectedDate < thirtyDaysAgo;
+    const cutoff = new Date();
+    cutoff.setUTCDate(cutoff.getUTCDate() - 30);
+    return measurementDate < cutoff.toISOString().slice(0, 10);
   })();
 
   const handleSubmit = async () => {
@@ -55,10 +60,7 @@ export const MetricsInput: React.FC<MetricsInputProps> = ({ featureId, onMetricR
       return;
     }
 
-    const selectedDate = new Date(measurementDate);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    if (selectedDate > today) {
+    if (measurementDate > todayIso()) {
       toast.error('Measurement date cannot be in the future');
       return;
     }

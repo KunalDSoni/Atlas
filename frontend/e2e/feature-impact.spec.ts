@@ -247,7 +247,13 @@ test.describe('Feature Impact Measurement — UI', () => {
     await expect(page.getByText('Avg Adoption Variance')).toBeVisible();
 
     // Empty dashboard would render 0 / N/A; this proves the rollup reached it.
-    await expect(page.getByText('N/A')).toHaveCount(0);
+    // Scoped to adoption on purpose: this test seeds no revenue data, so
+    // "Avg Revenue Variance: N/A" is correct and must not fail the assertion.
+    const adoptionVariance = page
+      .getByText('Avg Adoption Variance')
+      .locator('xpath=following-sibling::div[1]');
+    await expect(adoptionVariance).not.toHaveText('N/A');
+    await expect(adoptionVariance).toHaveText(/%$/);
     await expect(page.getByText('Adoption: Forecast vs Actual')).toBeVisible();
     await assertNoCrash(page);
   });
