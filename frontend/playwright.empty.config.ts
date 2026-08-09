@@ -10,6 +10,11 @@ const PORT = 3124;
 // See playwright.config.ts — /private/tmp exists only on macOS.
 const DB = path.join(os.tmpdir(), `atlas-e2e-empty-${process.pid}.db`);
 
+// Read by e2e/landing.spec.ts (via test.skip) to drop the signed-in case:
+// this fixture has no seeded kunal@example.com, only the bootstrap admin
+// above, so login() has nothing to authenticate against here.
+process.env.ATLAS_EMPTY = '1';
+
 export default defineConfig({
   testDir: './e2e-empty',
   timeout: 30_000,
@@ -23,7 +28,20 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    // landing.spec.ts lives in ../e2e (the seeded suite's directory) rather
+    // than under e2e-empty, since it is one spec file shared by both configs
+    // (see playwright.config.ts) — not a fixture written for this fresh-install
+    // scenario specifically. This project points at it directly so it still
+    // runs against the empty backend without duplicating the file.
+    {
+      name: 'chromium-landing',
+      testDir: './e2e',
+      testMatch: 'landing.spec.ts',
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ],
   webServer: {
     command:
       `SQLITE_PATH="${DB}" PORT=${PORT} SEED_DEMO_DATA=false SESSION_SECRET=e2e-empty-secret ` +
