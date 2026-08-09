@@ -11,6 +11,7 @@ import { AppShell } from '@/components/app/app-shell';
 import { ProjectScope } from '@/components/app/project-scope';
 import { LegacyProjectRedirect } from '@/components/app/legacy-redirect';
 import { PortalShell } from '@/components/app/portal-shell';
+import { LandingGate } from '@/components/app/landing-gate';
 import { PROJECT_SCREENS } from '@/lib/urls';
 import LoginScreen from '@/screens/login';
 
@@ -153,6 +154,7 @@ export default function App() {
         <AuthProvider>
           <Routes>
             <Route path="/login" element={<LoginScreen />} />
+            <Route path="/" element={<LandingGate />} />
             <Route path="/help/*" element={<HelpLayout />} />
             <Route path="/portal" element={<PortalShell />}>
               <Route index element={<Suspense fallback={<FullPageSpinner />}><Portal /></Suspense>} />
