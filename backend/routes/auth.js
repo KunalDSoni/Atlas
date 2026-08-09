@@ -12,7 +12,7 @@ const { auditLog } = require('../middleware/logger');
 const { verifyPassword, hashPassword } = require('../utils/password');
 const { loginRateLimit, clearRateLimit } = require('../middleware/ratelimit');
 const { serverError } = require('../utils/errors');
-const { seedDemo, isDemoStale } = require('../seed-demo');
+const { seedDemo, isDemoStale, ensureDemoUser } = require('../seed-demo');
 
 const router = express.Router();
 
@@ -93,9 +93,10 @@ router.post('/demo', loginRateLimit, async (req, res) => {
 
     const db = await getDb();
 
-    // Lazy reset: re-seed only when the workspace has gone stale. Runs when
-    // someone actually visits, so there is no scheduler to drift or fail.
-    if (await isDemoStale(db)) {
+    // Ensure the demo user exists and get its ID, then check if the demo project
+    // has gone stale and re-seed if needed.
+    const demoUserId = await ensureDemoUser(db);
+    if (await isDemoStale(db, demoUserId)) {
       await seedDemo(db);
     }
 

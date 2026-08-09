@@ -24,12 +24,17 @@ function resetHours() {
  * The project's own created_at IS the last-reset timestamp: a reset deletes
  * and recreates the row. That avoids inventing a settings table this schema
  * does not have.
+ *
+ * Requires the demo user ID to verify provenance: we only reset a DEMO-keyed
+ * project if it was actually created by the demo seeder (lead_id matches).
+ * This prevents destroying a real customer's project if they happen to key it
+ * 'DEMO' before the demo gets enabled.
  */
-async function isDemoStale(db) {
+async function isDemoStale(db, demoUserId) {
   const project = await queryOne(
     db,
-    'SELECT created_at FROM projects WHERE key = ?',
-    [DEMO_PROJECT_KEY]
+    'SELECT created_at, lead_id FROM projects WHERE key = ? AND lead_id = ?',
+    [DEMO_PROJECT_KEY, demoUserId]
   );
   if (!project) return true;
 
@@ -94,8 +99,20 @@ async function seedDemo(db) {
   // Drop the previous demo project and everything hanging off it. Explicit
   // deletes rather than relying on cascade: the schema does not declare
   // ON DELETE CASCADE on these tables.
-  const old = await queryOne(db, 'SELECT id FROM projects WHERE key = ?', [DEMO_PROJECT_KEY]);
+  //
+  // Only delete if lead_id matches the demo user — this prevents destroying a
+  // real customer's project in case DEMO_EMAIL was enabled after someone keyed
+  // a project 'DEMO'. If a non-demo-seeded DEMO-keyed project exists, refuse to
+  // reset and let the next visitor see a stale demo rather than losing their data.
+  const old = await queryOne(
+    db,
+    'SELECT id, lead_id FROM projects WHERE key = ?',
+    [DEMO_PROJECT_KEY]
+  );
   if (old) {
+    if (old.lead_id !== userId) {
+      throw new Error('A DEMO-keyed project exists but was not created by the demo seeder; refusing to reset to avoid data loss');
+    }
     await run(db, 'DELETE FROM issues WHERE project_id = ?', [old.id]);
     await run(db, 'DELETE FROM sprints WHERE project_id = ?', [old.id]);
     await run(db, 'DELETE FROM project_members WHERE project_id = ?', [old.id]);
@@ -161,4 +178,4 @@ async function seedDemo(db) {
   );
 }
 
-module.exports = { seedDemo, isDemoStale, DEMO_PROJECT_KEY };
+module.exports = { seedDemo, isDemoStale, ensureDemoUser, DEMO_PROJECT_KEY };

@@ -121,6 +121,52 @@ describe('seedDemo role safety', () => {
 
     await expect(seedDemo(db)).rejects.toThrow(/non-demo account/);
   });
+
+  test('throws when a non-demo-seeded DEMO-keyed project exists', async () => {
+    const { getDb, run, queryOne } = require('../../database');
+    const { seedDemo, ensureDemoUser } = require('../../seed-demo');
+    const { v4: uuidv4 } = require('uuid');
+    const db = await getDb();
+
+    process.env.DEMO_EMAIL = 'demo-for-test@example.com';
+    const demoUserId = await ensureDemoUser(db);
+
+    // First, delete any existing DEMO project (from prior tests) to create a
+    // clean slate for this scenario.
+    await run(db, 'DELETE FROM issues WHERE project_id IN (SELECT id FROM projects WHERE key = ?)', ['DEMO']);
+    await run(db, 'DELETE FROM sprints WHERE project_id IN (SELECT id FROM projects WHERE key = ?)', ['DEMO']);
+    await run(db, 'DELETE FROM project_members WHERE project_id IN (SELECT id FROM projects WHERE key = ?)', ['DEMO']);
+    await run(db, 'DELETE FROM projects WHERE key = ?', ['DEMO']);
+
+    // Create a DEMO-keyed project owned by a different user (simulating a
+    // real customer's project that was keyed 'DEMO' before demo mode was enabled).
+    const adminId = uuidv4();
+    const projectId = uuidv4();
+    await run(
+      db,
+      `INSERT INTO users (id, name, email, password, role, avatar_color, is_active, created_at)
+       VALUES (?, 'Real Admin', 'admin-user@example.com', 'hashedpassword', 'admin', '#0c66e4', 1, datetime('now'))`,
+      [adminId]
+    );
+    await run(
+      db,
+      `INSERT INTO projects (id, name, key, lead_id, created_at)
+       VALUES (?, 'Customers Project', 'DEMO', ?, datetime('now', '-10 days'))`,
+      [projectId, adminId]
+    );
+
+    // seedDemo should refuse to reset this project since it was not created
+    // by the demo seeder (lead_id is adminId, not demoUserId).
+    await expect(seedDemo(db)).rejects.toThrow(/data loss/);
+
+    // Verify the customer's project still exists and was not deleted.
+    const project = await queryOne(db, 'SELECT id, lead_id FROM projects WHERE key = ?', ['DEMO']);
+    expect(project.id).toBe(projectId);
+    expect(project.lead_id).toBe(adminId);
+
+    // Clean up: delete the non-demo-seeded project so it doesn't interfere with later tests.
+    await run(db, 'DELETE FROM projects WHERE id = ?', [projectId]);
+  });
 });
 
 // The demo route is rate limited and, by design, never clears the bucket on
