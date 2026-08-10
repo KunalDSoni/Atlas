@@ -7,7 +7,7 @@ const NO_VERSION = '__no_version__';
 const NO_COMPONENT = '__no_component__';
 
 import { useEffect, useState } from 'react';
-import { Clock, Loader2, Pencil, Trash2 } from 'lucide-react';
+import { Clock, Loader2, Pause, Pencil, Play, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -211,6 +211,46 @@ export function IssueFields({ detail }: { detail: IssueDetail }) {
                       <> · {formatDuration(Math.max(0, (issue.original_estimate ?? 0) - (issue.time_spent ?? 0)))} left</>
                     )}
                   </p>
+                  {/* The stopwatch lives here rather than behind Log work: a control
+                      nobody can find is a control nobody uses, and the runaway warning
+                      below is worthless inside a dialog you have no reason to open. */}
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant={timer?.running ? 'secondary' : 'default'}
+                      size="sm"
+                      className="flex-1 gap-1.5"
+                      onClick={timer?.running ? pauseTimer : startTimer}
+                      disabled={timerBusy}
+                      aria-label={timer?.running ? 'Pause timer' : 'Start timer'}
+                    >
+                      {timerBusy ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : timer?.running ? (
+                        <><Pause className="size-3.5" /> Pause</>
+                      ) : (
+                        <><Play className="size-3.5" /> Start timer</>
+                      )}
+                    </Button>
+                    {timer && (timer.running || timer.elapsed_minutes > 0) && (
+                      // formatDuration renders 0 as an em-dash, which next to a live
+                      // Pause button reads as "broken" rather than "under a minute".
+                      <span className="text-sm tabular-nums" aria-label="Time logged by timer">
+                        {liveElapsed > 0 ? formatDuration(liveElapsed) : '0m'}
+                      </span>
+                    )}
+                  </div>
+
+                  {pausedNotice && (
+                    <p className="text-xs text-muted-foreground">{pausedNotice}</p>
+                  )}
+
+                  {timer?.runaway && (
+                    <p className="text-xs text-destructive">
+                      Timer has been running over 12 hours — still working?{' '}
+                      <button className="underline" onClick={pauseTimer}>Pause it</button>
+                    </p>
+                  )}
+
                   <Button variant="outline" size="sm" className="w-full gap-1.5" onClick={() => setLogOpen(true)}>
                     <Clock className="size-3.5" /> Log work
                   </Button>
@@ -263,35 +303,6 @@ export function IssueFields({ detail }: { detail: IssueDetail }) {
                   {issue.in_progress_minutes_live !== null && (
                     <p className="text-xs text-muted-foreground">
                       In progress: {formatDuration(issue.in_progress_minutes_live)}
-                    </p>
-                  )}
-
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant={timer?.running ? 'secondary' : 'default'}
-                      onClick={timer?.running ? pauseTimer : startTimer}
-                      disabled={timerBusy}
-                      aria-label={timer?.running ? 'Pause timer' : 'Start timer'}
-                    >
-                      {timerBusy
-                        ? <Loader2 className="size-4 animate-spin" />
-                        : timer?.running ? 'Pause' : 'Start timer'}
-                    </Button>
-                    {timer && (timer.running || timer.elapsed_minutes > 0) && (
-                      <span className="text-sm tabular-nums">
-                        {formatDuration(liveElapsed)}
-                      </span>
-                    )}
-                  </div>
-
-                  {pausedNotice && (
-                    <p className="text-xs text-muted-foreground">{pausedNotice}</p>
-                  )}
-
-                  {timer?.runaway && (
-                    <p className="text-xs text-destructive">
-                      Timer has been running over 12 hours — still working?{' '}
-                      <button className="underline" onClick={pauseTimer}>Pause it</button>
                     </p>
                   )}
 
