@@ -22,7 +22,9 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-          cache-dependency-path: backend/package-lock.json
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
 
       - name: Install dependencies
         working-directory: backend
@@ -32,9 +34,24 @@ jobs:
         working-directory: backend
         run: npm run test:backend
 
-      - name: Run frontend tests
+      # Named "frontend tests" but it runs backend/tests/frontend, whose single
+      # file asserts the built artifacts exist and SKIPS when they do not. This
+      # job never builds, so every one of those tests skipped and the step
+      # reported green while checking nothing.
+      - name: Check built SPA artifacts (skips when not built)
         working-directory: backend
         run: npm run test:frontend
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # The real frontend unit tests. These run under vitest, which until now no
+      # workflow invoked at all — 35 tests across four files existed, passed
+      # locally, and protected nothing on main.
+      - name: Run frontend unit tests
+        working-directory: frontend
+        run: npx vitest run
 
   # The jest suites never render the app. The zero-project regression documented
   # in KNOWN-ISSUES.md — a fresh deployment with no way to create its first
