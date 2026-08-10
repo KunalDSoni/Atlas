@@ -1,63 +1,62 @@
 # Known Issues
 
-## OPEN — an abandoned stopwatch timer without a business-hours profile logs its full wall-clock span on Done
+## RESOLVED — an abandoned stopwatch timer logged its full wall-clock span on Done
 
-**Symptom.** If a user starts the issue stopwatch (`docs/superpowers/specs/2026-08-08-issue-stopwatch-timer-design.md`)
-and never pauses it — the issue reaches a Done-category status days later,
-still with an open `timer_segments` row — the committed work log records the
-entire multi-day wall-clock span as tracked time (e.g. a segment opened
-Friday and left running is committed as ~64 hours on Monday), rather than
-being clipped to real working hours. This is the same overcounting problem
-the pre-existing auto-tracking feature already solves for its own derived
-calculation via `businessMinutesBetween`.
+**Symptom.** A user started the issue stopwatch
+(`docs/superpowers/specs/2026-08-08-issue-stopwatch-timer-design.md`) and never
+paused it. The issue reached a Done-category status days later with the
+`timer_segments` row still open, and the committed work log recorded the entire
+multi-day wall-clock span as tracked time — a segment opened Friday and left
+running was committed as ~64 hours on Monday.
 
-**Root cause.** `closeStaleSegments(db, { issueId })` — the path used by the
-Done-transition handler in `backend/routes/issues.js` — correctly delegates
-to the per-tracker, business-hours-aware repair
-(`closeStaleSegments(db, { userId })`) before doing its own unconditional
-close. That per-user repair clips a stale segment to its workday end
-**only when a `business_hours` profile resolves** for that
-project/user. When no profile resolves — the case `workdayEndFor` returns
-`null` for (`backend/utils/timers.js`): no profile configured, the
-segment's start day isn't a work day, or the start is already after that
-day's close hour — the segment is deliberately left open rather than
-truncated, per the spec's rule against fabricating an implicit cutoff. It
-then falls through to the Done handler's unconditional close, which commits
-the segment's raw span with no clipping at all.
+**Root cause.** Two, and only the first was understood when this was written.
 
-This iteration ships **no settings UI** for `business_hours` (an explicit,
-documented non-goal of the design), so on an unconfigured project — the
-default — every abandoned timer hits the unclipped path, not the clipped
-one.
+1. `closeStaleSegments(db, { userId })` clipped a stale segment to its workday
+   end **only when a `business_hours` profile resolved**. When
+   `workdayEndFor` returned `null` — no profile configured, the start day not a
+   work day, or a start after that day's close — the segment was deliberately
+   left open rather than truncated, per the spec's rule against fabricating an
+   implicit cutoff. It then fell through to the Done handler's unconditional
+   close, which committed the raw span with no clipping. With no settings UI for
+   `business_hours`, the unconfigured project was the default, so nearly every
+   abandoned timer took the unclipped path.
 
-**Why this shipped anyway.** The fix implemented during the final review
-(commit `5262268`) correctly closes the gap for the case a business-hours
-profile *is* configured, and the multi-day-abandoned-segment reproduction
-that motivated the fix is a real regression test now
-(`backend/tests/backend/auto-worklog.test.js`, "a segment abandoned days
-ago is clipped to its workday end on Done"). Closing the remaining,
-unconfigured-project case is a product decision — whether an unclippable
-abandoned segment should fall back to the pre-existing derived
-auto-calculation, be flagged for human review instead of auto-committing,
-or something else — not a mechanical fix, and the spec's explicit
-"never fabricate a cutoff" rule forecloses the simplest options. Shipping
-with this documented, rather than picking one of those design directions
-unreviewed, was the deliberate call.
+2. `localMidnightUtc` in `backend/utils/flow.js` inferred a timezone's UTC
+   offset by rendering `Y-M-D 00:00Z` in that zone and reading back the hour,
+   which silently assumed east of Greenwich. In New York that guess renders as
+   19:00 on the *previous* day, so an offset of -5h was read as +19h and every
+   result landed a full calendar day early. `workdayEndFor` therefore rejected
+   every boundary it computed for any user west of Greenwich, and
+   `businessMinutesBetween` returned 0 for a whole workday. Configuring a
+   profile — the mitigation this document recommended — did not help those
+   users at all. Every fixture in the repo used `timezone: 'UTC'`, where the
+   sign error is invisible.
 
-**Mitigation until fixed.** The live-timer UI (web and mobile) already
-surfaces a "still running past 12 hours" warning while the issue is open —
-the practical exposure is bounded by how long an issue stays open with an
-unpaused timer before someone notices, not the theoretical worst case.
-Configuring a `business_hours` profile via the API (no UI yet) fully
-eliminates this for a given project or user today.
+**Resolution** (`05e3f08`). The offset is now derived with its sign, refined
+once for DST-transition days, and covered across ten zones including half-hour
+and quarter-hour offsets.
 
-**If you pick this up:** the fix point is the Done-transition handler in
-`backend/routes/issues.js`, right after the per-tracker repair loop and
-before the unconditional `closeStaleSegments(db, { issueId: updated.id })`
-call — decide there whether a still-open, unclippable segment should be
-excluded from `commitTimer` and let `applyAutoWorklog` cover that tracker's
-share instead, consistent with the non-goal that this feature must never
-invent a business-hours default.
+For the design question this entry deferred — what to do with a segment that has
+no defensible business-hours boundary — the call went the other way from what it
+anticipated. A segment open longer than `ABANDONED_AFTER_MINUTES` is now capped
+at `RUNAWAY_MINUTES` of credited time. Leaving it open was never the
+conservative option it appeared to be: an open segment re-measures against `now`
+on every read, so it inflated per-user totals without bound and committed the
+whole span at Done. Capping is a smaller error than that, and unlike the open
+segment it is *visible* — every automatic close records why in
+`timer_segments.auto_stopped`, the issue rail explains it, and a human
+correction now sticks (`timer_segments.settled_at`) instead of being rewritten
+by the next commit.
+
+The rule against fabricating a cutoff is preserved where it matters: the cap
+never truncates a live same-day timer, and the threshold is deliberately twice
+the runaway-warning threshold so the user gets a full 12 hours to see the
+warning and pause it themselves, keeping their real elapsed time.
+
+**Historical data.** Segments already closed and committed with an impossible
+span keep it — the cap only applies to segments still open. `node
+backend/scripts/repair-timer-overcounts.js` re-caps them and rewrites the
+affected work logs. Dry run by default; `--apply` to write.
 
 ## RESOLVED — a fresh deployment had no way to create the first project
 

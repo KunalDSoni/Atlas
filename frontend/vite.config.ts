@@ -21,5 +21,11 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./vitest.setup.ts'],
+    // Unit tests only. Without this vitest sweeps the whole tree, picks up the
+    // Playwright specs in e2e/, and fails ~20 files on an unresolvable
+    // @playwright/test import — so `npm test` greeted everyone with a wall of
+    // red that meant nothing, and buried any real failure in it.
+    // The browser specs run under `npm run test:e2e`.
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
   },
 } as any);
