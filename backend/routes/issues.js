@@ -376,7 +376,11 @@ router.get('/issues/:id', requireAuth, async (req, res) => {
     if (!issue) return res.status(404).json({ error: 'Issue not found' });
     const enriched = await enrichIssue(db, issue);
     const statuses = await projectStatuses(db, issue.project_id);
-    enriched.in_progress_minutes_live = await liveInProgressMinutes(db, issue, statuses);
+    const live = await liveInProgressMinutes(db, issue, statuses);
+    enriched.in_progress_minutes_live = live ? live.minutes : null;
+    // Whether that figure is working time or raw wall-clock. The UI must say
+    // which; the same number means very different things.
+    enriched.in_progress_business_hours = live ? live.clipped : null;
     res.json(enriched);
   } catch (e) { serverError(res, e); }
 });
@@ -557,6 +561,13 @@ router.delete('/issues/:id', requireAuth, requireBoardAdmin, async (req, res) =>
     await run(db, 'DELETE FROM issue_watchers WHERE issue_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM issue_links WHERE source_issue_id = ? OR target_issue_id = ?', [req.params.id, req.params.id]);
     await run(db, 'DELETE FROM wiki_page_issues WHERE issue_id = ?', [req.params.id]);
+    // Time tracking cascades too. These were previously left behind, so every
+    // deleted issue orphaned its work logs and timer segments. The reports all
+    // JOIN issues so the rows stayed invisible rather than wrong, but they
+    // accumulated forever and any future query that forgot the join would
+    // silently count time against an issue nobody can open.
+    await run(db, 'DELETE FROM work_logs WHERE issue_id = ?', [req.params.id]);
+    await run(db, 'DELETE FROM timer_segments WHERE issue_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM issues WHERE id = ?', [req.params.id]);
     auditLog({ userId: req.userId, action: 'Deleted issue', category: 'issues', entityType: 'issue', entityId: req.params.id, entityName: issue ? issue.issue_key : req.params.id });
     if (issue) dispatchWebhook(db, issue.project_id, 'issue.deleted', { id: issue.id, issue_key: issue.issue_key });

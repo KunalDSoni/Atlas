@@ -88,7 +88,9 @@ describe('IssueDetailScreen time section', () => {
 
     const { findByText } = await renderWithClient(<IssueDetailScreen route={route as any} navigation={{} as any} />);
 
-    expect(await findByText(/In progress/)).toBeTruthy();
+    // Status age, deliberately not worded as tracked time — see the label note
+    // in IssueDetailScreen and the web field rail.
+    expect(await findByText(/in-progress status for/)).toBeTruthy();
     expect(await findByText('Start timer')).toBeTruthy();
   });
 

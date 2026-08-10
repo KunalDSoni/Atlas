@@ -157,3 +157,49 @@ describe('localMidnightUtc / isoWeekdayInTz (exported for utils/timers.js)', () 
     expect(isoWeekdayInTz(new Date('2026-07-05T12:00:00Z'), 'UTC')).toBe(7);
   });
 });
+
+describe('localMidnightUtc across the date line', () => {
+  const { localMidnightUtc } = require('../../utils/flow');
+  // The zone's UTC offset must be subtracted WITH ITS SIGN. Inferring it by
+  // rendering 'Y-M-D 00:00Z' in the zone and reading back the hour silently
+  // assumed east of Greenwich: in New York that guess renders as 19:00 on the
+  // PREVIOUS day, so an offset of -5h was read as +19h and every result landed
+  // a full calendar day early. Nothing caught it because every existing
+  // fixture in this repo used timezone 'UTC', where the two agree.
+  test.each([
+    ['Asia/Kolkata', '2026-08-10T16:00:00Z', '2026-08-09T18:30:00.000Z'],
+    ['UTC', '2026-08-10T16:00:00Z', '2026-08-10T00:00:00.000Z'],
+    ['America/New_York', '2026-08-10T16:00:00Z', '2026-08-10T04:00:00.000Z'],
+    ['America/Los_Angeles', '2026-08-10T16:00:00Z', '2026-08-10T07:00:00.000Z'],
+    ['America/Sao_Paulo', '2026-08-10T16:00:00Z', '2026-08-10T03:00:00.000Z'],
+    ['Australia/Sydney', '2026-08-10T16:00:00Z', '2026-08-10T14:00:00.000Z'],
+    ['Asia/Kathmandu', '2026-08-10T16:00:00Z', '2026-08-09T18:15:00.000Z'],
+    // DST transition days: the offset in force at the naive guess differs from
+    // the one in force at real local midnight.
+    ['America/New_York', '2026-03-08T18:00:00Z', '2026-03-08T05:00:00.000Z'],
+    ['America/New_York', '2026-11-01T18:00:00Z', '2026-11-01T04:00:00.000Z'],
+    ['Europe/London', '2026-03-29T12:00:00Z', '2026-03-29T00:00:00.000Z'],
+  ])('%s at %s', (timezone, instant, expected) => {
+    expect(localMidnightUtc(new Date(instant), timezone).toISOString()).toBe(expected);
+  });
+});
+
+describe('businessMinutesBetween outside UTC', () => {
+  const NEW_YORK = { timezone: 'America/New_York', work_days: [1, 2, 3, 4, 5], start_hour: 9, end_hour: 18 };
+
+  test('counts a full workday west of Greenwich', () => {
+    // Mon 2026-07-06, 09:00 -> 18:00 New York. Returned 0 while the day
+    // window was built around the wrong calendar day.
+    expect(businessMinutesBetween('2026-07-06 13:00:00', '2026-07-06 22:00:00', NEW_YORK)).toBe(540);
+  });
+
+  test('excludes the overnight gap between two working days', () => {
+    // Mon 09:00 New York -> Tue 18:00 New York is two 9h days, not 33h.
+    expect(businessMinutesBetween('2026-07-06 13:00:00', '2026-07-07 22:00:00', NEW_YORK)).toBe(1080);
+  });
+
+  test('excludes a weekend west of Greenwich', () => {
+    // Fri 18:00 -> Mon 09:00 New York is entirely outside working hours.
+    expect(businessMinutesBetween('2026-07-03 22:00:00', '2026-07-06 13:00:00', NEW_YORK)).toBe(0);
+  });
+});

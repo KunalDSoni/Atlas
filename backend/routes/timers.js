@@ -46,7 +46,13 @@ router.post('/issues/:issueId/timer/pause', requireAuth, async (req, res) => {
     const db = await getDb();
     if (!(await requireIssue(db, req.params.issueId, res))) return;
 
-    await pauseTimer(db, req.params.issueId, req.userId);
+    // Commit on pause, not only when the issue reaches Done. Until this, the
+    // commit endpoint below was the sole writer of timer work logs and no
+    // client ever called it, so tracked time sat in timer_segments and was
+    // absent from issues.time_spent, the time-tracking report and the rail's
+    // own "logged" line — the stopwatch read 2h 30m directly above "— logged".
+    // Issues that never reach a done status never reported the time at all.
+    await commitTimer(db, req.params.issueId, req.userId);
     res.json(await timerState(db, req.params.issueId, req.userId));
   } catch (e) { serverError(res, e); }
 });
@@ -79,10 +85,14 @@ router.get('/me/timer', requireAuth, async (req, res) => {
     const db = await getDb();
     await closeStaleSegments(db, { userId: req.userId });
 
+    // ORDER BY: two open segments should be impossible, but startTimer's
+    // check-then-insert is not atomic across devices. Without an order the
+    // banner would flip between them at random on each poll; newest wins.
     const open = await queryOne(db, `
       SELECT t.issue_id, t.started_at, i.issue_key, i.title
       FROM timer_segments t JOIN issues i ON i.id = t.issue_id
-      WHERE t.user_id = ? AND t.ended_at IS NULL`, [req.userId]);
+      WHERE t.user_id = ? AND t.ended_at IS NULL
+      ORDER BY t.started_at DESC`, [req.userId]);
     if (!open) return res.json(null);
 
     const elapsed = Math.round(

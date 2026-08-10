@@ -57,9 +57,16 @@ async function applyAutoWorklog(db, issue, statuses, fallbackActorId) {
 }
 
 /**
- * Live (uncommitted) in-progress minutes for an issue currently sitting in an
+ * Live (uncommitted) in-progress time for an issue currently sitting in an
  * in_progress-category status, measured against now. Null when the issue's
  * current status isn't in that category — nothing to show.
+ *
+ * Returns `{ minutes, clipped }`. `clipped` is false when no business-hours
+ * profile resolves for the issue, and it matters: without a profile
+ * businessMinutesBetween falls through to raw wall-clock, so the number counts
+ * every night and weekend the issue sat in the column. A fortnight in progress
+ * reads as "289h", which is indistinguishable from a tracked-time figure
+ * unless the caller can say which one it is.
  */
 async function liveInProgressMinutes(db, issue, statuses) {
   if (categoryOf(issue.status, statuses) !== 'in_progress') return null;
@@ -76,7 +83,7 @@ async function liveInProgressMinutes(db, issue, statuses) {
     .filter((seg) => seg.to !== null)
     .reduce((sum, seg) => sum + businessMinutesBetween(seg.from, seg.to, profile), 0);
   const openMinutes = businessMinutesBetween(openSegment.from, now, profile);
-  return Math.round(closedTotal + openMinutes);
+  return { minutes: Math.round(closedTotal + openMinutes), clipped: !!profile };
 }
 
 module.exports = { inProgressSegments, applyAutoWorklog, liveInProgressMinutes };

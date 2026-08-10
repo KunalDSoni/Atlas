@@ -187,7 +187,13 @@ export interface Issue {
   subtask_done_count: number;
   original_estimate: number | null;
   time_spent: number | null;
+  /**
+   * How long the issue has sat in an in-progress status. Derived from the
+   * status timeline — unrelated to the stopwatch, and never part of `time_spent`.
+   */
   in_progress_minutes_live: number | null;
+  /** False when the figure above is raw wall-clock (no business-hours profile). */
+  in_progress_business_hours?: boolean | null;
   fix_version_id: string | null;
   component_id: string | null;
   fix_version_name: string | null;
@@ -357,12 +363,21 @@ export interface TimerUserTotal {
   minutes: number;
 }
 
+/** Why the server closed a timer segment the user never paused. */
+export type TimerStopReason = 'workday_end' | 'abandoned' | 'issue_done' | 'switched_issue';
+
 export interface TimerState {
   running: boolean;
   started_at: string | null;
   elapsed_minutes: number;
   /** Open for more than 12h — surfaced as a warning, never auto-corrected. */
   runaway: boolean;
+  /**
+   * A stop the user did not ask for, within the last 24h. Null while a timer
+   * is running. Without this a server-side close is indistinguishable from the
+   * timer breaking, which is how it was reported.
+   */
+  auto_stopped: { reason: TimerStopReason; stopped_at: string } | null;
   by_user: TimerUserTotal[];
   /** Set on a start response when it displaced a timer on another issue. */
   paused_issue?: { id: string; issue_key: string } | null;

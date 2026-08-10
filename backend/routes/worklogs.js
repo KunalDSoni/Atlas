@@ -12,6 +12,7 @@ const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
 const { recomputeTimeSpent } = require('../utils/worklog-sync');
+const { settleSegments } = require('../utils/timers');
 
 const router = express.Router();
 
@@ -86,6 +87,18 @@ router.patch('/worklogs/:id', requireAuth, async (req, res) => {
       await run(db, 'UPDATE issues SET auto_worklog_locked = 1 WHERE id = ?', [log.issue_id]);
     }
 
+    // A timer entry needs the same protection, and needs it at the source.
+    // Converting the row alone is not enough: commitTimer re-derives a fresh
+    // source='timer' row from timer_segments on the next pause or done
+    // transition, so the correction would either be overwritten or added to.
+    // Settling the segments hands ownership of that time to the human's row
+    // and takes the stopwatch out of the loop for good.
+    if (log.source === 'timer') {
+      updates.push("source = 'manual'", 'locked_from_auto = 1');
+      await run(db, 'UPDATE issues SET auto_worklog_locked = 1 WHERE id = ?', [log.issue_id]);
+      await settleSegments(db, log.issue_id, log.user_id);
+    }
+
     params.push(req.params.id);
     await run(db, `UPDATE work_logs SET ${updates.join(', ')} WHERE id = ?`, params);
     await recomputeTimeSpent(db, log.issue_id);
@@ -108,6 +121,22 @@ router.delete('/worklogs/:id', requireAuth, async (req, res) => {
     // Deleting an auto entry is "I don't want this counted" — lock the issue
     // so the next completion doesn't regenerate it (utils/auto-worklog.js).
     if (log.source === 'auto') {
+      await run(db, 'UPDATE issues SET auto_worklog_locked = 1 WHERE id = ?', [log.issue_id]);
+    }
+
+    // Same intent for a timer entry, but the lock alone cannot deliver it:
+    // commitTimer rebuilds the row from timer_segments, so without settling
+    // them the entry reappears on the next pause or done transition and the
+    // deletion silently undoes itself. The segments are kept, not dropped —
+    // they stay as the record of what was tracked, just no longer as the
+    // source of a work log.
+    // The lock is still needed alongside it, for the same reason the auto
+    // branch above sets it: once every tracker's time is settled the next done
+    // transition sees zero tracked minutes and falls through to the
+    // status-derived calculation, so "I don't want this counted" would come
+    // back as an inferred 'auto' row instead of a timer one.
+    if (log.source === 'timer') {
+      await settleSegments(db, log.issue_id, log.user_id);
       await run(db, 'UPDATE issues SET auto_worklog_locked = 1 WHERE id = ?', [log.issue_id]);
     }
 

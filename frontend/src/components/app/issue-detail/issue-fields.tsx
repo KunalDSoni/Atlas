@@ -19,8 +19,27 @@ import { EPIC_COLORS, PRIORITIES, PRIORITY_LABEL, epicColor, isAdmin } from '@/l
 import { formatDuration, timeAgo } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { PriorityIcon, UserAvatar } from '../primitives';
-import type { IssueStatus, Priority } from '@/lib/types';
+import type { IssueStatus, Priority, TimerStopReason } from '@/lib/types';
 import type { IssueDetail } from './use-issue-detail';
+
+/**
+ * Why the server stopped a timer the user never paused. Phrased as what
+ * happened and what it cost, because the only useful response is "that's
+ * wrong, let me correct it" — a bare "timer stopped" reads as a malfunction,
+ * which is how this was reported in the first place.
+ */
+const STOP_REASON_TEXT: Record<TimerStopReason, string> = {
+  workday_end: 'left running overnight, so it was stopped at the end of that working day',
+  abandoned: 'left running for more than a day, so it was capped at 12 hours',
+  issue_done: 'stopped because this issue was moved to a done status',
+  switched_issue: 'stopped because you started a timer on another issue',
+};
+
+// A reason this build does not know about — an older client against a newer
+// server — must not render "Your timer was  (2 hours ago)". The stop is still
+// worth reporting; only the explanation is missing.
+const stopReasonText = (reason: TimerStopReason) =>
+  STOP_REASON_TEXT[reason] ?? 'stopped automatically';
 
 export function IssueFields({ detail }: { detail: IssueDetail }) {
   const { issue, members, sprints, epics, worklogs, versions, components, logOpen, logHours, logComment, estimateHours, loggingWork, setLogOpen, setLogHours, setLogComment, setEstimateHours, canEdit, workflow, user, patch, logWork, removeWorkLog, editWorkLog, saveEstimate, timer, timerBusy, pausedNotice, startTimer, pauseTimer } = detail;
@@ -251,6 +270,14 @@ export function IssueFields({ detail }: { detail: IssueDetail }) {
                     </p>
                   )}
 
+                  {timer?.auto_stopped && !timer.running && (
+                    <p className="text-xs text-muted-foreground" role="status">
+                      Your timer was {stopReasonText(timer.auto_stopped.reason)} (
+                      {timeAgo(timer.auto_stopped.stopped_at)}). Adjust the entry below if
+                      that is wrong.
+                    </p>
+                  )}
+
                   <Button variant="outline" size="sm" className="w-full gap-1.5" onClick={() => setLogOpen(true)}>
                     <Clock className="size-3.5" /> Log work
                   </Button>
@@ -300,9 +327,21 @@ export function IssueFields({ detail }: { detail: IssueDetail }) {
                       </div>
                     </div>
                   )}
-                  {issue.in_progress_minutes_live !== null && (
+                  {/* Status age, NOT tracked time — it comes from the status
+                      timeline, has nothing to do with the stopwatch, and is
+                      not part of "logged". Labelled "In progress: 289h" beside
+                      the timer it was read as timer output; say what it
+                      measures, and say when it is raw wall-clock rather than
+                      working hours (no business-hours profile configured). */}
+                  {issue.in_progress_minutes_live !== null && issue.in_progress_minutes_live !== undefined && (
                     <p className="text-xs text-muted-foreground">
-                      In progress: {formatDuration(issue.in_progress_minutes_live)}
+                      Sitting in an in-progress status for{' '}
+                      {formatDuration(issue.in_progress_minutes_live)}
+                      {issue.in_progress_business_hours === false && ' of elapsed time'}
+                      {' — not counted as logged work.'}
+                      {issue.in_progress_business_hours === false && (
+                        <> Set business hours on the project to measure this in working hours.</>
+                      )}
                     </p>
                   )}
 

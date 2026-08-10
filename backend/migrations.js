@@ -1179,6 +1179,41 @@ const MIGRATIONS = [
       },
     ],
   },
+  {
+    id: '030_timer_auto_stop_reason',
+    description: 'Record why a segment was closed by the system rather than by the user',
+    steps: [
+      {
+        // NULL means the user pressed Pause (or the segment is still running).
+        // Any other value means the server closed it, and the UI owes the user
+        // an explanation: a timer that stops with no visible cause is
+        // indistinguishable from a bug, which is exactly how the silent
+        // overnight close was reported.
+        addColumn: {
+          table: 'timer_segments', column: 'auto_stopped',
+          sqlite: 'ALTER TABLE timer_segments ADD COLUMN auto_stopped TEXT',
+          mysql: 'ALTER TABLE timer_segments ADD COLUMN auto_stopped VARCHAR(24)',
+        },
+      },
+    ],
+  },
+  {
+    id: '031_timer_segments_settled',
+    description: 'Mark segments whose time a human has taken ownership of',
+    steps: [
+      {
+        // Set when the user edits or deletes the source='timer' work log these
+        // segments produced. The stopwatch stops managing that time from then
+        // on: without this, commitTimer re-derives the row from the segments on
+        // the next done transition and silently reverts the human's correction.
+        addColumn: {
+          table: 'timer_segments', column: 'settled_at',
+          sqlite: 'ALTER TABLE timer_segments ADD COLUMN settled_at DATETIME',
+          mysql: 'ALTER TABLE timer_segments ADD COLUMN settled_at DATETIME',
+        },
+      },
+    ],
+  },
 ];
 
 const LEDGER_SQL = {

@@ -192,6 +192,17 @@ export function useIssueDetail(
     try {
       setTimer(await api.timers.pause(issue.id));
       setPausedNotice(null);
+      // Pausing now writes the session to work_logs server-side, so the
+      // "logged" total and the worklog list below it are both stale the moment
+      // this returns. Leaving them would show a stopwatch reading 2h next to
+      // "— logged", which is the confusion this whole change exists to remove.
+      const [fresh, logs] = await Promise.all([
+        api.issues.get(issue.id),
+        api.worklogs.list(issue.id),
+      ]);
+      setIssue(fresh);
+      setWorklogs(logs);
+      onChanged?.();
     } catch (e) {
       toast.error('Could not pause timer', { description: e instanceof Error ? e.message : undefined });
     } finally {

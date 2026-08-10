@@ -97,9 +97,10 @@ export function IssueDetailScreen({ route }: Props) {
       />
 
       <Text style={styles.sectionLabel}>Time</Text>
+      {/* Status age, not tracked time — see the same note in the web rail. */}
       {issue.in_progress_minutes_live !== null && (
         <Text style={styles.timeValue}>
-          In progress: {formatMinutes(issue.in_progress_minutes_live)}
+          In an in-progress status for: {formatMinutes(issue.in_progress_minutes_live)}
         </Text>
       )}
       {!!timerQuery.data && timerQuery.data.elapsed_minutes > 0 && (

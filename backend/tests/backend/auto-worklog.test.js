@@ -127,9 +127,30 @@ test('liveInProgressMinutes measures the open segment against now', async () => 
   await run(db, "UPDATE issues SET status = 'in_progress' WHERE id = ?", [issue.id]);
   const statuses = await projectStatuses(db, projectId);
   const freshIssue = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [issue.id]);
-  const minutes = await liveInProgressMinutes(db, freshIssue, statuses);
+  const { minutes, clipped } = await liveInProgressMinutes(db, freshIssue, statuses);
   expect(minutes).toBeGreaterThanOrEqual(59);
   expect(minutes).toBeLessThanOrEqual(61);
+  // No business-hours profile on this fixture, so the figure is raw
+  // wall-clock. Callers must be able to tell: labelled as working time, a
+  // fortnight in progress reads as "289h" of effort that nobody worked.
+  expect(clipped).toBe(false);
+});
+
+test('liveInProgressMinutes reports the figure as clipped when a profile applies', async () => {
+  const issue = await mkIssue('Live value clipped');
+  const oneHourAgo = new Date(Date.now() - 3_600_000).toISOString().slice(0, 19).replace('T', ' ');
+  await run(db, `INSERT INTO activity_log (id, issue_id, user_id, action, field, old_value, new_value, created_at)
+    VALUES ('live-a2', ?, ?, 'update', 'status', 'todo', 'in_progress', ?)`, [issue.id, issue.reporter_id, oneHourAgo]);
+  await run(db, "UPDATE issues SET status = 'in_progress' WHERE id = ?", [issue.id]);
+  await run(db, 'UPDATE projects SET business_hours = ? WHERE id = ?',
+    [JSON.stringify({ timezone: 'UTC', work_days: [1, 2, 3, 4, 5, 6, 7], start_hour: 0, end_hour: 24 }), projectId]);
+
+  const statuses = await projectStatuses(db, projectId);
+  const freshIssue = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [issue.id]);
+  const live = await liveInProgressMinutes(db, freshIssue, statuses);
+
+  await run(db, 'UPDATE projects SET business_hours = NULL WHERE id = ?', [projectId]);
+  expect(live.clipped).toBe(true);
 });
 
 describe('PUT /api/issues/:id triggers auto-worklog on completion', () => {

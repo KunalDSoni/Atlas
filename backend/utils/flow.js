@@ -85,24 +85,47 @@ function parseUtc(s) {
   return new Date(String(s).replace(' ', 'T') + (String(s).endsWith('Z') ? '' : 'Z'));
 }
 
-/** UTC instant of local midnight for the calendar day (in `timezone`) that `date` falls on. */
-function localMidnightUtc(date, timezone) {
-  const parts = new Intl.DateTimeFormat('en-US', {
+/** Wall-clock fields of `instant` as rendered in `timezone`. */
+function wallPartsIn(instant, timezone) {
+  return new Intl.DateTimeFormat('en-US', {
     timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(date).reduce((acc, p) => (acc[p.type] = p.value, acc), {});
-  // Treat the local Y-M-D as if it were UTC, then correct for the timezone's
-  // offset at that instant (read back the local hour that guess renders as).
-  const guess = new Date(`${parts.year}-${parts.month}-${parts.day}T00:00:00Z`);
-  // guess's own local time-of-day (in `timezone`) tells us the offset; use
-  // hour AND minute so half-hour/quarter-hour zones (e.g. Asia/Kolkata,
-  // +5:30) aren't truncated to whole hours.
-  const guessParts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone, hour: 'numeric', minute: 'numeric', hour12: false,
-  }).formatToParts(guess).reduce((acc, p) => (acc[p.type] = p.value, acc), {});
-  let guessHour = Number(guessParts.hour);
-  if (guessHour === 24) guessHour = 0;
-  const offsetMinutes = guessHour * 60 + Number(guessParts.minute);
-  return new Date(guess.getTime() - offsetMinutes * 60_000);
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  }).formatToParts(instant).reduce((acc, p) => (acc[p.type] = p.value, acc), {});
+}
+
+/**
+ * The timezone's UTC offset in milliseconds at `instant` (positive east of
+ * Greenwich). Derived by reading the wall clock in `timezone` and re-reading it
+ * as if it were UTC — the difference is the offset, sign included.
+ */
+function tzOffsetMs(instant, timezone) {
+  const p = wallPartsIn(instant, timezone);
+  const hour = Number(p.hour) === 24 ? 0 : Number(p.hour);
+  const asUtc = Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day),
+    hour, Number(p.minute), Number(p.second));
+  return asUtc - instant.getTime();
+}
+
+/**
+ * UTC instant of local midnight for the calendar day (in `timezone`) that
+ * `date` falls on.
+ *
+ * The offset must be SUBTRACTED from the wall-clock midnight, and it must
+ * carry its sign. An earlier version inferred the offset by rendering
+ * `Y-M-D 00:00Z` in the zone and reading back the hour, which silently
+ * assumed a positive offset: in New York that guess renders as 19:00 on the
+ * PREVIOUS day, so an offset of -5h was read as +19h and every result landed
+ * a full calendar day early. That made businessMinutesBetween return 0 for a
+ * whole workday and stopped abandoned timers from ever being closed, for
+ * every user west of Greenwich.
+ */
+function localMidnightUtc(date, timezone) {
+  const p = wallPartsIn(date, timezone);
+  const wallMidnight = Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day));
+  // Refine once: on a DST-transition day the offset in force at the naive
+  // guess can differ from the one in force at real local midnight.
+  const first = wallMidnight - tzOffsetMs(new Date(wallMidnight), timezone);
+  return new Date(wallMidnight - tzOffsetMs(new Date(first), timezone));
 }
 
 /**
