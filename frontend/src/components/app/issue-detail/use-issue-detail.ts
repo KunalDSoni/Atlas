@@ -12,6 +12,8 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
 import { useWorkflow } from '@/hooks/use-workflow';
 import { canCreateIssues } from '@/lib/domain';
+import { TIMER_CHANGED_EVENT, emitTimerChanged } from '../running-timer-chip';
+import type { TimerChangedDetail } from '../running-timer-chip';
 import type { ActivityEntry, Attachment, Comment, EpicSummary, Issue, MentioningPage, ProjectComponent, Sprint, TimerState, User, Version, WorkLog } from '@/lib/types';
 
 export function useIssueDetail(
@@ -106,6 +108,22 @@ export function useIssueDetail(
     else setIssue(null);
   }, [issueId, load]);
 
+  // The header chip can pause the timer for the issue on screen, and pausing
+  // writes a work log — so the logged total and the worklog list here go stale
+  // without this view ever being touched. Reload only when the event names this
+  // issue; our own start/pause handlers already refresh what they changed.
+  useEffect(() => {
+    if (!issueId) return;
+    const onTimerChanged = (e: Event) => {
+      const detail = (e as CustomEvent<TimerChangedDetail>).detail;
+      if (detail?.source === 'issue-detail') return; // our own handlers already refreshed
+      if (detail?.issueId && detail.issueId !== issueId) return;
+      void load();
+    };
+    window.addEventListener(TIMER_CHANGED_EVENT, onTimerChanged);
+    return () => window.removeEventListener(TIMER_CHANGED_EVENT, onTimerChanged);
+  }, [issueId, load]);
+
   async function patch(body: Partial<Issue>) {
     if (!issue) return;
     const previous = issue;
@@ -179,6 +197,9 @@ export function useIssueDetail(
       // Only one timer runs per user, so starting here may have stopped one
       // elsewhere. Say so rather than letting time silently move.
       setPausedNotice(state.paused_issue ? `Paused your timer on ${state.paused_issue.issue_key}` : null);
+      // Surface the new timer in the header chip at once rather than up to a
+      // poll interval later, which would read as the chip being broken.
+      emitTimerChanged('issue-detail', issue.id);
     } catch (e) {
       toast.error('Could not start timer', { description: e instanceof Error ? e.message : undefined });
     } finally {
@@ -203,6 +224,7 @@ export function useIssueDetail(
       setIssue(fresh);
       setWorklogs(logs);
       onChanged?.();
+      emitTimerChanged('issue-detail', issue.id);
     } catch (e) {
       toast.error('Could not pause timer', { description: e instanceof Error ? e.message : undefined });
     } finally {

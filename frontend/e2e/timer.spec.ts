@@ -94,3 +94,33 @@ test('a running timer is still running after a cold page load', async ({ page })
   await pauseBtn(page).click();
   await expect(startBtn(page)).toBeVisible({ timeout: 10_000 });
 });
+
+test('a running timer follows you out of the issue and back into it', async ({ page }) => {
+  // The whole reason people lost track of timers: start one, navigate away, and
+  // nothing anywhere said it was still running. GET /api/me/timer existed for
+  // this from the beginning and had no caller until the header chip.
+  await login(page);
+  const key = await openFirstIssue(page);
+  await resetTimer(page);
+
+  await startBtn(page).click();
+  await expect(pauseBtn(page)).toBeVisible({ timeout: 10_000 });
+
+  const chip = page.getByRole('link', { name: new RegExp(`Timer running on ${key}`, 'i') });
+  // Visible from a screen that is not the issue, which is the point.
+  await page.goto('/atlas/board');
+  await expect(chip).toBeVisible({ timeout: 15_000 });
+  await expect(chip).toContainText(key);
+  // No stop control while the timer is healthy — an accidental click here would
+  // recreate the "my timer stopped by itself" report this feature exists to end.
+  await expect(page.getByRole('button', { name: /Pause timer on/i })).toBeHidden();
+
+  await chip.click();
+  await expect(page).toHaveURL(new RegExp(`/${key}$`, 'i'));
+  await expect(pauseBtn(page)).toBeVisible({ timeout: 15_000 });
+
+  // Pausing on the issue clears the chip at once rather than a poll later.
+  await pauseBtn(page).click();
+  await expect(startBtn(page)).toBeVisible({ timeout: 10_000 });
+  await expect(chip).toBeHidden({ timeout: 10_000 });
+});

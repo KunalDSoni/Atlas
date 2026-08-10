@@ -12,6 +12,7 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { RunningTimerChip } from './running-timer-chip';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { api } from '@/lib/api';
@@ -482,6 +483,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </button>
 
           <div className="flex-1" />
+          {/* A running timer has to be visible from wherever the user is, or it
+              is only discoverable by returning to the issue that started it —
+              which is how timers get left running for days. */}
+          <RunningTimerChip />
           <NotificationBell />
           <UserMenu />
         </header>
