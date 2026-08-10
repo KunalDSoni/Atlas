@@ -106,6 +106,37 @@ jobs:
           path: frontend/test-results/
           retention-days: 7
 
+  # Mobile had no automated check of any kind: no tests, no typecheck, no build.
+  # That is how src/api/hooks.ts came to import an `apiClient` that client.ts
+  # does not export — 39 call sites, throwing on first use — and call endpoints
+  # (GET /issues, /sprints, /filters) that the backend does not serve, while
+  # eight registered screens depend on it.
+  #
+  # Only the jest suite is a gate here. `npm run typecheck` is deliberately NOT
+  # wired in yet: it currently fails, and a step that is always red is a step
+  # everyone learns to ignore. Turn it into a gate in the same change that
+  # fixes those errors.
+  mobile:
+    name: Mobile (unit)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: npm ci
+
+      - name: Run mobile tests
+        working-directory: mobile
+        run: npm test -- --ci
+
   # The main suite runs on sql.js, so migrations.js's MySQL branch would ship
   # untested — and a MySQL-only migration bug crashes production on boot rather
   # than failing a test. This job exercises it against a real server.
