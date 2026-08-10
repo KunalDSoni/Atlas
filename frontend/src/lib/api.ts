@@ -13,7 +13,7 @@ import type {
   WikiComment, WikiPage, WikiRestriction, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
   PageApproval, PageApprovalEntry, PageTask,
   WikiAttachment, ApiToken, Webhook, CustomField,
-  WorkLog, WorkflowStatus, TimerState, MyTimer,
+  WorkLog, WorkflowStatus, TimerState, TimerUserTotal, MyTimer,
   PbCompany, PbCustomer, PbInsight, PbFeature, PbFeatureOutcome, PbObjective,
   ImpactMetricType, PbFeatureImpact, PbImpactDashboard, PbImpactMetric,
   PbOutcomesResponse, PbTheme, PbThemeSuggestion, PortalFeature, PortalMe, PortalSubmission,
