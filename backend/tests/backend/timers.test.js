@@ -2,7 +2,7 @@ const { createTestApp, getApp, adminHeaders } = require('./setup');
 const request = require('supertest');
 const { getDb, queryOne, queryAll, run } = require('../../database');
 const {
-  closeStaleSegments, startTimer, pauseTimer, timerState, commitTimer, issueTimerUserIds,
+  closeStaleSegments, startTimer, pauseTimer, timerState, commitTimer, issueTimerUserIds, issueTimerTotals,
 } = require('../../utils/timers');
 const { v4: uuidv4 } = require('uuid');
 
@@ -387,6 +387,49 @@ describe('timer routes', () => {
     expect(stillRunning.body.running).toBe(true);
 
     await request(getApp()).post(`/api/issues/${issue.id}/timer/pause`).set(headers);
+  });
+});
+
+describe('issueTimerTotals aggregates per-user cumulative time', () => {
+  test('returns per-user minute totals across all segments', async () => {
+    const issue = await mkIssue('Timer totals');
+    const otherUserRes = await require('./setup').userHeaders();
+    const otherUser = await request(getApp()).get('/api/auth/me').set(otherUserRes);
+    const otherUserId = otherUser.body.id;
+
+    // Admin: two segments totaling 90 minutes
+    await addSegment(issue.id, adminId, '2026-07-06 09:00:00', '2026-07-06 10:00:00'); // 60
+    await addSegment(issue.id, adminId, '2026-07-06 11:00:00', '2026-07-06 11:30:00'); // 30
+
+    // Other user: one segment of 45 minutes
+    await addSegment(issue.id, otherUserId, '2026-07-06 14:00:00', '2026-07-06 14:45:00');
+
+    const totals = await issueTimerTotals(db, issue.id);
+    expect(totals.length).toBe(2);
+
+    const adminTotal = totals.find((u) => u.user_id === adminId);
+    expect(adminTotal.minutes).toBe(90);
+
+    const otherTotal = totals.find((u) => u.user_id === otherUserId);
+    expect(otherTotal.minutes).toBe(45);
+  });
+
+  test('omits users with no segments', async () => {
+    const issue = await mkIssue('Timer totals exclude');
+    await addSegment(issue.id, adminId, '2026-07-06 09:00:00', '2026-07-06 10:00:00');
+
+    const totals = await issueTimerTotals(db, issue.id);
+    expect(totals.length).toBe(1);
+    expect(totals[0].user_id).toBe(adminId);
+  });
+
+  test('includes user names from the users table', async () => {
+    const issue = await mkIssue('Timer totals names');
+    await addSegment(issue.id, adminId, '2026-07-06 09:00:00', '2026-07-06 10:00:00');
+
+    const totals = await issueTimerTotals(db, issue.id);
+    expect(totals[0].name).toBeDefined();
+    expect(totals[0].name).not.toBe('Unknown');
   });
 });
 

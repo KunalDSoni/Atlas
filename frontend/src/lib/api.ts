@@ -318,6 +318,7 @@ export const api = {
     start: (issueId: string) => post<TimerState>(`/issues/${issueId}/timer/start`, {}),
     pause: (issueId: string) => post<TimerState>(`/issues/${issueId}/timer/pause`, {}),
     commit: (issueId: string) => post<{ ok: boolean; minutes: number }>(`/issues/${issueId}/timer/commit`, {}),
+    totals: (issueId: string) => get<{ by_user: TimerUserTotal[] }>(`/issues/${issueId}/timer/totals`),
     mine: () => get<MyTimer | null>('/me/timer'),
   },
 

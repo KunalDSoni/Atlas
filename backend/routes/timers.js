@@ -14,7 +14,7 @@ const { getDb, queryOne } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
 const {
-  startTimer, pauseTimer, timerState, commitTimer, closeStaleSegments, RUNAWAY_MINUTES,
+  startTimer, pauseTimer, timerState, commitTimer, closeStaleSegments, RUNAWAY_MINUTES, issueTimerTotals,
 } = require('../utils/timers');
 
 const router = express.Router();
@@ -96,6 +96,17 @@ router.get('/me/timer', requireAuth, async (req, res) => {
       elapsed_minutes: elapsed,
       runaway: elapsed > RUNAWAY_MINUTES,
     });
+  } catch (e) { serverError(res, e); }
+});
+
+// GET /api/issues/:issueId/timer/totals — per-user cumulative timer minutes
+router.get('/issues/:issueId/timer/totals', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    if (!(await requireIssue(db, req.params.issueId, res))) return;
+
+    const byUser = await issueTimerTotals(db, req.params.issueId);
+    res.json({ by_user: byUser });
   } catch (e) { serverError(res, e); }
 });
 
