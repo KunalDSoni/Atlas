@@ -162,6 +162,24 @@ async function issueTimerUserIds(db, issueId) {
   return rows.map((r) => r.user_id);
 }
 
+/** Per-user minute totals for all completed timer segments on the issue. */
+async function issueTimerTotals(db, issueId) {
+  const segments = await queryAll(db,
+    `SELECT t.*, u.name AS user_name FROM timer_segments t
+     LEFT JOIN users u ON u.id = t.user_id
+     WHERE t.issue_id = ? ORDER BY t.started_at`, [issueId]);
+
+  const now = new Date();
+  const byUser = new Map();
+  for (const seg of segments) {
+    if (!byUser.has(seg.user_id)) {
+      byUser.set(seg.user_id, { user_id: seg.user_id, name: seg.user_name || 'Unknown', minutes: 0 });
+    }
+    byUser.get(seg.user_id).minutes += segmentMinutes(seg, now);
+  }
+  return [...byUser.values()].map((u) => ({ ...u, minutes: Math.round(u.minutes) }));
+}
+
 /** Timer state for one user on one issue, plus per-user totals for everyone. */
 async function timerState(db, issueId, userId) {
   await closeStaleSegments(db, { userId });
@@ -228,5 +246,5 @@ async function commitTimer(db, issueId, userId) {
 
 module.exports = {
   RUNAWAY_MINUTES, nowStamp, closeStaleSegments, startTimer, pauseTimer,
-  timerState, commitTimer, issueTimerUserIds,
+  timerState, commitTimer, issueTimerUserIds, issueTimerTotals,
 };
