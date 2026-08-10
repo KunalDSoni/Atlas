@@ -30,9 +30,19 @@ export default defineConfig({
     // and the first casualty is login, so failures surface as unrelated
     // assertion timeouts. The limiter's own behaviour is covered by
     // backend/tests/backend/api-ratelimit.test.js, not by these specs.
-    command: `SQLITE_PATH="${DB}" PORT=${PORT} SEED_DEMO_DATA=true SESSION_SECRET=e2e-secret API_RATE_MAX=20000 node ../backend/server.js`,
+    //
+    // `npm run build` first, always. backend/server.js serves the COMMITTED
+    // frontend/build, so without it these specs exercise whatever bundle was
+    // last checked in rather than the working tree. That is not a stale-cache
+    // annoyance, it is a false green: delete a component from src/ and every
+    // spec covering it still passes, because the old bundle still contains it.
+    // Verified by deleting the running-timer chip's render and watching all
+    // four timer specs pass. The ~4s rebuild is the price of the suite testing
+    // the code you actually wrote.
+    command: `npm run build && SQLITE_PATH="${DB}" PORT=${PORT} SEED_DEMO_DATA=true SESSION_SECRET=e2e-secret API_RATE_MAX=20000 node ../backend/server.js`,
     url: `http://localhost:${PORT}/api/health`,
     reuseExistingServer: false,
-    timeout: 30_000,
+    // Raised from 30s: the boot now includes a production build.
+    timeout: 120_000,
   },
 });
