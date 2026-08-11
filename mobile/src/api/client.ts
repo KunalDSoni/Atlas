@@ -40,3 +40,21 @@ export async function apiFetch<T>(path: string, options: { method?: string; body
   }
   return body as T;
 }
+
+export async function apiFetchForm<T>(path: string, formData: FormData): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (authToken) headers['x-auth-token'] = authToken;
+
+  const response = await fetch(`${BASE_URL}${path}`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    if (response.status === 401) unauthorizedHandler?.();
+    throw new ApiError(response.status, body);
+  }
+  return body as T;
+}
