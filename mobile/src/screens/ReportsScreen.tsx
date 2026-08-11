@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -11,9 +11,8 @@ import { notifyError } from '../utils/notifications';
 
 export function ReportsScreen({ route }: any) {
   const { projectId } = route.params;
-  const [sprintId] = useState(''); // Would be passed in
 
-  const burndownQuery = useSprintBurndown(sprintId, { enabled: !!sprintId });
+  const burndownQuery = useSprintBurndown(projectId);
   const velocityQuery = useVelocity(projectId);
 
   if (burndownQuery.error) {
