@@ -27,6 +27,17 @@ on:
         description: Image tag to deploy (e.g. v3). Must already exist in ECR.
         required: true
         type: string
+  # Called once per customer by release-deploy-all.yml. The steps below are
+  # identical either way, so the automated rollout and a hand-run rollback
+  # cannot drift apart.
+  workflow_call:
+    inputs:
+      customer:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
 
 permissions:
   contents: read
