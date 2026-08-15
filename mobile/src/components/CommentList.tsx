@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useComments, useDeleteComment, useUpdateComment } from '../api/hooks';
+import { MentionText } from './MentionText';
 import { notifyError, notifySuccess } from '../utils/notifications';
 
 interface Comment {
@@ -74,7 +75,7 @@ export function CommentList({ issueId }: CommentListProps) {
           {new Date(item.createdAt).toLocaleDateString()}
         </Text>
       </View>
-      <Text style={styles.commentText}>{item.text}</Text>
+      <MentionText text={item.text} style={styles.commentText} />
       {item.edited && <Text style={styles.editedLabel}>(edited)</Text>}
       <View style={styles.commentActions}>
         <TouchableOpacity onPress={() => setEditingId(item.id)}>

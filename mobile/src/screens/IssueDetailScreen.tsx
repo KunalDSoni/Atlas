@@ -10,6 +10,7 @@ import { StatusPicker } from '../components/StatusPicker';
 import { AssigneePicker } from '../components/AssigneePicker';
 import { CommentList } from '../components/CommentList';
 import { CommentInput } from '../components/CommentInput';
+import { MentionText } from '../components/MentionText';
 import { WatchersList } from '../components/WatchersList';
 import { AttachmentList } from '../components/AttachmentList';
 import { MainStackParamList } from '../navigation/MainStack';
@@ -80,7 +81,7 @@ export function IssueDetailScreen({ route }: Props) {
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.key}>{issue.issue_key}</Text>
       <Text style={styles.title}>{issue.title}</Text>
-      <Text style={styles.description}>{issue.description}</Text>
+      <MentionText text={issue.description} style={styles.description} />
 
       <Text style={styles.sectionLabel}>Status</Text>
       <StatusPicker
@@ -125,7 +126,7 @@ export function IssueDetailScreen({ route }: Props) {
 
       {/* Comments Section */}
       <CommentList issueId={issueId} />
-      <CommentInput issueId={issueId} onCommentAdded={handleCommentAdded} />
+      <CommentInput issueId={issueId} projectId={issue.project_id} onCommentAdded={handleCommentAdded} />
     </ScrollView>
   );
 }

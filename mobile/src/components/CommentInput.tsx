@@ -8,15 +8,22 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useCreateComment } from '../api/hooks';
+import { MentionBar } from './MentionBar';
 import { notifyError, notifySuccess } from '../utils/notifications';
 
 interface CommentInputProps {
   issueId: string;
+  /** Ranks project members first in the @ picker. */
+  projectId?: string;
   onCommentAdded?: () => void;
 }
 
-export function CommentInput({ issueId, onCommentAdded }: CommentInputProps) {
+export function CommentInput({ issueId, projectId, onCommentAdded }: CommentInputProps) {
   const [text, setText] = useState('');
+  const [caret, setCaret] = useState(0);
+  // Set only to move the caret after an insert, then released on the next
+  // selection change. setNativeProps does not work under Fabric.
+  const [pendingSelection, setPendingSelection] = useState<{ start: number; end: number } | undefined>();
   const createCommentMutation = useCreateComment(issueId, {
     onSuccess: () => {
       notifySuccess('Comment added');
@@ -41,10 +48,25 @@ export function CommentInput({ issueId, onCommentAdded }: CommentInputProps) {
           style={styles.input}
           placeholder="Add a comment..."
           value={text}
-          onChangeText={setText}
+          onChangeText={(next) => { setText(next); setCaret(next.length); }}
+          selection={pendingSelection}
+          onSelectionChange={(e) => {
+            setCaret(e.nativeEvent.selection.start);
+            if (pendingSelection) setPendingSelection(undefined);
+          }}
           multiline
           maxLength={5000}
           editable={!isSubmitting}
+        />
+        <MentionBar
+          value={text}
+          caret={caret}
+          projectId={projectId}
+          onInsert={({ text: next, caret: nextCaret }) => {
+            setText(next);
+            setCaret(nextCaret);
+            setPendingSelection({ start: nextCaret, end: nextCaret });
+          }}
         />
       </View>
 
