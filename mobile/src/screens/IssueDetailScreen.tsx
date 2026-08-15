@@ -5,7 +5,8 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { fetchIssue, updateIssue } from '../api/issues';
 import { fetchProjectStatuses } from '../api/statuses';
 import { fetchProjectMembers } from '../api/members';
-import { fetchTimer, startTimer, pauseTimer } from '../api/timers';
+import { fetchTimer, startTimer, pauseTimer, logWork } from '../api/timers';
+import type { TimerStopReason } from '../api/timers';
 import { StatusPicker } from '../components/StatusPicker';
 import { AssigneePicker } from '../components/AssigneePicker';
 import { CommentList } from '../components/CommentList';
@@ -13,6 +14,7 @@ import { CommentInput } from '../components/CommentInput';
 import { MentionText } from '../components/MentionText';
 import { WatchersList } from '../components/WatchersList';
 import { AttachmentList } from '../components/AttachmentList';
+import { TimeEntryModal } from '../components/TimeEntryModal';
 import { MainStackParamList } from '../navigation/MainStack';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'IssueDetail'>;
@@ -22,6 +24,23 @@ function formatMinutes(minutes: number) {
   const m = minutes % 60;
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
+
+/**
+ * Why the server stopped a timer the user never paused. Worded identically to
+ * the web rail on purpose: the same event described two different ways on two
+ * devices reads as two different bugs.
+ */
+const STOP_REASON_TEXT: Record<TimerStopReason, string> = {
+  workday_end: 'left running overnight, so it was stopped at the end of that working day',
+  abandoned: 'left running for more than a day, so it was stopped without logging any time',
+  issue_done: 'stopped because this issue was moved to a done status',
+  switched_issue: 'stopped because you started a timer on another issue',
+};
+
+// An older client against a newer server must not render a sentence with a hole
+// in it. The stop is still worth reporting; only the explanation is missing.
+const stopReasonText = (reason: TimerStopReason) =>
+  STOP_REASON_TEXT[reason] ?? 'stopped automatically';
 
 export function IssueDetailScreen({ route }: Props) {
   const { issueId } = route.params;
@@ -50,6 +69,7 @@ export function IssueDetailScreen({ route }: Props) {
   });
 
   const timerQuery = useQuery({ queryKey: ['timer', issueId], queryFn: () => fetchTimer(issueId) });
+  const [logOpen, setLogOpen] = React.useState(false);
 
   const timerMutation = useMutation({
     mutationFn: (action: 'start' | 'pause') =>
@@ -118,6 +138,34 @@ export function IssueDetailScreen({ route }: Props) {
         <Text style={styles.warning}>Timer running over 12 hours — still working?</Text>
       )}
 
+      {/* A stop the user did not ask for is the thing that needs explaining.
+          Under a live timer it would only confuse, so it is hidden while one runs. */}
+      {!!timerQuery.data?.auto_stopped && !timerQuery.data.running && (
+        <>
+          <Text style={styles.autoStop}>
+            Your timer was {stopReasonText(timerQuery.data.auto_stopped.reason)}.
+          </Text>
+          {timerQuery.data.auto_stopped.reason === 'abandoned' && (
+            // Nothing was credited, so there is no entry to correct — the only
+            // useful action is to state the real duration.
+            <Button title="Log the time you worked" onPress={() => setLogOpen(true)} />
+          )}
+        </>
+      )}
+
+      <TimeEntryModal
+        visible={logOpen}
+        title="How long did you work on this?"
+        onCancel={() => setLogOpen(false)}
+        onSubmit={async (minutes) => {
+          await logWork(issueId, minutes);
+          // Posting settles the abandoned segments for this user on this issue,
+          // so the explanation above clears itself with no extra call.
+          await queryClient.invalidateQueries({ queryKey: ['timer', issueId] });
+          await queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
+        }}
+      />
+
       {/* Watchers Section */}
       <WatchersList issueId={issueId} />
 
@@ -141,4 +189,5 @@ const styles = StyleSheet.create({
   errorText: { padding: 16, textAlign: 'center', color: '#b91c1c' },
   timeValue: { fontSize: 14, color: '#333', marginBottom: 8 },
   warning: { fontSize: 12, color: '#b91c1c', marginTop: 8 },
+  autoStop: { fontSize: 12, color: '#666', marginTop: 8, marginBottom: 8 },
 });

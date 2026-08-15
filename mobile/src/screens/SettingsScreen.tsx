@@ -11,6 +11,7 @@ import {
 import { useProfile, useSettings, useUpdateSettings } from '../api/hooks';
 import { useAuth } from '../auth/AuthContext';
 import { notifyError, notifySuccess } from '../utils/notifications';
+import { UnresolvedTimersSection } from '../components/UnresolvedTimersSection';
 
 export function SettingsScreen() {
   const { signOut } = useAuth();
@@ -45,6 +46,10 @@ export function SettingsScreen() {
 
   return (
     <ScrollView style={styles.container}>
+      {/* Timers the server stopped with nothing logged. Renders nothing when
+          there are none, so it costs no space in the common case. */}
+      <UnresolvedTimersSection />
+
       {/* Profile Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Profile</Text>
