@@ -69,6 +69,75 @@ async function validateHierarchy(db, { id, projectId, type, parentId, sprintId }
 
 const router = express.Router();
 
+/**
+ * Guards a sprint assignment against Jira's rule that a closed sprint takes no
+ * new work. Returns an error message, or null when the move is allowed.
+ *
+ * Only an *incoming* value that differs from the stored one is checked. Issues
+ * already sitting in a completed sprint (the done work left behind at close)
+ * must stay editable — the edit dialog resubmits the whole record, so rejecting
+ * on mere presence would make those issues unsavable.
+ */
+async function completedSprintError(db, nextSprintId, currentSprintId) {
+  if (!nextSprintId) return null;
+  if (String(nextSprintId) === String(currentSprintId)) return null;
+  const sprint = await queryOne(db, 'SELECT name, status FROM sprints WHERE id = ?', [nextSprintId]);
+  if (!sprint || sprint.status !== 'completed') return null;
+  return `${sprint.name} is completed and can't take new work. Reopen it first.`;
+}
+
+/**
+ * The sprints this issue rolled over from: sprints it has left, that have since
+ * been completed. Derived from the sprint rows in `activity_log` — every path
+ * that reassigns an issue writes one, including the sweep at sprint completion.
+ *
+ * Restricting to completed sprints is what separates a rollover from a
+ * correction: an issue filed against the wrong planning sprint and moved an
+ * hour later never rolled over, and that sprint never closes with the issue in
+ * it. Ordered like the sprint list, oldest first.
+ *
+ * Two field spellings, because the two write paths disagree: the board move
+ * endpoint labels the row `sprint`, while `PUT /issues/:id` passes the column
+ * name straight through as `sprint_id`. The sweep at sprint completion goes
+ * through the PUT, so `sprint_id` is the spelling most rollovers carry.
+ *
+ * Ordered by when the issue *left* each sprint, which is the order someone
+ * reading the ticket is reconstructing. Sorting on the sprints' own dates
+ * cannot do it: a sprint's `start_date` is optional and `created_at` has second
+ * resolution, so sprints made in one burst tie and come back in whatever order
+ * the engine happens to scan. The tiebreaks are arbitrary but fixed, so the
+ * line never reorders itself between two reads of the same issue.
+ */
+async function previousSprints(db, issue) {
+  const moves = await queryAll(db,
+    `SELECT old_value, created_at FROM activity_log
+     WHERE issue_id = ? AND field IN ('sprint', 'sprint_id') AND old_value IS NOT NULL`,
+    [issue.id]);
+
+  // An issue can pass through the same sprint twice; the first exit is the one
+  // that places it in the story.
+  const leftAt = new Map();
+  for (const move of moves) {
+    const at = String(move.created_at ?? '');
+    const seen = leftAt.get(move.old_value);
+    if (seen === undefined || at < seen) leftAt.set(move.old_value, at);
+  }
+
+  const ids = [...leftAt.keys()].filter((id) => String(id) !== String(issue.sprint_id));
+  if (ids.length === 0) return [];
+
+  const sprints = await queryAll(db,
+    `SELECT id, name, slug, created_at FROM sprints
+     WHERE id IN (${placeholders(ids)}) AND status = 'completed'`, ids);
+
+  sprints.sort((a, b) =>
+    (leftAt.get(a.id) ?? '').localeCompare(leftAt.get(b.id) ?? '')
+    || String(a.created_at ?? '').localeCompare(String(b.created_at ?? ''))
+    || String(a.id).localeCompare(String(b.id)));
+
+  return sprints.map(({ id, name, slug }) => ({ id, name, slug }));
+}
+
 function parseLabels(labels) {
   try { return JSON.parse(labels || '[]'); } catch (e) { return []; }
 }
@@ -193,8 +262,12 @@ async function enrichIssues(db, issues) {
   });
 }
 
+// The single-issue payload carries one extra field the list payload does not:
+// the sprints this issue rolled over from. Only the detail panel shows them, and
+// a board of 100 issues should not pay for a history read each.
 async function enrichIssue(db, issue) {
   const [enriched] = await enrichIssues(db, [issue]);
+  enriched.previous_sprints = await previousSprints(db, issue);
   return enriched;
 }
 
@@ -320,6 +393,9 @@ router.post('/projects/:projectId/issues', requireAuth, requireBoardAdmin, async
     });
     if (hierarchyError) return res.status(400).json({ error: hierarchyError });
 
+    const closedSprint = await completedSprintError(db, sprint_id || null, null);
+    if (closedSprint) return res.status(409).json({ error: closedSprint });
+
     if (epic_color !== undefined && !EPIC_COLORS.includes(epic_color)) {
       return res.status(400).json({ error: 'Invalid epic color' });
     }
@@ -416,6 +492,9 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
       sprintId: nextSprint,
     });
     if (hierarchyError) return res.status(400).json({ error: hierarchyError });
+
+    const closedSprint = await completedSprintError(db, nextSprint, issue.sprint_id);
+    if (closedSprint) return res.status(409).json({ error: closedSprint });
 
     if (req.body.epic_color !== undefined && !EPIC_COLORS.includes(req.body.epic_color)) {
       return res.status(400).json({ error: 'Invalid epic color' });
@@ -594,6 +673,10 @@ router.put('/issues/:id/move', requireAuth, async (req, res) => {
     }
 
     const { status, sprint_id, board_order } = req.body;
+    if (sprint_id !== undefined) {
+      const closedSprint = await completedSprintError(db, sprint_id, issue.sprint_id);
+      if (closedSprint) return res.status(409).json({ error: closedSprint });
+    }
     if (status !== undefined) {
       const statuses = await projectStatuses(db, issue.project_id);
       if (!statuses.some((s) => s.key === status)) {

@@ -113,6 +113,20 @@ export const SPRINT_TONE: Record<SprintStatus, string> = {
   completed: 'bg-muted text-muted-foreground',
 };
 
+/**
+ * The sprints a picker may offer. A completed sprint takes no new work — the
+ * server returns 409 — so it is left out, with one exception: the sprint the
+ * issue is already in stays listed, or the field would show a blank value for
+ * the done work a sprint keeps after it closes. Callers render that one
+ * disabled; passing no `currentSprintId` (creating an issue) drops them all.
+ */
+export function assignableSprints<T extends { id: string; status: SprintStatus }>(
+  sprints: T[],
+  currentSprintId?: string | null,
+) {
+  return sprints.filter((s) => s.status !== 'completed' || s.id === currentSprintId);
+}
+
 export function canManageSprints(role?: Role) {
   return role === 'admin' || role === 'board_admin';
 }

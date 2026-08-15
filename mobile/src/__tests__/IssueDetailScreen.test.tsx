@@ -113,3 +113,82 @@ describe('IssueDetailScreen time section', () => {
     expect(await findByText('Pause')).toBeTruthy();
   });
 });
+
+// ===== A stop nobody asked for =====
+// The server has returned auto_stopped since migration 030 and mobile could not
+// see it, so a timer the server stopped simply vanished — the original "it
+// stopped by itself" report, still live on the platform where people most often
+// leave one running.
+// See docs/superpowers/specs/2026-08-15-mobile-timer-parity-design.md
+
+function baseMocks(timer: Partial<timersApi.TimerState> = {}) {
+  (issuesApi.fetchIssue as jest.Mock).mockResolvedValue({
+    id: 'i1', issue_key: 'ATLAS-1', title: 'Fix bug', description: 'desc', status: 'todo',
+    type: 'task', priority: 'medium', assignee_id: null, assignee_name: null, assignee_color: null,
+    project_id: 'p1', time_spent: 0, in_progress_minutes_live: null,
+  });
+  (statusesApi.fetchProjectStatuses as jest.Mock).mockResolvedValue([]);
+  (membersApi.fetchProjectMembers as jest.Mock).mockResolvedValue([]);
+  (timersApi.fetchTimer as jest.Mock).mockResolvedValue({
+    running: false, started_at: null, elapsed_minutes: 0, runaway: false, by_user: [],
+    auto_stopped: null, ...timer,
+  });
+}
+
+test('explains a timer the server stopped, and offers to log the real time', async () => {
+  baseMocks({ auto_stopped: { reason: 'abandoned', stopped_at: '2026-08-14 09:00:00' } });
+
+  const { findByText } = await renderWithClient(<IssueDetailScreen route={route as any} navigation={{} as any} />);
+
+  // Nothing was credited, so the only useful action is to state the real duration.
+  await findByText(/stopped without logging any time/i);
+  await findByText('Log the time you worked');
+});
+
+test('does not explain a stop while a timer is running', async () => {
+  baseMocks({ running: true, started_at: '2026-08-15 09:00:00', auto_stopped: { reason: 'abandoned', stopped_at: '2026-08-14 09:00:00' } });
+
+  const { queryByText, findByText } = await renderWithClient(<IssueDetailScreen route={route as any} navigation={{} as any} />);
+
+  await findByText('ATLAS-1');
+  expect(queryByText(/stopped without logging any time/i)).toBeNull();
+});
+
+test('an unrecognised reason still reports the stop rather than a sentence with a hole', async () => {
+  // An older client against a newer server must not render "Your timer was  ()".
+  baseMocks({ auto_stopped: { reason: 'something_new' as never, stopped_at: '2026-08-14 09:00:00' } });
+
+  const { findByText } = await renderWithClient(<IssueDetailScreen route={route as any} navigation={{} as any} />);
+
+  await findByText(/stopped automatically/i);
+});
+
+test('logging the time posts the minutes and closes the prompt', async () => {
+  baseMocks({ auto_stopped: { reason: 'abandoned', stopped_at: '2026-08-14 09:00:00' } });
+  (timersApi.logWork as jest.Mock).mockResolvedValue({});
+
+  const { findByText, findByPlaceholderText, queryByPlaceholderText } =
+    await renderWithClient(<IssueDetailScreen route={route as any} navigation={{} as any} />);
+  fireEvent.press(await findByText('Log the time you worked'));
+
+  fireEvent.changeText(await findByPlaceholderText('Minutes'), '90');
+  fireEvent.press(await findByText('Log'));
+
+  await waitFor(() => expect(timersApi.logWork).toHaveBeenCalledWith('i1', 90));
+  await waitFor(() => expect(queryByPlaceholderText('Minutes')).toBeNull());
+});
+
+test('a failed post keeps the prompt open with what was typed', async () => {
+  baseMocks({ auto_stopped: { reason: 'abandoned', stopped_at: '2026-08-14 09:00:00' } });
+  (timersApi.logWork as jest.Mock).mockRejectedValue(new Error('offline'));
+
+  const { findByText, findByPlaceholderText } =
+    await renderWithClient(<IssueDetailScreen route={route as any} navigation={{} as any} />);
+  fireEvent.press(await findByText('Log the time you worked'));
+  const input = await findByPlaceholderText('Minutes');
+  fireEvent.changeText(input, '45');
+  fireEvent.press(await findByText('Log'));
+
+  // A bad connection must never silently discard what someone typed.
+  await waitFor(() => expect(input.props.value).toBe('45'));
+});

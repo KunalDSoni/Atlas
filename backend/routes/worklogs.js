@@ -13,6 +13,7 @@ const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
 const { recomputeTimeSpent } = require('../utils/worklog-sync');
 const { settleSegments } = require('../utils/timers');
+const { auditLog } = require('../middleware/logger');
 
 const router = express.Router();
 
@@ -111,6 +112,28 @@ router.patch('/worklogs/:id', requireAuth, async (req, res) => {
     const updated = await queryOne(db, `
       SELECT w.*, u.name AS user_name, u.avatar_color AS user_color
       FROM work_logs w LEFT JOIN users u ON u.id = w.user_id WHERE w.id = ?`, [req.params.id]);
+
+    // Tracked time is a claim about what someone did, so a change to it should
+    // not be invisible afterwards. Written after the update lands, so a
+    // rejected edit leaves no trail of a change that never happened. The
+    // source conversion is included because it is the consequential part: it
+    // takes the stopwatch out of the loop for this issue permanently.
+    const issueRow = await queryOne(db, 'SELECT issue_key FROM issues WHERE id = ?', [log.issue_id]);
+    auditLog({
+      userId: req.userId,
+      action: 'Edited work log',
+      category: 'issues',
+      entityType: 'work_log',
+      entityId: req.params.id,
+      entityName: issueRow ? issueRow.issue_key : log.issue_id,
+      details: {
+        issue_id: log.issue_id,
+        minutes_before: Number(log.minutes),
+        minutes_after: Number(updated.minutes),
+        source_before: log.source,
+        source_after: updated.source,
+      },
+    });
     res.json({ ...updated, minutes: Number(updated.minutes) });
   } catch (e) { serverError(res, e); }
 });
@@ -147,6 +170,23 @@ router.delete('/worklogs/:id', requireAuth, async (req, res) => {
 
     await run(db, 'DELETE FROM work_logs WHERE id = ?', [req.params.id]);
     await recomputeTimeSpent(db, log.issue_id);
+
+    // Captured from the row read before the delete — nothing else will be left
+    // to say how much time was removed, or from where.
+    const gone = await queryOne(db, 'SELECT issue_key FROM issues WHERE id = ?', [log.issue_id]);
+    auditLog({
+      userId: req.userId,
+      action: 'Deleted work log',
+      category: 'issues',
+      entityType: 'work_log',
+      entityId: req.params.id,
+      entityName: gone ? gone.issue_key : log.issue_id,
+      details: {
+        issue_id: log.issue_id,
+        minutes_before: Number(log.minutes),
+        source_before: log.source,
+      },
+    });
     res.json({ ok: true });
   } catch (e) { serverError(res, e); }
 });
