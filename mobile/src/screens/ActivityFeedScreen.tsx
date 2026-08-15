@@ -7,6 +7,7 @@ import {
   StyleSheet,
   RefreshControl,
 } from 'react-native';
+import { stripMentionSyntax } from '../utils/mentions';
 import { useActivity } from '../api/hooks';
 import { notifyError } from '../utils/notifications';
 
@@ -84,7 +85,7 @@ export function ActivityFeedScreen() {
 
           {item.description && (
             <Text style={styles.description} numberOfLines={2}>
-              {item.description}
+              {stripMentionSyntax(item.description)}
             </Text>
           )}
 

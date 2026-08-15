@@ -1,122 +1,141 @@
 /**
- * MENTION WORKFLOW E2E TESTS
+ * MENTION WORKFLOW E2E
  *
- * Comprehensive end-to-end testing of the full mention workflow.
+ * Drives the real @ picker in a real browser: type '@', see the list, choose a
+ * person, post, see the badge, and confirm the person was notified.
+ *
+ * The suite this replaces wrapped every assertion in `if (await x.isVisible())`
+ * and asserted things like `expect(count).toBeGreaterThanOrEqual(0)`, so it
+ * passed while the feature was completely dead. Nothing here is conditional.
  */
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+import { login, assertNoCrash } from './helpers';
 
-test.describe('Mention Workflow E2E', () => {
-  const projectKey = process.env.TEST_PROJECT_KEY || 'ATLAS';
+/** The session token the SPA stored at login, for driving the API directly. */
+async function authToken(page: Page): Promise<string> {
+  const token = await page.evaluate(() => localStorage.getItem('atlas_token'));
+  expect(token, 'login should have stored a session token').toBeTruthy();
+  return token as string;
+}
 
-  test('can mention user in issue description with autocomplete', async ({ page }) => {
-    await page.goto(`/${projectKey}`);
-    await page.waitForLoadState('networkidle');
+async function apiContext(page: Page) {
+  const token = await authToken(page);
+  const headers = { 'x-auth-token': token, 'Content-Type': 'application/json' };
+  const projects = await (await page.request.get('/api/projects', { headers })).json();
+  return { headers, project: projects[0] };
+}
 
-    // Find first issue
-    const issueLink = page.locator('[data-testid="issue-row"]').first();
-    if (await issueLink.isVisible()) {
-      await issueLink.click();
-      await page.waitForLoadState('networkidle');
+test.describe('mentions', () => {
+  test('typing @ offers members, and picking one posts a resolved badge', async ({ page }) => {
+    await login(page);
+    const { headers, project } = await apiContext(page);
 
-      // Look for edit button
-      const editBtn = page.locator('button:has-text("Edit")').first();
-      if (await editBtn.isVisible()) {
-        await editBtn.click();
-        await page.waitForSelector('[id="edit-issue-desc"]', { timeout: 5000 });
-        
-        const descInput = page.locator('[id="edit-issue-desc"]');
-        await descInput.focus();
-        await descInput.fill('@Pr');
-        
-        // Wait for dropdown
-        const dropdown = page.locator('[role="listbox"]');
-        if (await dropdown.isVisible({ timeout: 3000 })) {
-          const option = page.locator('[role="option"]').first();
-          await option.click();
+    const issues = await (await page.request.get(
+      `/api/projects/${project.id}/issues`, { headers })).json();
+    const issue = issues.find((i: { type: string }) => i.type !== 'epic') ?? issues[0];
 
-          const value = await descInput.inputValue();
-          expect(value).toContain('@');
-        }
-      }
-    }
+    await page.goto(`/${project.key}/${issue.issue_key}`);
+
+    const composer = page.getByPlaceholder('Add a comment…');
+    await expect(composer).toBeVisible({ timeout: 15_000 });
+
+    // The composer must fill its row. It previously collapsed to a narrow
+    // column because the picker wrapped it in an unsized div.
+    const box = await composer.boundingBox();
+    expect(box, 'comment box should be laid out').toBeTruthy();
+    expect(box!.width).toBeGreaterThan(200);
+
+    await composer.click();
+    await composer.pressSequentially('Ping ');
+    await composer.pressSequentially('@Sa');
+
+    const listbox = page.getByRole('listbox');
+    await expect(listbox).toBeVisible({ timeout: 15_000 });
+
+    const option = page.getByRole('option').first();
+    const picked = (await option.textContent()) ?? '';
+    expect(picked).toContain('Sarah');
+    await option.click();
+
+    // The stored form is a token; the composer shows exactly what will be saved.
+    await expect(composer).toHaveValue(/@\[Sarah Chen\]\(user:[\w-]+\)/);
+
+    await page.getByRole('button', { name: 'Post comment' }).click();
+
+    const badge = page.locator('.mention', { hasText: 'Sarah Chen' });
+    await expect(badge).toBeVisible({ timeout: 15_000 });
+    // Rendered, not raw: the reader never sees token syntax.
+    await expect(page.getByText('](user:')).toHaveCount(0);
+    await assertNoCrash(page);
   });
 
-  test('mention displays as styled element in description', async ({ page }) => {
-    await page.goto(`/${projectKey}`);
-    await page.waitForLoadState('networkidle');
+  test('an email address does not open the picker', async ({ page }) => {
+    await login(page);
+    const { headers, project } = await apiContext(page);
+    const issues = await (await page.request.get(
+      `/api/projects/${project.id}/issues`, { headers })).json();
+    const issue = issues.find((i: { type: string }) => i.type !== 'epic') ?? issues[0];
 
-    // Find issue with mentions
-    const issueLink = page.locator('[data-testid="issue-row"]').first();
-    if (await issueLink.isVisible()) {
-      await issueLink.click();
-      await page.waitForLoadState('networkidle');
+    await page.goto(`/${project.key}/${issue.issue_key}`);
+    const composer = page.getByPlaceholder('Add a comment…');
+    await expect(composer).toBeVisible({ timeout: 15_000 });
 
-      // Look for mention elements
-      const mentions = page.locator('[class*="mention"], span[class*="badge"]');
-      const count = await mentions.count();
-      // At least verify no errors on render
-      expect(count).toBeGreaterThanOrEqual(0);
-    }
+    await composer.click();
+    await composer.pressSequentially('write to sarah@example');
+    await expect(page.getByRole('listbox')).toHaveCount(0);
+    await assertNoCrash(page);
   });
 
-  test('notification settings page is accessible', async ({ page }) => {
-    await page.goto('/settings');
-    await page.waitForLoadState('networkidle');
+  test('a mention notifies the person mentioned', async ({ page }) => {
+    await login(page);
+    const { headers, project } = await apiContext(page);
 
-    // Verify settings page loads
-    const title = page.locator('h1, h2').first();
-    const text = await title.textContent();
-    expect(text).toBeTruthy();
+    const users = await (await page.request.get('/api/users', { headers })).json();
+    const sarah = users.find((u: { email: string }) => u.email === 'sarah@example.com');
+    expect(sarah, 'seeded Sarah Chen should exist').toBeTruthy();
+
+    const issues = await (await page.request.get(
+      `/api/projects/${project.id}/issues`, { headers })).json();
+    const issue = issues.find((i: { type: string }) => i.type !== 'epic') ?? issues[0];
+
+    await page.request.post(`/api/issues/${issue.id}/comments`, {
+      headers,
+      data: { body: `Please look @[Sarah Chen](user:${sarah.id})` },
+    });
+
+    // Sarah's own session is the only one that can read her notifications.
+    const sarahLogin = await (await page.request.post('/api/auth/login', {
+      data: { email: 'sarah@example.com', password: 'password123' },
+    })).json();
+    const sarahHeaders = { 'x-auth-token': sarahLogin.token, 'Content-Type': 'application/json' };
+    const after = await (await page.request.get('/api/notifications', { headers: sarahHeaders })).json();
+
+    const mentions = (after.notifications ?? after).filter(
+      (n: { type: string }) => n.type === 'mention');
+    expect(mentions.length).toBeGreaterThan(0);
+    expect(mentions[0].message).toContain('mentioned you');
   });
 
-  test('issue edit dialog can be opened and closed', async ({ page }) => {
-    await page.goto(`/${projectKey}`);
-    await page.waitForLoadState('networkidle');
+  test('a mention in a wiki page body renders as a badge', async ({ page }) => {
+    await login(page);
+    const token = await authToken(page);
+    const headers = { 'x-auth-token': token, 'Content-Type': 'application/json' };
 
-    const issueLink = page.locator('[data-testid="issue-row"]').first();
-    if (await issueLink.isVisible()) {
-      await issueLink.click();
-      await page.waitForLoadState('networkidle');
+    const users = await (await page.request.get('/api/users', { headers })).json();
+    const sarah = users.find((u: { email: string }) => u.email === 'sarah@example.com');
+    const spaces = await (await page.request.get('/api/wiki/spaces', { headers })).json();
 
-      const editBtn = page.locator('button:has-text("Edit")').first();
-      if (await editBtn.isVisible()) {
-        await editBtn.click();
-        await page.waitForSelector('[role="dialog"]', { timeout: 5000 });
+    const created = await (await page.request.post(`/api/wiki/spaces/${spaces[0].id}/pages`, {
+      headers,
+      data: {
+        title: 'E2E mention fixture',
+        body: `<p>Owner: <span data-mention-id="${sarah.id}">@Sarah Chen</span></p>`,
+      },
+    })).json();
 
-        const dialog = page.locator('[role="dialog"]');
-        expect(await dialog.isVisible()).toBe(true);
-
-        // Close dialog
-        await page.keyboard.press('Escape');
-        await page.waitForSelector('[role="dialog"]', { state: 'hidden', timeout: 3000 });
-      }
-    }
-  });
-
-  test('multiple project members are available for mention', async ({ page }) => {
-    await page.goto(`/${projectKey}`);
-    await page.waitForLoadState('networkidle');
-
-    const issueLink = page.locator('[data-testid="issue-row"]').first();
-    if (await issueLink.isVisible()) {
-      await issueLink.click();
-      await page.waitForLoadState('networkidle');
-
-      const editBtn = page.locator('button:has-text("Edit")').first();
-      if (await editBtn.isVisible()) {
-        await editBtn.click();
-        await page.waitForSelector('[id="edit-issue-desc"]', { timeout: 5000 });
-
-        const descInput = page.locator('[id="edit-issue-desc"]');
-        await descInput.focus();
-        await descInput.fill('@');
-
-        const dropdown = page.locator('[role="listbox"]');
-        if (await dropdown.isVisible({ timeout: 3000 })) {
-          const options = await page.locator('[role="option"]').count();
-          expect(options).toBeGreaterThan(0);
-        }
-      }
-    }
+    await page.goto(`/wiki/page/${created.id}`);
+    const badge = page.locator('.mention', { hasText: 'Sarah Chen' });
+    await expect(badge).toBeVisible({ timeout: 15_000 });
+    await assertNoCrash(page);
   });
 });

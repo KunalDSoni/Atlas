@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
+import { stripMentionSyntax } from '@/lib/mentions';
 import { api } from '@/lib/api';
 import type { PublicRequest } from '@/lib/types';
 import { EmptyState, ErrorState, PageHeader, RowsSkeleton } from '@/components/app/primitives';
@@ -244,7 +245,7 @@ function RequestDetail({ requestKey }: { requestKey: string }) {
           request.comments.map((c) => (
             <Card key={c.id} className="p-4">
               <p className="text-xs font-medium text-muted-foreground">{c.author_name}</p>
-              <p className="mt-1 whitespace-pre-wrap text-sm">{c.body}</p>
+              <p className="mt-1 whitespace-pre-wrap text-sm">{stripMentionSyntax(c.body)}</p>
             </Card>
           ))
         )}

@@ -6,6 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { formatBytes, timeAgo } from '@/lib/format';
 import { MentionText } from '../mention-text';
 import { useMentions } from '@/hooks/use-mentions';
+import { stripMentionSyntax } from '@/lib/mentions';
 import { UserAvatar } from '../primitives';
 import type { IssueDetail } from './use-issue-detail';
 
@@ -118,8 +119,8 @@ export function IssueTabs({ detail }: { detail: IssueDetail }) {
                             <p className="min-w-0 flex-1 text-muted-foreground">
                               <span className="font-medium text-foreground">{a.user_name}</span> changed{' '}
                               <span className="font-medium text-foreground">{a.field}</span>
-                              {a.old_value && <> from <span className="text-foreground">{a.old_value}</span></>}
-                              {a.new_value && <> to <span className="text-foreground">{a.new_value}</span></>}
+                              {a.old_value && <> from <span className="text-foreground">{stripMentionSyntax(a.old_value)}</span></>}
+                              {a.new_value && <> to <span className="text-foreground">{stripMentionSyntax(a.new_value)}</span></>}
                               <span className="ml-1 text-xs">· {timeAgo(a.created_at)}</span>
                             </p>
                           </li>
