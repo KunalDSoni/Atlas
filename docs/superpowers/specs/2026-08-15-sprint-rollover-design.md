@@ -31,6 +31,16 @@ silently corrupts that sprint's velocity and its report, and nothing stops it.
 | Which past sprints count | Ones the issue has left **that are now completed** |
 | A ticket already in a completed sprint | Its own sprint stays listed but disabled, so the field still reads correctly |
 | Enforcement | Server rejects the assignment too — hiding a control is not a rule |
+| Who the rule applies to | Every caller, personal API tokens included |
+
+The last row was revisited after release, when the obvious cost of enforcement —
+an integration that assigns to a closed sprint starts getting a 409 — came up
+against the option of exempting API tokens. Jira does not exempt them: its Agile
+API refuses to move issues into a closed sprint the same way its UI does. A rule
+that applies only to humans is not a rule, and the write it would wave through is
+exactly the one that corrupts a closed sprint's velocity and report, silently and
+after the fact. Enforcement stays uniform; the surprise is addressed by
+documenting the rule in the API reference instead of by weakening it.
 
 The second row is what separates a rollover from a correction. An issue filed
 against the wrong planning sprint and moved an hour later never rolled over, and

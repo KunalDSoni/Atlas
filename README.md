@@ -256,15 +256,35 @@ notification rows and bookmarks hold them. See `components/app/legacy-redirect.t
 | GET | `/api/projects/:id/sprints` | List sprints with stats |
 | POST | `/api/projects/:id/sprints` | Create sprint |
 | GET | `/api/sprints/:id` | Get sprint |
-| PUT | `/api/sprints/:id` | Update sprint |
-| DELETE | `/api/sprints/:id` | Delete sprint (issues → backlog) |
+| PUT | `/api/sprints/:id` | Update sprint (completed: name/goal only) |
+| POST | `/api/sprints/:id/reopen` | Reopen a completed sprint (board admin, requires `end_date`) |
+| DELETE | `/api/sprints/:id` | Delete a planning sprint (issues → next open sprint, else backlog) |
+
+#### Sprint lifecycle rules
+
+Atlas follows Jira's sprint rules, and enforces them on the server for every
+caller — session or personal API token alike. Scripts get the same answers the
+UI does:
+
+| Attempt | Response |
+|---|---|
+| Assign an issue to a **completed** sprint (`POST`/`PUT` issue, `PUT` move) | **409** — reopen the sprint first |
+| Change a completed sprint's dates or status via `PUT` | **409** — reopen it first |
+| Rename a completed sprint, or edit its goal | **200** |
+| Delete an **active** or **completed** sprint | **409** — complete it, or leave it closed |
+| Reopen while another sprint in the project is active | **409** |
+
+Moving an issue *out* of a completed sprint, or to the backlog, is always
+allowed — only new work into a closed sprint is refused. Resubmitting an issue's
+unchanged `sprint_id` is not treated as a new assignment, so editing other fields
+on work that sits in a completed sprint keeps working.
 
 ### Issues Module
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/projects/:id/issues` | List issues (?sprint_id= filter) |
 | POST | `/api/projects/:id/issues` | Create issue |
-| GET | `/api/issues/:id` | Get issue with enriched data |
+| GET | `/api/issues/:id` | Get issue with enriched data (adds `previous_sprints`) |
 | PUT | `/api/issues/:id` | Update issue fields |
 | DELETE | `/api/issues/:id` | Delete issue (cascade comments) |
 | PUT | `/api/issues/:id/move` | Move issue (drag & drop) |
