@@ -237,3 +237,46 @@ describe('023_wiki_page_numbers', () => {
     expect(Number(uniqueIdx.unique)).toBe(1);
   });
 });
+
+describe('034_backfill_request_count', () => {
+  test('seeds request_count from feedback linked before the counter existed', async () => {
+    const db = await getDb();
+
+    // A deployment as it stood before this shipped: feedback linked to a
+    // feature over weeks, and request_count still sitting at its 0 default
+    // because nothing ever wrote it.
+    const featureId = crypto.randomUUID();
+    const otherId = crypto.randomUUID();
+    for (const id of [featureId, otherId]) {
+      await run(db, 'INSERT INTO pb_features (id, name, request_count) VALUES (?, ?, 0)', [id, `Backfill ${id}`]);
+    }
+
+    const insightIds = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()];
+    for (const id of insightIds) {
+      await run(db, 'INSERT INTO pb_insights (id, title) VALUES (?, ?)', [id, `Feedback ${id}`]);
+    }
+    // Two against one feature, one against the other.
+    for (const [i, insightId] of insightIds.entries()) {
+      await run(db, 'INSERT INTO pb_insight_links (id, insight_id, feature_id) VALUES (?, ?, ?)',
+        [crypto.randomUUID(), insightId, i < 2 ? featureId : otherId]);
+    }
+
+    await run(db, 'DELETE FROM schema_migrations WHERE id = ?', ['034_backfill_request_count']);
+    const applied = await runMigrations(sqliteAdapter(db));
+    expect(applied).toEqual(['034_backfill_request_count']);
+
+    expect((await queryOne(db, 'SELECT request_count FROM pb_features WHERE id = ?', [featureId])).request_count).toBe(2);
+    expect((await queryOne(db, 'SELECT request_count FROM pb_features WHERE id = ?', [otherId])).request_count).toBe(1);
+  });
+
+  test('leaves a feature with no linked feedback at zero', async () => {
+    const db = await getDb();
+    const id = crypto.randomUUID();
+    await run(db, 'INSERT INTO pb_features (id, name, request_count) VALUES (?, ?, 0)', [id, 'No feedback yet']);
+
+    await run(db, 'DELETE FROM schema_migrations WHERE id = ?', ['034_backfill_request_count']);
+    await runMigrations(sqliteAdapter(db));
+
+    expect((await queryOne(db, 'SELECT request_count FROM pb_features WHERE id = ?', [id])).request_count).toBe(0);
+  });
+});

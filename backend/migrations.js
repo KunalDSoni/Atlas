@@ -1251,6 +1251,31 @@ const MIGRATIONS = [
       },
     ],
   },
+  {
+    id: '034_backfill_request_count',
+    description: 'Seed request_count from the feedback already linked to each feature',
+    steps: [
+      {
+        // request_count went live in 025 and no code path ever wrote it, so
+        // every row in every existing deployment is 0 while the links that
+        // should have counted have been accumulating for weeks. Incrementing
+        // only from here would leave the historical evidence permanently
+        // uncounted and the number still wrong — just less obviously.
+        //
+        // A plain assignment is safe precisely because the feature was broken:
+        // merge is the only other writer, it 404'd from the client and was
+        // never reachable any other way, so no row carries a merged total for
+        // this to overwrite. That stops being true after this ships, which is
+        // why this runs once as a migration rather than as a recurring repair.
+        sql: {
+          sqlite: `UPDATE pb_features SET request_count =
+                     (SELECT COUNT(*) FROM pb_insight_links il WHERE il.feature_id = pb_features.id)`,
+          mysql: `UPDATE pb_features f SET f.request_count =
+                    (SELECT COUNT(*) FROM pb_insight_links il WHERE il.feature_id = f.id)`,
+        },
+      },
+    ],
+  },
 ];
 
 const LEDGER_SQL = {

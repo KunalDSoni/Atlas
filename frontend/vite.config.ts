@@ -12,6 +12,22 @@ export default defineConfig({
     // Express serves this directory (backend/server.js -> ../frontend/build)
     outDir: 'build',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        // Split the dependencies out of the entry chunk. This does not shrink
+        // the first visit — the app shell needs React, the router and the Radix
+        // primitives before it can paint anything — but it stops every app
+        // change from invalidating the ~450 kB of vendor code that did not
+        // change, which is what a returning user re-downloads today.
+        //
+        // One vendor chunk, not several: splitting a dependency graph by
+        // package invites a chunk that runs before the one it initialises from,
+        // and the failure mode is a blank page rather than a build error.
+        manualChunks(id: string) {
+          if (id.includes('node_modules')) return 'vendor';
+        },
+      },
+    },
   },
   server: {
     // `npm run dev` proxies the API to the Express backend
