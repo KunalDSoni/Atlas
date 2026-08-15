@@ -44,9 +44,23 @@ router.post('/issues/:issueId/worklogs', requireAuth, async (req, res) => {
     const issue = await queryOne(db, 'SELECT id FROM issues WHERE id = ?', [req.params.issueId]);
     if (!issue) return res.status(404).json({ error: 'Issue not found' });
 
+    // When the work happened, as distinct from when this row was written.
+    // Rejected rather than defaulted on a bad value: silently recording today
+    // for a mistyped date is the failure this column exists to remove.
+    let workedAt = null;
+    if (req.body.worked_at !== undefined && req.body.worked_at !== null) {
+      const parsed = new Date(String(req.body.worked_at).length === 10
+        ? `${req.body.worked_at}T12:00:00Z`   // midday, so a timezone shift cannot move the day
+        : String(req.body.worked_at).replace(' ', 'T'));
+      if (Number.isNaN(parsed.getTime())) {
+        return res.status(400).json({ error: 'worked_at must be a YYYY-MM-DD date' });
+      }
+      workedAt = parsed.toISOString().slice(0, 19).replace('T', ' ');
+    }
+
     const id = uuidv4();
-    await run(db, "INSERT INTO work_logs (id, issue_id, user_id, minutes, comment, source) VALUES (?, ?, ?, ?, ?, 'manual')",
-      [id, req.params.issueId, req.userId, minutes, req.body.comment || null]);
+    await run(db, "INSERT INTO work_logs (id, issue_id, user_id, minutes, comment, source, worked_at) VALUES (?, ?, ?, ?, ?, 'manual', COALESCE(?, CURRENT_TIMESTAMP))",
+      [id, req.params.issueId, req.userId, minutes, req.body.comment || null, workedAt]);
 
     // Logging work here answers the question an abandoned timer asked — how
     // long was that session? — so it stops being unresolved. Scoped to this

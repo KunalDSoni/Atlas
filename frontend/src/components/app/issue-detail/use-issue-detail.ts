@@ -52,6 +52,9 @@ export function useIssueDetail(
   const [logOpen, setLogOpen] = useState(false);
   const [logHours, setLogHours] = useState('');
   const [logComment, setLogComment] = useState('');
+  // The day the work happened, as distinct from the day it is being entered.
+  // Empty means today, which the server records.
+  const [logDate, setLogDate] = useState('');
   const [estimateHours, setEstimateHours] = useState('');
   const [loggingWork, setLoggingWork] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -173,9 +176,10 @@ export function useIssueDetail(
     if (!Number.isFinite(hours) || hours <= 0) return;
     setLoggingWork(true);
     try {
-      await api.worklogs.create(issue.id, Math.round(hours * 60), logComment.trim() || undefined);
+      await api.worklogs.create(issue.id, Math.round(hours * 60), logComment.trim() || undefined, logDate || undefined);
       setLogHours('');
       setLogComment('');
+      setLogDate('');
       setWorklogs(await api.worklogs.list(issue.id));
       const fresh = await api.issues.get(issue.id);
       setIssue(fresh);
@@ -316,7 +320,7 @@ export function useIssueDetail(
 
   const watching = watchers.some((w) => w.id === user?.id);
 
-  return { issue, comments, attachments, activity, watchers, members, sprints, epics, children, candidates, mentioningPages, loading, capturing, commentBody, posting, subtaskTitle, addingSubtask, worklogs, timer, timerBusy, pausedNotice, versions, components, logOpen, logHours, logComment, estimateHours, loggingWork, editOpen, setIssue, setComments, setAttachments, setActivity, setWatchers, setMembers, setSprints, setEpics, setChildren, setCandidates, setMentioningPages, setLoading, setCapturing, setCommentBody, setPosting, setSubtaskTitle, setAddingSubtask, setWorklogs, setVersions, setComponents, setLogOpen, setLogHours, setLogComment, setEstimateHours, setLoggingWork, setEditOpen, canEdit, workflow, watching, user, load, patch, addComment, addSubtask, logWork, startTimer, pauseTimer, removeWorkLog, editWorkLog, saveEstimate, toggleWatch, uploadFiles, removeIssue, captureAsInsight, onChanged, onOpenIssue };
+  return { issue, comments, attachments, activity, watchers, members, sprints, epics, children, candidates, mentioningPages, loading, capturing, commentBody, posting, subtaskTitle, addingSubtask, worklogs, timer, timerBusy, pausedNotice, versions, components, logOpen, logHours, logComment, logDate, estimateHours, loggingWork, editOpen, setIssue, setComments, setAttachments, setActivity, setWatchers, setMembers, setSprints, setEpics, setChildren, setCandidates, setMentioningPages, setLoading, setCapturing, setCommentBody, setPosting, setSubtaskTitle, setAddingSubtask, setWorklogs, setVersions, setComponents, setLogOpen, setLogHours, setLogComment, setLogDate, setEstimateHours, setLoggingWork, setEditOpen, canEdit, workflow, watching, user, load, patch, addComment, addSubtask, logWork, startTimer, pauseTimer, removeWorkLog, editWorkLog, saveEstimate, toggleWatch, uploadFiles, removeIssue, captureAsInsight, onChanged, onOpenIssue };
 }
 
 export type IssueDetail = ReturnType<typeof useIssueDetail>;

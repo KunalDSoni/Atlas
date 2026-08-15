@@ -552,9 +552,15 @@ async function commitTimer(db, issueId, userId) {
   await run(db, "DELETE FROM work_logs WHERE issue_id = ? AND user_id = ? AND source = 'timer'",
     [issueId, userId]);
   if (total > 0) {
+    // Dated from the EARLIEST segment, not from now. A session run across
+    // midnight, or committed days later when the issue reached Done, otherwise
+    // lands on the day it was committed rather than the day it was worked.
+    const earliest = segments
+      .map((s) => s.started_at)
+      .sort()[0] || nowStamp();
     await run(db,
-      "INSERT INTO work_logs (id, issue_id, user_id, minutes, comment, source) VALUES (?, ?, ?, ?, ?, 'timer')",
-      [uuidv4(), issueId, userId, total, 'Tracked with timer']);
+      "INSERT INTO work_logs (id, issue_id, user_id, minutes, comment, source, worked_at) VALUES (?, ?, ?, ?, ?, 'timer', ?)",
+      [uuidv4(), issueId, userId, total, 'Tracked with timer', earliest]);
 
     // Tracked time is authoritative: skip the status-derived calculation for
     // this issue from now on (read by utils/auto-worklog.js's

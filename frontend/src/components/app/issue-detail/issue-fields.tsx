@@ -45,7 +45,7 @@ const stopReasonText = (reason: TimerStopReason) =>
   STOP_REASON_TEXT[reason] ?? 'stopped automatically';
 
 export function IssueFields({ detail }: { detail: IssueDetail }) {
-  const { issue, members, sprints, epics, worklogs, versions, components, logOpen, logHours, logComment, estimateHours, loggingWork, setLogOpen, setLogHours, setLogComment, setEstimateHours, canEdit, workflow, user, patch, logWork, removeWorkLog, editWorkLog, saveEstimate, timer, timerBusy, pausedNotice, startTimer, pauseTimer } = detail;
+  const { issue, members, sprints, epics, worklogs, versions, components, logOpen, logHours, logComment, logDate, estimateHours, loggingWork, setLogOpen, setLogHours, setLogComment, setLogDate, setEstimateHours, canEdit, workflow, user, patch, logWork, removeWorkLog, editWorkLog, saveEstimate, timer, timerBusy, pausedNotice, startTimer, pauseTimer } = detail;
 
   // The server is only contacted on start/pause/commit — never polled. The
   // display advances locally from the server's elapsed_minutes, which already
@@ -406,6 +406,16 @@ export function IssueFields({ detail }: { detail: IssueDetail }) {
                           onChange={(e) => setLogComment(e.target.value)}
                           placeholder="What did you work on?"
                           aria-label="Work description"
+                        />
+                        {/* The day the work happened, not the day it is entered.
+                            Blank means today. Time logged for yesterday used to
+                            land on today and skew the week. */}
+                        <Input
+                          type="date"
+                          value={logDate}
+                          onChange={(e) => setLogDate(e.target.value)}
+                          aria-label="Day worked"
+                          className="w-40"
                         />
                         <Button onClick={logWork} disabled={loggingWork || !logHours}>
                           {loggingWork ? <Loader2 className="size-4 animate-spin" /> : 'Log'}

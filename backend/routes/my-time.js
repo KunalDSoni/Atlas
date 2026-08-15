@@ -33,10 +33,9 @@ const isoDate = (d) => d.toISOString().slice(0, 10);
 /**
  * The calendar date a timestamp falls on, as seen from `timezone`.
  *
- * work_logs carries only created_at, so a log is attributed to the day it was
- * RECORDED — for late-night work that is the following day. Fixing that would
- * mean a separate worked-on date in every logging path, which a reporting view
- * does not justify; the screen labels totals with the timezone instead.
+ * Buckets on worked_at — the day the work happened — falling back to created_at
+ * for rows written before that column existed, which is exactly what the old
+ * behaviour meant, so historical weeks still report as they always did.
  */
 function localDate(stamp, timezone) {
   const utc = new Date(`${String(stamp).replace(' ', 'T')}Z`);
@@ -77,19 +76,22 @@ router.get('/me/time', requireAuth, async (req, res) => {
 
     const rows = await queryAll(db, `
       SELECT w.id, w.issue_id, w.minutes, w.source, w.comment, w.created_at,
+             COALESCE(w.worked_at, w.created_at) AS worked_at,
              i.issue_key, i.title, p.key AS project_key
       FROM work_logs w
       JOIN issues i ON i.id = w.issue_id
       JOIN projects p ON p.id = i.project_id
-      WHERE w.user_id = ? AND w.created_at >= ? AND w.created_at < ?
-      ORDER BY w.created_at`, [req.userId, lowerBound, upperBound]);
+      WHERE w.user_id = ?
+        AND COALESCE(w.worked_at, w.created_at) >= ?
+        AND COALESCE(w.worked_at, w.created_at) < ?
+      ORDER BY COALESCE(w.worked_at, w.created_at)`, [req.userId, lowerBound, upperBound]);
 
     const fromDate = isoDate(from);
     const toDate = isoDate(to);
     const entries = [];
     const minutesByDate = new Map();
     for (const row of rows) {
-      const date = localDate(row.created_at, timezone);
+      const date = localDate(row.worked_at, timezone);
       if (!date || date < fromDate || date >= toDate) continue;
       const minutes = Number(row.minutes);
       entries.push({ ...row, minutes, date });

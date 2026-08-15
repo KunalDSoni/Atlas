@@ -342,8 +342,9 @@ export const api = {
 
   worklogs: {
     list: (issueId: string) => get<WorkLog[]>(`/issues/${issueId}/worklogs`),
-    create: (issueId: string, minutes: number, comment?: string) =>
-      post<WorkLog>(`/issues/${issueId}/worklogs`, { minutes, comment }),
+    /** `worked_at` is the day the work happened (YYYY-MM-DD); omit for today. */
+    create: (issueId: string, minutes: number, comment?: string, worked_at?: string) =>
+      post<WorkLog>(`/issues/${issueId}/worklogs`, { minutes, comment, worked_at }),
     update: (id: string, updates: { minutes?: number; comment?: string }) =>
       patch<WorkLog>(`/worklogs/${id}`, updates),
     remove: (id: string) => del<{ ok: boolean }>(`/worklogs/${id}`),

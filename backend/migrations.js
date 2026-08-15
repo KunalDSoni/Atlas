@@ -1276,6 +1276,30 @@ const MIGRATIONS = [
       },
     ],
   },
+{
+    id: '035_work_logs_worked_at',
+    description: 'The day work was actually done, as distinct from when it was recorded',
+    steps: [
+      {
+        // work_logs carried only created_at, so a session was attributed to the
+        // moment it was RECORDED: a timer run across midnight committed wholly
+        // onto the following day, and Monday's work logged on Tuesday counted
+        // as Tuesday. Backfilled from created_at, which is exactly what the
+        // old behaviour meant, so existing rows keep reporting as they did.
+        addColumn: {
+          table: 'work_logs', column: 'worked_at',
+          sqlite: 'ALTER TABLE work_logs ADD COLUMN worked_at DATETIME',
+          mysql: 'ALTER TABLE work_logs ADD COLUMN worked_at DATETIME',
+        },
+      },
+      {
+        sql: {
+          sqlite: 'UPDATE work_logs SET worked_at = created_at WHERE worked_at IS NULL',
+          mysql: 'UPDATE work_logs SET worked_at = created_at WHERE worked_at IS NULL',
+        },
+      },
+    ],
+  },
 ];
 
 const LEDGER_SQL = {
