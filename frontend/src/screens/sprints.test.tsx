@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { BrowserRouter } from 'react-router-dom';
 import type { Sprint, SprintStatus } from '@/lib/types';
 import { SprintCard } from '@/screens/sprints';
@@ -47,12 +48,15 @@ const completed = sprintWith('completed', 'Sprint 1');
 const planning = sprintWith('planning', 'Sprint 2');
 const active = sprintWith('active', 'Sprint 3');
 
-describe('SprintCard — a completed sprint is view-only', () => {
-  it('offers no status control, no edit and no delete', () => {
+// Jira's rules: a completed sprint can still be renamed, so the pencil stays. Its
+// status is fixed (reopening lives on the sprint detail screen) and it cannot be
+// deleted. A running sprint cannot be deleted either — completing it is the way out.
+describe('SprintCard — a completed sprint keeps only its rename', () => {
+  it('offers edit, but no status control and no delete', () => {
     renderCard(completed);
 
+    expect(screen.getByRole('button', { name: 'Edit Sprint 1' })).toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: 'Status for Sprint 1' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Edit Sprint 1' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Delete Sprint 1' })).not.toBeInTheDocument();
   });
 
@@ -65,16 +69,52 @@ describe('SprintCard — a completed sprint is view-only', () => {
   });
 });
 
-describe('SprintCard — an open sprint stays editable', () => {
-  it.each([
-    ['planning', planning],
-    ['active', active],
-  ])('%s sprints keep the status, edit and delete controls', (_label, sprint) => {
-    renderCard(sprint);
+describe('SprintCard — an active sprint cannot be deleted', () => {
+  it('keeps the status control and edit, but offers no delete', () => {
+    renderCard(active);
 
-    expect(screen.getByRole('combobox', { name: `Status for ${sprint.name}` })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: `Edit ${sprint.name}` })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: `Delete ${sprint.name}` })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Status for Sprint 3' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit Sprint 3' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete Sprint 3' })).not.toBeInTheDocument();
+  });
+});
+
+describe('SprintCard — a planning sprint stays fully editable', () => {
+  it('keeps the status, edit and delete controls', () => {
+    renderCard(planning);
+
+    expect(screen.getByRole('combobox', { name: 'Status for Sprint 2' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit Sprint 2' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete Sprint 2' })).toBeInTheDocument();
+  });
+
+  it('names the sprint the issues will move to', async () => {
+    const successor = sprintWith('planning', 'Sprint 4');
+    render(
+      <BrowserRouter>
+        <SprintCard
+          sprint={planning}
+          sprints={[planning, successor]}
+          projectKey="AUS"
+          canManage
+          onEdit={vi.fn()}
+          onComplete={vi.fn()}
+          onChanged={vi.fn()}
+        />
+      </BrowserRouter>,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete Sprint 2' }));
+
+    expect(screen.getByText(/Issues in this sprint move to Sprint 4/)).toBeInTheDocument();
+  });
+
+  it('falls back to the backlog when no sprint follows', async () => {
+    renderCard(planning);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete Sprint 2' }));
+
+    expect(screen.getByText(/Issues in this sprint move to the backlog/)).toBeInTheDocument();
   });
 });
 

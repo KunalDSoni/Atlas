@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { CalendarRange, Pencil, Plus, Rocket, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -30,8 +30,13 @@ import { cn } from '@/lib/utils';
 // unlisted value is rejected by the DB, not silently stored.
 const SPRINT_STATUSES: SprintStatus[] = ['planning', 'active', 'completed'];
 
+// Sentinel for the completion dialog's "create one for me" destination. Not a
+// sprint id, so it can never collide with one.
+const NEW_SPRINT = '__new_sprint__';
+
 export function SprintCard({
   sprint,
+  sprints = [],
   projectKey,
   canManage,
   onEdit,
@@ -39,6 +44,7 @@ export function SprintCard({
   onChanged,
 }: {
   sprint: Sprint;
+  sprints?: Sprint[];
   projectKey: string;
   canManage: boolean;
   onEdit: (sprint: Sprint) => void;
@@ -46,11 +52,19 @@ export function SprintCard({
   onChanged: () => void;
 }) {
   const pct = sprint.issue_count ? Math.round((sprint.done_count / sprint.issue_count) * 100) : 0;
-  // A completed sprint is a record of what happened. Nobody edits, reopens or
-  // deletes it — the card shows its numbers and nothing else. The API refuses
-  // the same writes (backend/routes/sprints.js), so this is the UI half of one
-  // rule, not the rule itself.
-  const readOnly = sprint.status === 'completed';
+  // Jira's rules, which the API enforces in backend/routes/sprints.js — this is the
+  // UI half of them, not the rule itself. A completed sprint can still be renamed,
+  // but its dates and status are fixed and reopening it happens on the sprint
+  // detail screen. A running sprint has no delete; completing it is the way out.
+  const completed = sprint.status === 'completed';
+  const canDelete = sprint.status === 'planning';
+  // Mirrors nextSprintAfter on the server so the confirmation names the sprint the
+  // issues will actually land in. api.sprints.list returns the same list order.
+  const deleteDestination = useMemo(() => {
+    const index = sprints.findIndex((s) => s.id === sprint.id);
+    if (index === -1) return null;
+    return sprints.slice(index + 1).find((s) => s.status !== 'completed') ?? null;
+  }, [sprints, sprint.id]);
 
   async function setStatus(status: SprintStatus) {
     if (status === 'completed' && sprint.status !== 'completed') {
@@ -67,8 +81,12 @@ export function SprintCard({
 
   async function remove() {
     try {
-      await api.sprints.remove(sprint.id);
-      toast.success('Sprint deleted', { description: 'Its issues moved back to the backlog.' });
+      const result = await api.sprints.remove(sprint.id);
+      toast.success('Sprint deleted', {
+        description: result.moved_to_name
+          ? `Its issues moved to ${result.moved_to_name}.`
+          : 'Its issues moved to the backlog.',
+      });
       onChanged();
     } catch (e) {
       toast.error('Could not delete sprint', { description: e instanceof Error ? e.message : undefined });
@@ -125,18 +143,23 @@ export function SprintCard({
           </p>
         )}
 
-        {canManage && !readOnly && (
+        {canManage && (
           <div className="flex items-center gap-2 pt-1">
-            <Select value={sprint.status} onValueChange={(v) => setStatus(v as SprintStatus)}>
-              <SelectTrigger className="h-8 flex-1 text-xs" aria-label={`Status for ${sprint.name}`}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {SPRINT_STATUSES.map((s) => (
-                  <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {!completed && (
+              <Select value={sprint.status} onValueChange={(v) => setStatus(v as SprintStatus)}>
+                <SelectTrigger className="h-8 flex-1 text-xs" aria-label={`Status for ${sprint.name}`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SPRINT_STATUSES.map((s) => (
+                    <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {completed && (
+              <span className="flex-1 text-xs text-muted-foreground">Completed · read-only</span>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -147,6 +170,7 @@ export function SprintCard({
             >
               <Pencil className="size-4" />
             </Button>
+            {canDelete && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="ghost" size="icon" className="size-8 text-destructive" aria-label={`Delete ${sprint.name}`}>
@@ -157,7 +181,7 @@ export function SprintCard({
                 <AlertDialogHeader>
                   <AlertDialogTitle>Delete {sprint.name}?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Issues in this sprint move back to the backlog. They are not deleted.
+                    Issues in this sprint move to {deleteDestination ? deleteDestination.name : 'the backlog'}. They are not deleted.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -171,6 +195,7 @@ export function SprintCard({
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+            )}
           </div>
         )}
       </CardContent>
@@ -195,6 +220,7 @@ function EditSprintDialog({
   const [end, setEnd] = useState('');
   const [status, setStatus] = useState<SprintStatus>('planning');
   const [submitting, setSubmitting] = useState(false);
+  const isCompleted = sprint?.status === 'completed';
 
   useEffect(() => {
     if (sprint) {
@@ -209,22 +235,21 @@ function EditSprintDialog({
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!sprint || !name.trim()) return;
-    // The card never opens this dialog for a completed sprint, but a teammate
-    // (or another tab) can complete one while it is open. Saving then would
-    // rewrite history, and the API rejects it — so stop here instead.
-    if (sprint.status === 'completed') {
-      toast.error('Sprint completed', { description: 'Completed sprints cannot be edited.' });
-      onOpenChange(false);
-      return;
-    }
-    const updates = {
-      name: name.trim(),
-      goal: goal.trim() || null,
-      start_date: start || null,
-      end_date: end || null,
-      status,
-    };
-    if (status === 'completed') {
+    // Jira allows a completed sprint's name and goal to change but not its dates or
+    // status, so send only what the API will accept. Sending the frozen fields back
+    // unchanged would pass, but a teammate completing the sprint in another tab
+    // would turn a stale date into a 409 on an otherwise valid rename.
+    const frozen = sprint.status === 'completed';
+    const updates = frozen
+      ? { name: name.trim(), goal: goal.trim() || null }
+      : {
+        name: name.trim(),
+        goal: goal.trim() || null,
+        start_date: start || null,
+        end_date: end || null,
+        status,
+      };
+    if (!frozen && status === 'completed' && sprint.status !== 'completed') {
       onComplete(sprint, updates);
       return;
     }
@@ -273,16 +298,28 @@ function EditSprintDialog({
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label htmlFor="edit-sprint-start">Start</Label>
-                <Input id="edit-sprint-start" type="date" value={start} onChange={(e) => setStart(e.target.value)} />
+                <Input
+                  id="edit-sprint-start"
+                  type="date"
+                  value={start}
+                  onChange={(e) => setStart(e.target.value)}
+                  disabled={isCompleted}
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-sprint-end">End</Label>
-                <Input id="edit-sprint-end" type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
+                <Input
+                  id="edit-sprint-end"
+                  type="date"
+                  value={end}
+                  onChange={(e) => setEnd(e.target.value)}
+                  disabled={isCompleted}
+                />
               </div>
             </div>
             <div className="space-y-2">
               <Label>Status</Label>
-              <Select value={status} onValueChange={(v) => setStatus(v as SprintStatus)}>
+              <Select value={status} onValueChange={(v) => setStatus(v as SprintStatus)} disabled={isCompleted}>
                 <SelectTrigger aria-label="Sprint status">
                   <SelectValue />
                 </SelectTrigger>
@@ -293,6 +330,11 @@ function EditSprintDialog({
                 </SelectContent>
               </Select>
             </div>
+            {isCompleted && (
+              <p className="text-xs text-muted-foreground">
+                Reopen the sprint to change its dates.
+              </p>
+            )}
           </div>
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
@@ -340,26 +382,44 @@ function CompleteSprintDialog({
   onCompleted: () => void;
 }) {
   const [destination, setDestination] = useState('backlog');
+  const [newSprintName, setNewSprintName] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const destinationSprints = sprints.filter((s) => s.id !== pending?.sprint.id && s.status !== 'completed');
+  // Jira offers the backlog, a future sprint, or a brand new sprint. The running
+  // sprint is not on the list — you would be moving work into a sprint that is
+  // itself about to be closed.
+  const destinationSprints = sprints.filter((s) => s.id !== pending?.sprint.id && s.status === 'planning');
 
   useEffect(() => {
-    if (pending) setDestination(destinationSprints[0]?.id ?? 'backlog');
+    if (pending) {
+      setDestination(destinationSprints[0]?.id ?? 'backlog');
+      setNewSprintName(`${pending.sprint.name} follow-up`);
+    }
     // Recompute only when a new completion flow opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pending?.sprint.id]);
 
+  async function resolveDestinationId() {
+    if (destination === 'backlog') return null;
+    if (destination !== NEW_SPRINT) return destination;
+    const created = await api.sprints.create(pending!.sprint.project_id, { name: newSprintName.trim() });
+    return created.id;
+  }
+
   async function complete() {
     if (!pending) return;
+    if (destination === NEW_SPRINT && !newSprintName.trim()) return;
     setSubmitting(true);
     try {
-      const sprintUpdates = pending.updates ?? { status: 'completed' as SprintStatus };
-      const sprintPayload = { ...sprintUpdates, status: 'completed' as SprintStatus };
-      await api.sprints.update(pending.sprint.id, sprintPayload);
-      const sprint_id = destination === 'backlog' ? null : destination;
+      // Move the work first. Closing the sprint first and failing here would strand
+      // unfinished issues inside a sprint whose dates and status are already frozen.
+      const sprint_id = await resolveDestinationId();
       await Promise.all(pending.unfinished.map((issue) => api.issues.update(issue.id, { sprint_id })));
+
+      const sprintUpdates = pending.updates ?? {};
+      await api.sprints.update(pending.sprint.id, { ...sprintUpdates, status: 'completed' as SprintStatus });
+
       toast.success('Sprint completed', {
-        description: destination === 'backlog' ? 'Unfinished work moved to backlog.' : 'Unfinished work moved to the selected sprint.',
+        description: sprint_id ? 'Unfinished work moved to the selected sprint.' : 'Unfinished work moved to backlog.',
       });
       onCompleted();
     } catch (err) {
@@ -390,15 +450,27 @@ function CompleteSprintDialog({
               {destinationSprints.map((s) => (
                 <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
               ))}
+              <SelectItem value={NEW_SPRINT}>New sprint</SelectItem>
               <SelectItem value="backlog">Backlog</SelectItem>
             </SelectContent>
           </Select>
+          {destination === NEW_SPRINT && (
+            <div className="space-y-2 pt-2">
+              <Label htmlFor="complete-new-sprint-name">New sprint name</Label>
+              <Input
+                id="complete-new-sprint-name"
+                value={newSprintName}
+                onChange={(e) => setNewSprintName(e.target.value)}
+                required
+              />
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={onCancel} disabled={submitting}>
             Cancel
           </Button>
-          <Button onClick={complete} disabled={submitting}>
+          <Button onClick={complete} disabled={submitting || (destination === NEW_SPRINT && !newSprintName.trim())}>
             Complete sprint
           </Button>
         </DialogFooter>
@@ -549,6 +621,8 @@ export default function SprintsScreen() {
       const issues = await api.issues.list(sprint.project_id, sprint.id);
       const unfinished = issues.filter((issue) => issue.status !== 'done');
       if (unfinished.length === 0) {
+        // The server refuses this when an issue still has an open subtask; surface
+        // its message rather than a bare failure.
         await api.sprints.update(sprint.id, { ...(updates ?? {}), status: 'completed' });
         toast.success('Sprint completed');
         setEditingSprint(null);
@@ -629,6 +703,7 @@ export default function SprintsScreen() {
                     <SprintCard
                       key={s.id}
                       sprint={s}
+                      sprints={sprints}
                       projectKey={currentProject?.key ?? ''}
                       canManage={canManage}
                       onEdit={setEditingSprint}

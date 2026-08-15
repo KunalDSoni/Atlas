@@ -1,14 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { CalendarRange, ChevronLeft, Link2, ListTodo } from 'lucide-react';
+import { CalendarRange, ChevronLeft, Link2, ListTodo, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { api } from '@/lib/api';
+import { useAuth } from '@/context/auth-provider';
 import { useProjects } from '@/hooks/use-projects';
 import { useWorkflow } from '@/hooks/use-workflow';
-import { SPRINT_TONE, statusTone } from '@/lib/domain';
+import { SPRINT_TONE, canManageSprints, statusTone } from '@/lib/domain';
 import type { Issue, IssueType, Sprint } from '@/lib/types';
 import {
   EmptyState, ErrorState, PageHeader, PriorityIcon, RowsSkeleton, StatusPill, TypeIcon, UserAvatar,
@@ -36,15 +42,86 @@ function CopySprintLink({ projectKey, slug }: { projectKey: string; slug: string
   );
 }
 
+// Jira reopens a sprint from the Sprint Report, and asks for a new end date because
+// the report reads from it. Atlas has no per-sprint report screen, so this lives on
+// the sprint's own page — the place a completed sprint already links to.
+function ReopenSprintDialog({
+  sprint,
+  onOpenChange,
+  onReopened,
+}: {
+  sprint: Sprint | null;
+  onOpenChange: (open: boolean) => void;
+  onReopened: () => void;
+}) {
+  // Mounted only while open (and keyed by sprint), so the fields start empty
+  // without a reset effect that could wipe input typed the instant it opens.
+  const [endDate, setEndDate] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  async function reopen(e: FormEvent) {
+    e.preventDefault();
+    if (!sprint || !endDate) return;
+    setSubmitting(true);
+    try {
+      await api.sprints.reopen(sprint.id, endDate);
+      toast.success('Sprint reopened', { description: `${sprint.name} is active again.` });
+      onReopened();
+    } catch (err) {
+      toast.error('Could not reopen sprint', { description: err instanceof Error ? err.message : undefined });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={!!sprint} onOpenChange={(open) => { if (!open && !submitting) onOpenChange(false); }}>
+      <DialogContent className="sm:max-w-md">
+        <form onSubmit={reopen}>
+          <DialogHeader>
+            <DialogTitle>Reopen {sprint?.name}?</DialogTitle>
+            <DialogDescription>
+              It becomes the active sprint again. Work that moved to another sprint when it
+              closed stays where it is — only issues still assigned to this sprint come back.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-4">
+            <Label htmlFor="reopen-end-date">New end date</Label>
+            <Input
+              id="reopen-end-date"
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              required
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={submitting || !endDate}>
+              Reopen sprint
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function SprintDetailScreen() {
   const { sprintSlug = '' } = useParams<{ sprintSlug: string }>();
+  const { user } = useAuth();
   const { currentProject, currentProjectId, loading: projectsLoading } = useProjects();
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedTypes, setSelectedTypes] = useState<IssueType[]>([]);
+  const [reopening, setReopening] = useState(false);
   const workflow = useWorkflow(currentProjectId);
+  const canManage = canManageSprints(user?.role);
 
   const load = useCallback(async () => {
     if (!currentProjectId) return;
@@ -114,11 +191,27 @@ export default function SprintDetailScreen() {
         title={sprint.name}
         description={sprint.goal || `Sprint in ${currentProject.name}`}
         actions={(
-          <span className={cn('rounded-sm px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide', SPRINT_TONE[sprint.status])}>
-            {sprint.status}
-          </span>
+          <div className="flex items-center gap-2">
+            {canManage && sprint.status === 'completed' && (
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setReopening(true)}>
+                <RotateCcw className="size-3.5" /> Reopen sprint
+              </Button>
+            )}
+            <span className={cn('rounded-sm px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide', SPRINT_TONE[sprint.status])}>
+              {sprint.status}
+            </span>
+          </div>
         )}
       />
+
+      {reopening && (
+        <ReopenSprintDialog
+          key={sprint.id}
+          sprint={sprint}
+          onOpenChange={(open) => { if (!open) setReopening(false); }}
+          onReopened={() => { setReopening(false); void load(); }}
+        />
+      )}
 
       <Card className="mb-5 p-4">
         <div className="grid gap-4 md:grid-cols-[1fr_220px]">

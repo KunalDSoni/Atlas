@@ -72,9 +72,19 @@ the restriction as a hard block rather than a toggle. Adding parallel sprints is
 out of scope.
 
 **Definition of "complete".** Jira counts a work item as complete only when it sits
-in the rightmost board column. Atlas has no board-column mapping and defines done
-as `status = 'done'`, consistent with `enrichSprint` in
-`backend/routes/sprints.js:30`. Atlas keeps its own definition.
+in the rightmost board column. Atlas has no board-column mapping, so it keeps its
+own definition — but which one matters. Sprint *statistics* use the literal
+`status = 'done'` (`enrichSprint`). The subtask precondition instead uses the
+workflow-aware predicate the epic rollup already uses in `routes/issues.js`: done
+is `status = 'done'` **or** a status the project's workflow maps to the `done`
+category. A project whose done column is not literally named `done` would otherwise
+have every one of its sprints wedged permanently shut.
+
+**Parent links are overloaded.** `issues.parent_id` carries both subtask→parent and
+story→epic relationships (see the branch on `nextType === 'subtask'` in
+`routes/issues.js`). The precondition therefore filters on `child.type = 'subtask'`.
+Without that filter an epic with unfinished stories — ordinary in-progress work —
+would block its sprint from ever completing.
 
 ## Architecture
 
@@ -140,10 +150,16 @@ message retained) and **409** when it is `active`, with
 sprints are deletable.
 
 Issue reassignment on delete changes from "always backlog" (line 118) to Jira's
-rule: issues move to the next sprint in the project ordered by `created_at` whose
-status is not `completed`, and fall back to the backlog (`sprint_id = NULL`) when
-no such sprint exists. The delete confirmation copy changes to name the actual
-destination.
+rule: issues move to the next non-completed sprint in the project's list, falling
+back to the backlog (`sprint_id = NULL`) when no such sprint follows. The delete
+confirmation copy names the actual destination, and the response returns it.
+
+"The list" is the one `GET /projects/:id/sprints` returns, so `nextSprintAfter`
+walks that exact result rather than re-deriving the order with its own `WHERE`
+clause. `created_at` has second resolution and ids are random UUIDs, so any
+separate comparison orders same-second sprints differently from the list the user
+is looking at — the successor rule has to agree with the list by construction, not
+by two queries happening to sort alike.
 
 ### 4. Subtask precondition on completion
 

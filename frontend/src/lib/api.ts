@@ -245,7 +245,8 @@ export const api = {
     create: (projectId: string, body: Partial<Sprint>) => post<Sprint>(`/projects/${projectId}/sprints`, body),
     get: (id: string) => get<Sprint>(`/sprints/${id}`),
     update: (id: string, body: Partial<Sprint>) => put<Sprint>(`/sprints/${id}`, body),
-    remove: (id: string) => del<{ ok: boolean }>(`/sprints/${id}`),
+    reopen: (id: string, end_date: string) => post<Sprint>(`/sprints/${id}/reopen`, { end_date }),
+    remove: (id: string) => del<{ ok: boolean; moved_to: string | null; moved_to_name: string | null }>(`/sprints/${id}`),
   },
 
   issues: {
