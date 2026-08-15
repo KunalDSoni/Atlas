@@ -11,14 +11,19 @@ const startBtn = (page: Page) => page.getByRole('button', { name: 'Start timer' 
 const pauseBtn = (page: Page) => page.getByRole('button', { name: 'Pause timer' });
 
 /**
- * Open the first board issue and return its key.
+ * Open the first backlog issue and return its key.
  *
  * Keyed on data-issue-key rather than a title: edit-issue.spec renames the
  * seeded OAuth2 story to a timestamp, so any spec that opens issues by title
  * passes alone and fails in a full run, depending on order.
+ *
+ * The backlog, not the board: the board shows one sprint, so an earlier spec
+ * creating a sprint in this project (deep-links does) leaves it empty and every
+ * timer test fails on a missing card. The backlog holds whatever no sprint has
+ * claimed, which no other spec can empty out.
  */
 async function openFirstIssue(page: Page): Promise<string> {
-  await page.goto('/atlas/board');
+  await page.goto('/atlas/backlog');
   const card = page.locator('[data-issue-key]').first();
   await expect(card).toBeVisible({ timeout: 15_000 });
   const key = await card.getAttribute('data-issue-key');

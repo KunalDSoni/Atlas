@@ -76,6 +76,28 @@ test('Issue type filter works on sprint detail', async ({ page }) => {
   await expect(filteredIssues).toBeLessThanOrEqual(initialIssues);
 });
 
+test('A completed sprint offers no edit or delete', async ({ page }) => {
+  await login(page);
+  await page.goto('/sprints');
+  await assertNoCrash(page);
+
+  const name = `E2E Frozen Sprint ${Date.now()}`;
+  await page.getByRole('button', { name: 'New sprint' }).first().click();
+  await page.locator('#sprint-name').fill(name);
+  await page.getByRole('button', { name: 'Create sprint' }).click();
+  await expect(page.getByText(name)).toBeVisible();
+
+  await page.getByRole('combobox', { name: `Status for ${name}` }).click();
+  await page.getByRole('option', { name: 'completed' }).click();
+
+  // Completed is the end of the line: the card keeps its numbers and its link
+  // to the detail screen, and loses every control that could rewrite history.
+  await expect(page.getByRole('button', { name: `Edit ${name}` })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: `Delete ${name}` })).toHaveCount(0);
+  await expect(page.getByRole('combobox', { name: `Status for ${name}` })).toHaveCount(0);
+  await expect(page.getByRole('link', { name })).toBeVisible();
+});
+
 test('Cannot change status of completed sprint', async ({ page }) => {
   await login(page);
   await page.goto('/sprints');

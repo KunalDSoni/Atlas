@@ -17,6 +17,16 @@ const { serverError } = require('../utils/errors');
 
 const router = express.Router();
 
+// A completed sprint is the record of what a team actually shipped — reports,
+// velocity and audit history all read from it. Once it is closed it is frozen:
+// no rename, no date change, no reopening, no delete. The UI hides those
+// controls; this is what makes hiding them mean something.
+function completedSprintFrozen(res, sprint) {
+  if (sprint.status !== 'completed') return false;
+  res.status(409).json({ error: 'This sprint is completed. Completed sprints are read-only.' });
+  return true;
+}
+
 async function enrichSprint(db, sprint) {
   const stats = await queryOne(db, `
     SELECT COUNT(*) as issue_count,
@@ -73,6 +83,7 @@ router.put('/sprints/:id', requireAuth, requireBoardAdmin, async (req, res) => {
     const db = await getDb();
     const sprint = await queryOne(db, 'SELECT * FROM sprints WHERE id = ?', [req.params.id]);
     if (!sprint) return res.status(404).json({ error: 'Sprint not found' });
+    if (completedSprintFrozen(res, sprint)) return;
 
     const { name, goal, start_date, end_date, status } = req.body;
     const updates = [];
@@ -100,7 +111,9 @@ router.put('/sprints/:id', requireAuth, requireBoardAdmin, async (req, res) => {
 router.delete('/sprints/:id', requireAuth, requireBoardAdmin, async (req, res) => {
   try {
     const db = await getDb();
-    const sprint = await queryOne(db, 'SELECT name FROM sprints WHERE id = ?', [req.params.id]);
+    const sprint = await queryOne(db, 'SELECT name, status FROM sprints WHERE id = ?', [req.params.id]);
+    if (sprint && completedSprintFrozen(res, sprint)) return;
+
     // Move issues back to backlog (null sprint_id)
     await run(db, 'UPDATE issues SET sprint_id = NULL WHERE sprint_id = ?', [req.params.id]);
     await run(db, 'DELETE FROM sprints WHERE id = ?', [req.params.id]);

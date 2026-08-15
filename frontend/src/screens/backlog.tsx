@@ -327,6 +327,8 @@ export default function BacklogScreen() {
               <li key={issue.id}>
                 <button
                   onClick={() => openIssue(issue.issue_key)}
+                  data-issue-key={issue.issue_key}
+                  data-issue-id={issue.id}
                   className={cn('flex w-full items-center gap-3 px-4 text-left transition-colors hover:bg-muted/60', compact ? 'py-1.5' : 'py-2.5')}
                 >
                   <TypeIcon type={issue.type} />

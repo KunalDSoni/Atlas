@@ -86,6 +86,52 @@ describe('PUT /api/sprints/:id', () => {
   });
 });
 
+describe('a completed sprint is read-only', () => {
+  let sprintId;
+
+  beforeEach(async () => {
+    const created = await request(app)
+      .post(`/api/projects/${projectId}/sprints`)
+      .set(headers)
+      .send({ name: `Frozen Sprint ${Date.now()}`, goal: 'Original goal' });
+    sprintId = created.body.id;
+    await request(app).put(`/api/sprints/${sprintId}`).set(headers).send({ status: 'completed' });
+  });
+
+  test('should refuse to rename it', async () => {
+    const res = await request(app)
+      .put(`/api/sprints/${sprintId}`)
+      .set(headers)
+      .send({ name: 'Renamed after the fact' });
+
+    expect(res.status).toBe(409);
+
+    const after = await request(app).get(`/api/sprints/${sprintId}`).set(headers);
+    expect(after.body.name).not.toBe('Renamed after the fact');
+  });
+
+  test('should refuse to reopen it', async () => {
+    const res = await request(app)
+      .put(`/api/sprints/${sprintId}`)
+      .set(headers)
+      .send({ status: 'active' });
+
+    expect(res.status).toBe(409);
+
+    const after = await request(app).get(`/api/sprints/${sprintId}`).set(headers);
+    expect(after.body.status).toBe('completed');
+  });
+
+  test('should refuse to delete it', async () => {
+    const res = await request(app).delete(`/api/sprints/${sprintId}`).set(headers);
+
+    expect(res.status).toBe(409);
+
+    const after = await request(app).get(`/api/sprints/${sprintId}`).set(headers);
+    expect(after.status).toBe(200);
+  });
+});
+
 describe('DELETE /api/sprints/:id', () => {
   test('should delete sprint and move issues to backlog', async () => {
     // Create sprint with an issue

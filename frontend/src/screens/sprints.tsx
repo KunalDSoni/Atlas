@@ -30,7 +30,7 @@ import { cn } from '@/lib/utils';
 // unlisted value is rejected by the DB, not silently stored.
 const SPRINT_STATUSES: SprintStatus[] = ['planning', 'active', 'completed'];
 
-function SprintCard({
+export function SprintCard({
   sprint,
   projectKey,
   canManage,
@@ -46,6 +46,11 @@ function SprintCard({
   onChanged: () => void;
 }) {
   const pct = sprint.issue_count ? Math.round((sprint.done_count / sprint.issue_count) * 100) : 0;
+  // A completed sprint is a record of what happened. Nobody edits, reopens or
+  // deletes it — the card shows its numbers and nothing else. The API refuses
+  // the same writes (backend/routes/sprints.js), so this is the UI half of one
+  // rule, not the rule itself.
+  const readOnly = sprint.status === 'completed';
 
   async function setStatus(status: SprintStatus) {
     if (status === 'completed' && sprint.status !== 'completed') {
@@ -120,20 +125,18 @@ function SprintCard({
           </p>
         )}
 
-        {canManage && (
+        {canManage && !readOnly && (
           <div className="flex items-center gap-2 pt-1">
-            {sprint.status !== 'completed' && (
-              <Select value={sprint.status} onValueChange={(v) => setStatus(v as SprintStatus)}>
-                <SelectTrigger className="h-8 flex-1 text-xs" aria-label={`Status for ${sprint.name}`}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SPRINT_STATUSES.map((s) => (
-                    <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
+            <Select value={sprint.status} onValueChange={(v) => setStatus(v as SprintStatus)}>
+              <SelectTrigger className="h-8 flex-1 text-xs" aria-label={`Status for ${sprint.name}`}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SPRINT_STATUSES.map((s) => (
+                  <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Button
               variant="ghost"
               size="icon"
@@ -206,6 +209,14 @@ function EditSprintDialog({
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!sprint || !name.trim()) return;
+    // The card never opens this dialog for a completed sprint, but a teammate
+    // (or another tab) can complete one while it is open. Saving then would
+    // rewrite history, and the API rejects it — so stop here instead.
+    if (sprint.status === 'completed') {
+      toast.error('Sprint completed', { description: 'Completed sprints cannot be edited.' });
+      onOpenChange(false);
+      return;
+    }
     const updates = {
       name: name.trim(),
       goal: goal.trim() || null,
@@ -213,7 +224,7 @@ function EditSprintDialog({
       end_date: end || null,
       status,
     };
-    if (status === 'completed' && sprint.status !== 'completed') {
+    if (status === 'completed') {
       onComplete(sprint, updates);
       return;
     }
@@ -269,29 +280,19 @@ function EditSprintDialog({
                 <Input id="edit-sprint-end" type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
               </div>
             </div>
-            {sprint && sprint.status !== 'completed' && (
-              <div className="space-y-2">
-                <Label>Status</Label>
-                <Select value={status} onValueChange={(v) => setStatus(v as SprintStatus)}>
-                  <SelectTrigger aria-label="Sprint status">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SPRINT_STATUSES.map((s) => (
-                      <SelectItem key={s} value={s}>{s}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            {sprint && sprint.status === 'completed' && (
-              <div className="space-y-2">
-                <Label>Status</Label>
-                <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
-                  This sprint is completed and cannot be reopened.
-                </div>
-              </div>
-            )}
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select value={status} onValueChange={(v) => setStatus(v as SprintStatus)}>
+                <SelectTrigger aria-label="Sprint status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SPRINT_STATUSES.map((s) => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>

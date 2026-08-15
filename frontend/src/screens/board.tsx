@@ -135,7 +135,6 @@ export default function BoardScreen() {
   const { currentProject, currentProjectId, loading: projectsLoading } = useProjects();
   const [issues, setIssues] = useState<Issue[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
-  const [sprintFilter, setSprintFilter] = useState<string>('');
   const [swimlane, setSwimlane] = useState<string>(NO_SWIMLANE);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -183,16 +182,15 @@ export default function BoardScreen() {
     void load();
   }, [load]);
 
-  useEffect(() => {
-    if (sprints.length === 0) {
-      setSprintFilter('all');
-      return;
-    }
-    if (sprintFilter && (sprintFilter === 'all' || sprintFilter === 'backlog' || sprints.some((s) => s.id === sprintFilter))) return;
-    const active = sprints.find((s) => s.status === 'active');
-    const next = active ?? sprints.find((s) => s.status === 'planning') ?? sprints[0];
-    setSprintFilter(next.id);
-  }, [sprints, sprintFilter]);
+  // The board is the sprint the team is working in, not a filterable view of
+  // everything: the active sprint, or the next planned one if none is running.
+  // A completed sprint is history — it is read-only and lives on its own detail
+  // screen, so the board never lands on one. With no sprint to show the board
+  // falls back to every issue in the project.
+  const boardSprint = useMemo(
+    () => sprints.find((s) => s.status === 'active') ?? sprints.find((s) => s.status === 'planning') ?? null,
+    [sprints],
+  );
 
   // Live updates: when anyone changes an issue in this project, refresh the board
   // in the background (no spinner) so teammates see each other's moves.
@@ -216,12 +214,11 @@ export default function BoardScreen() {
     const q = query.trim().toLowerCase();
     return issues.filter((i) => {
       if (i.type === 'epic' || i.type === 'subtask') return false;
-      if (sprintFilter === 'backlog' && i.sprint_id) return false;
-      if (sprintFilter && sprintFilter !== 'all' && sprintFilter !== 'backlog' && i.sprint_id !== sprintFilter) return false;
+      if (boardSprint && i.sprint_id !== boardSprint.id) return false;
       if (!q) return true;
       return i.title.toLowerCase().includes(q) || i.issue_key.toLowerCase().includes(q);
     });
-  }, [issues, sprintFilter, query]);
+  }, [issues, boardSprint, query]);
 
   // Swimlanes: group the visible issues; each lane renders its own 4 columns.
   const lanes = useMemo(() => {
@@ -402,15 +399,10 @@ export default function BoardScreen() {
     return [...seen.entries()].map(([id, m]) => ({ id, name: m.name })).sort((a, b) => a.name.localeCompare(b.name));
   }, [issues]);
 
-  const selectedSprint = useMemo(
-    () => sprints.find((s) => s.id === sprintFilter) ?? null,
-    [sprints, sprintFilter],
-  );
-
   if (projectsLoading || (loading && currentProjectId)) {
     return (
       <>
-        <PageHeader title={selectedSprint?.name ?? 'Board'} />
+        <PageHeader title={boardSprint?.name ?? 'Board'} />
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {STATUSES.map((s) => (
             <Skeleton key={s} className="h-72 rounded-lg" />
@@ -432,7 +424,7 @@ export default function BoardScreen() {
   if (error) {
     return (
       <>
-        <PageHeader title={selectedSprint?.name ?? 'Board'} />
+        <PageHeader title={boardSprint?.name ?? 'Board'} />
         <ErrorState message={error} onRetry={load} />
       </>
     );
@@ -441,7 +433,7 @@ export default function BoardScreen() {
   return (
     <>
       <PageHeader
-        title={selectedSprint?.name ?? 'Board'}
+        title={boardSprint?.name ?? 'Board'}
         description={currentProject?.name}
         actions={
           canCreateIssues(user?.role) && (
@@ -463,20 +455,6 @@ export default function BoardScreen() {
             aria-label="Search issues"
           />
         </div>
-        <Select value={sprintFilter} onValueChange={setSprintFilter}>
-          <SelectTrigger className="w-40" aria-label="Filter by sprint">
-            <SelectValue placeholder="Select sprint" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All issues</SelectItem>
-            <SelectItem value="backlog">Backlog only</SelectItem>
-            {sprints.map((s) => (
-              <SelectItem key={s.id} value={s.id}>
-                {s.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
         <Select value={swimlane} onValueChange={setSwimlane}>
           <SelectTrigger className="w-40" aria-label="Swimlanes">
             <Rows3 className="size-3.5" />
@@ -737,7 +715,7 @@ export default function BoardScreen() {
         onOpenChange={setCreateOpen}
         projectId={currentProjectId}
         sprints={sprints}
-        defaultSprintId={selectedSprint?.id ?? null}
+        defaultSprintId={boardSprint?.id ?? null}
         onCreated={load}
       />
     </>
