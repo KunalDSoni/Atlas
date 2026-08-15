@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
-  Bell, CalendarRange, ChevronsUpDown, Columns3, FileClock, Gauge, LayoutDashboard, ListTodo, LogOut, Menu, Package,
+  Bell, CalendarRange, ChevronsUpDown, Clock, Columns3, FileClock, Gauge, LayoutDashboard, ListTodo, LogOut, Menu, Package,
   Rocket, Search, Settings as SettingsIcon, Shield, User as UserIcon, Users, BookOpen, Zap,
   Activity, Inbox, Lightbulb, Target, Map as MapIcon, Building2, MessagesSquare, Plus, ListFilter,
   Headphones, SlidersHorizontal,
@@ -394,6 +394,9 @@ function UserMenu() {
           <Separator className="my-1" />
           <button type="button" role="menuitem" className={itemClass} onClick={() => go('/profile')}>
             <UserIcon className="size-4" /> Profile
+          </button>
+          <button type="button" role="menuitem" className={itemClass} onClick={() => go('/my-time')}>
+            <Clock className="size-4" /> My time
           </button>
           <button type="button" role="menuitem" className={itemClass} onClick={() => go('/settings')}>
             <SettingsIcon className="size-4" /> Settings

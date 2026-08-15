@@ -371,6 +371,9 @@ export interface AppNotification {
 }
 
 /** Work log entry from GET /issues/:id/worklogs. Minutes-based. */
+/** Where a work log came from: entered by hand, derived from status, or measured. */
+export type WorkLogSource = 'manual' | 'auto' | 'timer';
+
 export interface WorkLog {
   id: string;
   issue_id: string;
@@ -380,7 +383,7 @@ export interface WorkLog {
   created_at: string;
   user_name: string | null;
   user_color: string | null;
-  source: 'manual' | 'auto' | 'timer';
+  source: WorkLogSource;
   locked_from_auto: number;
 }
 
@@ -431,6 +434,31 @@ export interface UnresolvedTimer {
   title: string;
   started_at: string;
   ended_at: string;
+}
+
+/** One work-log entry in the personal timesheet, with its issue and project. */
+export interface MyTimeEntry {
+  id: string;
+  issue_id: string;
+  issue_key: string;
+  title: string;
+  project_key: string;
+  minutes: number;
+  source: WorkLogSource;
+  comment: string | null;
+  created_at: string;
+  /** Calendar date the entry falls on, in the user's timezone. */
+  date: string;
+}
+
+export interface MyTimeResponse {
+  from: string;
+  to: string;
+  /** The zone the days were bucketed in — surfaced so totals are unambiguous. */
+  timezone: string;
+  total_minutes: number;
+  by_day: { date: string; minutes: number }[];
+  entries: MyTimeEntry[];
 }
 
 export interface Comment {

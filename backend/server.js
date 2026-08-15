@@ -33,6 +33,7 @@ const searchRoutes = require('./routes/search');
 const notificationsRoutes = require('./routes/notifications');
 const worklogsRoutes = require('./routes/worklogs');
 const timersRoutes = require('./routes/timers');
+const myTimeRoutes = require('./routes/my-time');
 const releasesRoutes = require('./routes/releases');
 const workflowsRoutes = require('./routes/workflows');
 const automationsRoutes = require('./routes/automations');
@@ -199,6 +200,7 @@ app.use('/api', notificationsRoutes);
 // Time Tracking Module
 app.use('/api', worklogsRoutes);
 app.use('/api', timersRoutes);
+app.use('/api', myTimeRoutes);
 
 // Releases + Components Module
 app.use('/api', releasesRoutes);

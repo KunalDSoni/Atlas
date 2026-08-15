@@ -13,7 +13,7 @@ import type {
   WikiComment, WikiPage, WikiRestriction, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
   PageApproval, PageApprovalEntry, PageTask,
   WikiAttachment, ApiToken, Webhook, CustomField,
-  WorkLog, WorkflowStatus, TimerState, MyTimer, UnresolvedTimer,
+  WorkLog, WorkflowStatus, TimerState, MyTimer, UnresolvedTimer, MyTimeResponse,
   PbCompany, PbCustomer, PbInsight, PbFeature, PbFeatureOutcome, PbObjective,
   ImpactMetricType, PbFeatureImpact, PbImpactDashboard, PbImpactMetric,
   PbOutcomesResponse, PbTheme, PbThemeSuggestion, PortalFeature, PortalMe, PortalSubmission,
@@ -195,6 +195,10 @@ export const api = {
     ) => put<User>(`/users/${id}`, body),
     deactivate: (id: string) => del<{ ok: boolean }>(`/users/${id}`),
   },
+
+  /** The caller's work logs across every project, for one date range. */
+  myTime: (from: string, to: string) =>
+    get<MyTimeResponse>(`/me/time?from=${from}&to=${to}`),
 
   profile: {
     get: () => get<ProfileResponse>('/profile'),
