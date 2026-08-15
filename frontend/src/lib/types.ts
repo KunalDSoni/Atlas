@@ -210,6 +210,11 @@ export interface Issue {
   parent_type: IssueType | null;
   sprint_name: string | null;
   sprint_slug: string | null;
+  /**
+   * Sprints this issue rolled over from — ones it left that have since been
+   * completed, oldest first. Single-issue responses only; list payloads omit it.
+   */
+  previous_sprints?: { id: string; name: string; slug: string | null }[];
   subtask_count: number;
   subtask_done_count: number;
   original_estimate: number | null;

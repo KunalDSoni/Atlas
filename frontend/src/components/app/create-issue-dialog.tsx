@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { useMentions } from '@/hooks/use-mentions';
 import { api } from '@/lib/api';
-import { PRIORITIES, PRIORITY_LABEL, STATUSES, STATUS_LABEL, TYPE_LABEL } from '@/lib/domain';
+import { PRIORITIES, PRIORITY_LABEL, STATUSES, STATUS_LABEL, TYPE_LABEL, assignableSprints } from '@/lib/domain';
 import type { IssueStatus, IssueType, Priority, Sprint, User } from '@/lib/types';
 import { PriorityIcon, TypeIcon } from './primitives';
 
@@ -62,6 +62,12 @@ export function CreateIssueDialog({
     api.users.list().then((u) => setUsers(u.filter((x) => x.is_active))).catch(() => setUsers([]));
   }, [open, defaultSprintId, defaultType]);
 
+  // A brand new issue is the newest work there is, so no completed sprint is on
+  // offer. A screen scoped to one can still hand us it as the default, which
+  // would leave the field blank — that falls back to Backlog.
+  const sprintOptions = assignableSprints(sprints);
+  const selectedSprintId = sprintOptions.some((s) => s.id === sprintId) ? sprintId : NO_SPRINT;
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!projectId || !title.trim()) return;
@@ -74,7 +80,7 @@ export function CreateIssueDialog({
         status,
         priority,
         assignee_id: assigneeId === UNASSIGNED ? null : assigneeId,
-        sprint_id: type === 'epic' || sprintId === NO_SPRINT ? null : sprintId,
+        sprint_id: type === 'epic' || selectedSprintId === NO_SPRINT ? null : selectedSprintId,
         story_points: points ? Number(points) : null,
       });
       toast.success('Issue created');
@@ -192,11 +198,11 @@ export function CreateIssueDialog({
               {type !== 'epic' && (
                 <div className="space-y-2">
                   <Label>Sprint</Label>
-                  <Select value={sprintId} onValueChange={setSprintId}>
+                  <Select value={selectedSprintId} onValueChange={setSprintId}>
                     <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value={NO_SPRINT}>Backlog</SelectItem>
-                      {sprints.map((s) => (
+                      {sprintOptions.map((s) => (
                         <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
                       ))}
                     </SelectContent>

@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { EPIC_COLORS, PRIORITIES, PRIORITY_LABEL, epicColor, isAdmin } from '@/lib/domain';
+import { EPIC_COLORS, PRIORITIES, PRIORITY_LABEL, assignableSprints, epicColor, isAdmin } from '@/lib/domain';
 import { formatDuration, timeAgo } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { PriorityIcon, UserAvatar } from '../primitives';
@@ -61,6 +61,12 @@ export function IssueFields({ detail }: { detail: IssueDetail }) {
   const liveElapsed = (timer?.elapsed_minutes ?? 0) + (timer?.running ? tick : 0);
 
   if (!issue) return null;
+
+  // The issue's own completed sprint stays listed but unselectable, so the field
+  // still reads its real value. The server enforces the same rule; filtering
+  // here only spares people the 409.
+  const sprintOptions = assignableSprints(sprints, issue.sprint_id);
+  const previousSprints = issue.previous_sprints ?? [];
 
   return (
 <>
@@ -124,14 +130,21 @@ export function IssueFields({ detail }: { detail: IssueDetail }) {
                       onValueChange={(v) => patch({ sprint_id: v === NO_SPRINT ? null : v })}
                       disabled={!canEdit}
                     >
-                      <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="w-full" aria-label="Sprint"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value={NO_SPRINT}>Backlog</SelectItem>
-                        {sprints.map((s) => (
-                          <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                        {sprintOptions.map((s) => (
+                          <SelectItem key={s.id} value={s.id} disabled={s.status === 'completed'}>
+                            {s.status === 'completed' ? `${s.name} (completed)` : s.name}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    {previousSprints.length > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        Previously: {previousSprints.map((s) => s.name).join(', ')}
+                      </p>
+                    )}
                   </div>
                 )}
 

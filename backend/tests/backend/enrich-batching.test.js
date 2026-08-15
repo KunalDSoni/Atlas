@@ -79,8 +79,10 @@ describe('Enriched issue payload', () => {
     const fromList = list.body.find(i => i.id === issue.id);
     // in_progress_minutes_live and its in_progress_business_hours qualifier are
     // only computed on GET /api/issues/:id (by design, to avoid the extra query
-    // cost on other routes), so exclude them here.
-    const { in_progress_minutes_live, in_progress_business_hours, ...oneRest } = one.body;
+    // cost on other routes), so exclude them here. previous_sprints is the same
+    // bargain: only the detail panel shows rollover history, so a board of 100
+    // issues does not pay for a history read each.
+    const { in_progress_minutes_live, in_progress_business_hours, previous_sprints, ...oneRest } = one.body;
     expect(fromList).toEqual(oneRest);
   });
 
