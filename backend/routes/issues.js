@@ -12,7 +12,7 @@ const { auditLog } = require('../middleware/logger');
 const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
-const { notify, mentionedUserIdsInProject } = require('../utils/notify');
+const { notify, mentionedUserIds } = require('../utils/notify');
 const { projectStatuses } = require('./workflows');
 const { runAutomation, checkAllSubtasksDone } = require('../utils/automation');
 const { dispatch: dispatchWebhook } = require('../utils/webhooks');
@@ -337,6 +337,26 @@ router.post('/projects/:projectId/issues', requireAuth, requireBoardAdmin, async
        parent_id || null, epic_color || 'purple']);
 
     let issue = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [id]);
+
+    // A description written at creation time mentions people just as much as
+    // one added later; only the edit path used to notice.
+    if (description) {
+      const mentioned = await mentionedUserIds(db, description, req.userId);
+      if (mentioned.length > 0) {
+        const actor = await queryOne(db, 'SELECT name FROM users WHERE id = ?', [req.userId]);
+        for (const userId of mentioned) {
+          await notify(db, {
+            userId,
+            actorId: req.userId,
+            type: 'mention',
+            message: `${actor?.name || 'Someone'} mentioned you in ${issue.issue_key}`,
+            link: issueLink(issue.issue_key),
+            issueId: issue.id,
+          });
+        }
+      }
+    }
+
     await runAutomation(db, { type: 'issue_created', issue, actorId: req.userId });
     issue = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [id]);
     auditLog({ userId: req.userId, action: 'Created issue', category: 'issues', entityType: 'issue', entityId: id, entityName: issue.issue_key, details: { title, type: type || 'task', priority: priority || 'medium' } });
@@ -458,13 +478,12 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
       });
     }
 
-    // Mention notifications: detect new mentions in description and notify newly mentioned users.
+    // Mention notifications. Only ids that are new to the description are
+    // notified, so correcting a typo does not ping everyone a second time.
     if (req.body.description !== undefined && req.body.description !== issue.description) {
-      const oldMentions = new Set(await mentionedUserIdsInProject(db, issue.description, req.userId, issue.project_id));
-      const newMentions = new Set(await mentionedUserIdsInProject(db, req.body.description, req.userId, issue.project_id));
-
-      // Find newly mentioned users (in new but not in old)
-      const newlyMentioned = [...newMentions].filter(id => !oldMentions.has(id));
+      const before = new Set(await mentionedUserIds(db, issue.description, req.userId));
+      const after = await mentionedUserIds(db, req.body.description, req.userId);
+      const newlyMentioned = after.filter((id) => !before.has(id));
 
       if (newlyMentioned.length > 0) {
         const actor = await queryOne(db, 'SELECT name FROM users WHERE id = ?', [req.userId]);
@@ -472,7 +491,9 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
           await notify(db, {
             userId,
             actorId: req.userId,
-            type: 'mentioned',
+            // 'mention' is the only type email.js maps to notify_mentions.
+            // The old 'mentioned' silently bypassed the recipient's opt-out.
+            type: 'mention',
             message: `${actor?.name || 'Someone'} mentioned you in ${issue.issue_key}`,
             link: issueLink(issue.issue_key),
             issueId: issue.id,

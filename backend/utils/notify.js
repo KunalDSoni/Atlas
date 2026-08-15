@@ -5,6 +5,7 @@ const { v4: uuidv4 } = require('uuid');
 const { run, queryAll, queryOne } = require('../database');
 const { sendNotificationEmail } = require('./email');
 const { publish } = require('./events');
+const { parseMentionIds } = require('./mentions');
 
 /** Insert one notification; silently skips self-notification. Also delivers an
  *  email best-effort (a no-op when SMTP is unconfigured or the user opted out). */
@@ -32,51 +33,97 @@ async function notify(db, { userId, actorId, type, message, link, issueId, wikiP
 }
 
 /**
- * Parse @mentions out of free text against the user table.
- * Matches @First (case-insensitive first name) and @First Last (full name).
- * Returns unique user ids, excluding the author.
+ * Ids referenced by legacy plain-text mentions — content written before
+ * mentions carried a user id. Both the full name and the first name are
+ * candidates, longest first, and a name is only honoured when exactly one
+ * active user answers to it. Two people called Sarah Chen means neither is
+ * notified, which is the correct answer: guessing would notify the wrong one.
+ *
+ * A matched span is consumed even when it was ambiguous, so "@Sarah Chen"
+ * cannot fall through and notify an unrelated user merely called Sarah.
  */
-async function mentionedUserIds(db, text, authorId) {
-  if (!text || !text.includes('@')) return [];
-  const users = await queryAll(db, 'SELECT id, name FROM users WHERE is_active = 1');
-  const lower = text.toLowerCase();
-  const hits = new Set();
+function legacyMentionIds(text, users) {
+  const byName = new Map();
   for (const u of users) {
-    if (u.id === authorId) continue;
-    const full = u.name.toLowerCase();
-    const first = full.split(/\s+/)[0];
-    if (lower.includes(`@${full}`) || lower.includes(`@${first}`)) hits.add(u.id);
+    for (const key of [u.name.toLowerCase(), u.name.toLowerCase().split(/\s+/)[0]]) {
+      if (!key) continue;
+      if (!byName.has(key)) byName.set(key, []);
+      if (!byName.get(key).includes(u.id)) byName.get(key).push(u.id);
+    }
   }
-  return [...hits];
+
+  const lower = text.toLowerCase();
+  const consumed = new Array(text.length).fill(false);
+  const hits = [];
+
+  for (const name of [...byName.keys()].sort((a, b) => b.length - a.length)) {
+    const needle = `@${name}`;
+    let from = 0;
+    for (;;) {
+      const at = lower.indexOf(needle, from);
+      if (at === -1) break;
+      const end = at + needle.length;
+      from = end;
+
+      let overlaps = false;
+      for (let i = at; i < end; i++) if (consumed[i]) { overlaps = true; break; }
+      if (overlaps) continue;
+
+      // Same trigger rule as the picker: '@' mid-word is not a mention, so
+      // sarah@example.com never resolves to Sarah.
+      const prev = at > 0 ? text[at - 1] : undefined;
+      if (prev !== undefined && !/[\s([]/.test(prev)) continue;
+      // And the name must end at a boundary, so "@Sam" does not match "@Sammy".
+      if (text[end] !== undefined && /\w/.test(text[end])) continue;
+
+      for (let i = at; i < end; i++) consumed[i] = true;
+      const ids = byName.get(name);
+      if (ids.length === 1) hits.push(ids[0]);
+    }
+  }
+  return hits;
 }
 
 /**
- * Parse @mentions out of free text, filtering to project members only.
- * Excludes self-mentions and inactive users.
- * Returns unique user ids who are active members of the given project.
+ * Users referenced by `text`, in document order, excluding the author and
+ * anyone deactivated. Token mentions resolve by id; legacy plain-text mentions
+ * fall back to unambiguous name matching.
+ *
+ * Options:
+ *   allowClients — false suppresses client-role recipients. Used for internal
+ *     service-desk notes: a client cannot see one, so notifying them would
+ *     reveal it exists and link them to something they cannot open.
  */
-async function mentionedUserIdsInProject(db, text, authorId, projectId) {
-  if (!text || !text.includes('@')) return [];
+async function mentionedUserIds(db, text, authorId, opts = {}) {
+  if (!text || typeof text !== 'string' || !text.includes('@')) return [];
+  const { allowClients = true } = opts;
 
-  // Get all active project members
-  const projectMembers = await queryAll(db, `
-    SELECT DISTINCT u.id, u.name
-    FROM users u
-    INNER JOIN project_members pm ON pm.user_id = u.id
-    WHERE pm.project_id = ? AND u.is_active = 1
-  `, [projectId]);
+  const users = await queryAll(db, 'SELECT id, name, role FROM users WHERE is_active = 1');
+  const active = new Map(users.map((u) => [u.id, u]));
 
-  const lower = text.toLowerCase();
-  const hits = new Set();
+  const ids = [];
+  const seen = new Set();
+  const add = (id) => {
+    if (!id || seen.has(id) || id === authorId) return;
+    const user = active.get(id);
+    if (!user) return; // unknown id, or the account is deactivated
+    if (!allowClients && user.role === 'client') return;
+    seen.add(id);
+    ids.push(id);
+  };
 
-  for (const u of projectMembers) {
-    if (u.id === authorId) continue;
-    const full = u.name.toLowerCase();
-    const first = full.split(/\s+/)[0];
-    if (lower.includes(`@${full}`) || lower.includes(`@${first}`)) hits.add(u.id);
-  }
+  for (const id of parseMentionIds(text)) add(id);
+  for (const id of legacyMentionIds(text, users)) add(id);
+  return ids;
+}
 
-  return [...hits];
+/**
+ * Retained for callers that pass a project id positionally. Membership no
+ * longer filters recipients — mentioning someone outside the project is
+ * deliberate and the composer warns about it — so this is a thin alias.
+ */
+async function mentionedUserIdsInProject(db, text, authorId, _projectId) {
+  return mentionedUserIds(db, text, authorId);
 }
 
 module.exports = { notify, mentionedUserIds, mentionedUserIdsInProject };

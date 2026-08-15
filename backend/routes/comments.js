@@ -74,7 +74,12 @@ router.post('/issues/:issueId/comments', requireAuth, async (req, res) => {
 
       const actor = await queryOne(db, 'SELECT name FROM users WHERE id = ?', [authorId]);
       const actorName = actor?.name || 'Someone';
-      const mentioned = await mentionedUserIds(db, commentBody, authorId);
+      // An internal note is invisible to clients, so a client mentioned in one
+      // is deliberately not notified — the alert would reveal the note exists
+      // and link them to something they cannot open.
+      const mentioned = await mentionedUserIds(db, commentBody, authorId, {
+        allowClients: visibility !== 'internal',
+      });
       for (const uid of mentioned) {
         await notify(db, {
           userId: uid, actorId: authorId, type: 'mention',
