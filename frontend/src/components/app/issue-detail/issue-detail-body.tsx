@@ -15,7 +15,7 @@ import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { renderMentions } from '@/lib/mention-renderer';
+import { MentionText } from '@/components/app/mention-text';
 import { StatusPill, TypeIcon, UserAvatar } from '../primitives';
 import { LabelsEditor } from '../labels-editor';
 import { CustomFieldsEditor } from '../custom-fields-editor';
@@ -50,7 +50,7 @@ export function IssueDetailBody({
                     Description
                   </h3>
                   <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-                    {issue.description ? renderMentions(issue.description) : <span className="text-faint">No description.</span>}
+                    {issue.description ? <MentionText text={issue.description} /> : <span className="text-faint">No description.</span>}
                   </p>
                 </section>
 

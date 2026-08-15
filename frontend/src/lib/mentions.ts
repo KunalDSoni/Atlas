@@ -101,6 +101,77 @@ export function findMentionQuery(
   return { start: at, query };
 }
 
+/**
+ * Expand legacy plain-text mentions inside already-tokenized segments.
+ *
+ * Content written before mentions carried ids still says "@Kunal Soni". Both
+ * the full name and the first name are candidates, longest first, and a name is
+ * only honoured when exactly one active user answers to it — two people called
+ * Sarah Chen means the text stays prose rather than pointing at the wrong one.
+ * A matched span is consumed even when ambiguous, so "@Sarah Chen" cannot fall
+ * through and resolve to an unrelated user merely called Sarah.
+ *
+ * Mirrors legacyMentionIds in backend/utils/notify.js — the render and the
+ * notification must agree on who was mentioned.
+ *
+ * @param nameIndex lowercase name (full or first) to the ids answering to it
+ */
+export function expandLegacyMentions(
+  segments: MentionSegment[],
+  nameIndex: Map<string, string[]>,
+): MentionSegment[] {
+  if (nameIndex.size === 0) return segments;
+  const names = [...nameIndex.keys()].sort((a, b) => b.length - a.length);
+
+  return segments.flatMap((seg): MentionSegment[] => {
+    if (seg.type !== 'text' || !seg.value.includes('@')) return [seg];
+
+    const text = seg.value;
+    const lower = text.toLowerCase();
+    // id at a matched span, or null when the name was ambiguous (consumed, but
+    // rendered as prose).
+    const found: Array<{ at: number; end: number; id: string | null; label: string }> = [];
+    const consumed = new Array(text.length).fill(false);
+
+    for (const name of names) {
+      const needle = `@${name}`;
+      let from = 0;
+      for (;;) {
+        const at = lower.indexOf(needle, from);
+        if (at === -1) break;
+        const end = at + needle.length;
+        from = end;
+
+        let overlaps = false;
+        for (let i = at; i < end; i++) if (consumed[i]) { overlaps = true; break; }
+        if (overlaps) continue;
+
+        const prev = at > 0 ? text[at - 1] : undefined;
+        if (prev !== undefined && !/[\s([]/.test(prev)) continue;
+        if (text[end] !== undefined && /\w/.test(text[end])) continue;
+
+        for (let i = at; i < end; i++) consumed[i] = true;
+        const ids = nameIndex.get(name)!;
+        found.push({ at, end, id: ids.length === 1 ? ids[0] : null, label: text.slice(at, end) });
+      }
+    }
+
+    if (found.length === 0) return [seg];
+    found.sort((a, b) => a.at - b.at);
+
+    const out: MentionSegment[] = [];
+    let cursor = 0;
+    for (const hit of found) {
+      if (hit.at > cursor) out.push({ type: 'text', value: text.slice(cursor, hit.at) });
+      if (hit.id) out.push({ type: 'mention', id: hit.id, name: hit.label.slice(1) });
+      else out.push({ type: 'text', value: hit.label });
+      cursor = hit.end;
+    }
+    if (cursor < text.length) out.push({ type: 'text', value: text.slice(cursor) });
+    return out;
+  });
+}
+
 /** Build the stored token for a user. The display name is a fallback only, so
  *  neutralising the delimiters costs nothing and stops a crafted name from
  *  closing the token early and forging a second one. */

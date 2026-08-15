@@ -25,6 +25,8 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useAIEnabled } from '@/hooks/use-ai';
+import { isInactive, useUserDirectory, type MentionDirectory } from '@/hooks/use-user-directory';
+import { expandLegacyMentions, tokenizeMentions } from '@/lib/mentions';
 import { cn } from '@/lib/utils';
 import { issueUrl } from '@/lib/urls';
 
@@ -35,7 +37,10 @@ const PURIFY_CONFIG: Config = {
     'mark', 'small', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tfoot', 'tr',
     'th', 'td', 'caption', 'a', 'img', 'figure', 'figcaption',
   ],
-  ALLOWED_ATTR: ['href', 'title', 'target', 'rel', 'src', 'alt', 'width', 'height', 'style', 'class', 'colspan', 'rowspan'],
+  // data-mention-id is allowlisted by name while ALLOW_DATA_ATTR stays false:
+  // mentions need exactly one data attribute to carry the user id, and nothing
+  // else data-shaped should survive from author-supplied HTML.
+  ALLOWED_ATTR: ['href', 'title', 'target', 'rel', 'src', 'alt', 'width', 'height', 'style', 'class', 'colspan', 'rowspan', 'data-mention-id'],
   ALLOW_DATA_ATTR: false,
 };
 
@@ -76,10 +81,82 @@ export function extractHeadings(html: string): HeadingEntry[] {
  *   resolves to a real issue in `issues`. That check is what keeps prose like
  *   COVID-19, ISO-8601 and SEV-1 from rendering as links.
  */
-function applyMacros(html: string, issues: Map<string, LinkedIssueSummary>, tasks: PageTask[] = []): string {
+/**
+ * Turn mentions into badges. Two shapes reach here: page bodies store
+ * `<span data-mention-id>` written by the editor, while wiki comments are
+ * composed as plain text and so arrive as raw `@[Name](user:id)` tokens in text
+ * nodes. Legacy bare `@Name` resolves too, on the same unambiguous-match rule
+ * the rest of the app uses.
+ *
+ * As everywhere else, the badge shows whoever the id resolves to and an
+ * unresolvable id degrades to plain text — so a hand-written span cannot claim
+ * to be someone it is not.
+ */
+function applyMentions(root: DocumentFragment, directory: MentionDirectory) {
+  root.querySelectorAll('span[data-mention-id]').forEach((el) => {
+    const id = el.getAttribute('data-mention-id') || '';
+    const user = directory.byId.get(id);
+    if (!user) {
+      if (directory.loaded) el.replaceWith(document.createTextNode(el.textContent || ''));
+      return;
+    }
+    const inactive = isInactive(user);
+    el.className = inactive ? 'mention mention-inactive' : 'mention';
+    el.setAttribute('title', inactive ? `${user.name} (deactivated)` : user.email);
+    el.textContent = `@${user.name}`;
+  });
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const targets: Text[] = [];
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    const text = node as Text;
+    if (text.parentElement?.closest('a, code, pre, .mention')) continue;
+    if ((text.textContent || '').includes('@')) targets.push(text);
+  }
+
+  targets.forEach((text) => {
+    const segments = expandLegacyMentions(
+      tokenizeMentions(text.textContent || ''),
+      directory.nameIndex,
+    );
+    if (!segments.some((s) => s.type === 'mention')) return;
+
+    const frag = document.createDocumentFragment();
+    for (const seg of segments) {
+      if (seg.type === 'text') {
+        frag.appendChild(document.createTextNode(seg.value));
+        continue;
+      }
+      const user = directory.byId.get(seg.id);
+      if (!user) {
+        frag.appendChild(document.createTextNode(`@${seg.name}`));
+        continue;
+      }
+      const inactive = isInactive(user);
+      const badge = document.createElement('span');
+      badge.className = inactive ? 'mention mention-inactive' : 'mention';
+      badge.setAttribute('data-mention-id', seg.id);
+      badge.setAttribute('title', inactive ? `${user.name} (deactivated)` : user.email);
+      badge.textContent = `@${user.name}`;
+      frag.appendChild(badge);
+    }
+    text.replaceWith(frag);
+  });
+}
+
+function applyMacros(
+  html: string,
+  issues: Map<string, LinkedIssueSummary>,
+  tasks: PageTask[] = [],
+  directory?: MentionDirectory,
+): string {
   const tpl = document.createElement('template');
   tpl.innerHTML = html;
   const root = tpl.content;
+
+  // Mentions resolve before issue keys so the key scanner skips their badges.
+  if (directory) applyMentions(root, directory);
 
   const headings = [...root.querySelectorAll('h1, h2, h3')];
   headings.forEach((h, i) => {
@@ -170,7 +247,7 @@ function applyMacros(html: string, issues: Map<string, LinkedIssueSummary>, task
   let node: Node | null;
   while ((node = walker.nextNode())) {
     const text = node as Text;
-    if (text.parentElement?.closest('a, code, pre')) continue;
+    if (text.parentElement?.closest('a, code, pre, .mention')) continue;
     if (ISSUE_KEY_RE.test(text.textContent || '')) targets.push(text);
   }
   targets.forEach((text) => {
@@ -221,6 +298,7 @@ export function RichTextView({
   onToggleTask?: (taskKey: string, checked: boolean) => void;
 }) {
   const navigate = useNavigate();
+  const directory = useUserDirectory();
   const containerRef = useRef<HTMLDivElement>(null);
   const [hovered, setHovered] = useState<{ issue: LinkedIssueSummary; x: number; y: number } | null>(null);
   // Results per [jql:] query string; an { error } value marks a failed query.
@@ -232,8 +310,8 @@ export function RichTextView({
   );
   const rendered = useMemo(() => {
     const clean = sanitizeHtml(html);
-    return macros ? applyMacros(clean, issueMap, tasks ?? []) : clean;
-  }, [html, macros, issueMap, tasks]);
+    return macros ? applyMacros(clean, issueMap, tasks ?? [], directory) : clean;
+  }, [html, macros, issueMap, tasks, directory]);
 
   // Fetch results for every [jql:] block once per query string.
   useEffect(() => {

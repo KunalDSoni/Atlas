@@ -20,7 +20,12 @@ const OPTIONS = {
     img: ['src', 'alt', 'title', 'width', 'height'],
     // The seeded pages use inline styles for callouts and tables; keep them but
     // restrict to presentational properties (see allowedStyles).
-    '*': ['style', 'class', 'colspan', 'rowspan'],
+    //
+    // data-mention-id carries the user a mention points at. It is allowlisted
+    // by name, not as a blanket data-* rule — the renderer only ever reads it
+    // as a lookup key, and nothing else data-shaped should survive from
+    // author-supplied HTML.
+    '*': ['style', 'class', 'colspan', 'rowspan', 'data-mention-id'],
   },
   // Only http(s) and mailto — blocks javascript:, data:, vbscript:
   allowedSchemes: ['http', 'https', 'mailto'],

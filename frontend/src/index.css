@@ -353,37 +353,8 @@
 .wiki-prose .wiki-toc a { display: block; color: var(--muted-foreground); text-decoration: none; font-size: 0.85rem; padding: 0.1em 0; }
 .wiki-prose .wiki-toc a:hover { color: var(--primary); }
 
-/* Mention autocomplete component styles */
-.mention-autocomplete-wrapper {
-  position: relative;
-}
-
-.mention-autocomplete-dropdown {
-  position: absolute;
-  background: var(--popover);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  max-height: 200px;
-  overflow-y: auto;
-  z-index: 1000;
-  box-shadow: var(--shadow-raised);
-  min-width: 200px;
-  max-width: calc(100vw - 20px);
-}
-
-.mention-item {
-  padding: 8px 12px;
-  cursor: pointer;
-  transition: background-color 0.2s;
-  user-select: none;
-}
-
-.mention-item:hover,
-.mention-item.selected {
-  background-color: var(--muted);
-}
-
-/* Mention badge styling for rendered mentions in descriptions and comments */
+/* Mention badge styling for rendered mentions in descriptions and comments.
+   The picker's own dropdown is a portaled component and styles itself. */
 .mention {
   color: #0066cc;
   background-color: rgba(0, 102, 204, 0.08);
@@ -405,4 +376,19 @@
 
 .dark .mention:hover {
   background-color: rgba(87, 157, 255, 0.20);
+}
+
+/* A mention of someone whose account has been deactivated. Still legible as a
+   mention — it records who was addressed at the time — but visibly not someone
+   you can expect a reply from. */
+.mention-inactive,
+.dark .mention-inactive {
+  color: var(--muted-foreground);
+  background-color: var(--muted);
+  text-decoration: line-through;
+}
+
+.mention-inactive:hover,
+.dark .mention-inactive:hover {
+  background-color: var(--muted);
 }
