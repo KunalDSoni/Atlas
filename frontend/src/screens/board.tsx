@@ -15,6 +15,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
 import { useProjects } from '@/hooks/use-projects';
+import { CardTimerButton } from '@/components/app/card-timer-button';
 import { useSettings } from '@/hooks/use-settings';
 import { useWorkflow } from '@/hooks/use-workflow';
 import { STATUSES, canCreateIssues, canDragIssues, canManageSprints, statusTone } from '@/lib/domain';
@@ -119,6 +120,9 @@ function IssueCard({
         )}
         <SubtaskProgress done={issue.subtask_done_count} total={issue.subtask_count} />
         <span className="flex-1" />
+        {/* Starting a session no longer costs a navigation, and a running
+            timer is visible on the card it belongs to. */}
+        {!selectMode && <CardTimerButton issueId={issue.id} issueKey={issue.issue_key} />}
         {issue.assignee_name ? (
           <UserAvatar name={issue.assignee_name} color={issue.assignee_color} className="size-5" />
         ) : (
