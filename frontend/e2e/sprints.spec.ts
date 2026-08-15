@@ -84,68 +84,64 @@ async function createSprint(page: Page, name: string) {
   await expect(page.getByText(name)).toBeVisible();
 }
 
-/**
- * Wait for the sprints list itself. Every load and every status change swaps the
- * list for a skeleton, and the skeleton renders no sections — so anything that
- * reads the status groups has to wait for the real list to come back, or it reads
- * "no sprints" off a page that is merely still loading.
- */
-async function awaitSprintList(page: Page) {
-  await expect(page.locator('section').first()).toBeVisible();
-}
-
-/** Move one sprint through the status dropdown on its card. */
-async function setSprintStatus(page: Page, name: string, status: string) {
-  await awaitSprintList(page);
-  await page.getByRole('combobox', { name: `Status for ${name}` }).click();
-  await page.getByRole('option', { name: status }).click();
-  await expect(page.getByText('Could not update sprint')).toHaveCount(0);
-  await page.waitForTimeout(400);
-}
+type SprintRow = { id: string; name: string; status: string };
 
 /**
- * Atlas refuses to reopen a sprint while another one is running, and the demo
- * project ships with an active sprint. Park them so a reopen has a clear field,
- * and report what was parked so the caller can put it back — the sprints screen
- * groups by status, so leaving them parked reorders the page for later specs.
+ * Call the API as the logged-in user, reusing the token the app already stored.
+ * Used only for setup and teardown — never to assert the behaviour under test.
  */
-async function parkActiveSprints(page: Page): Promise<string[]> {
-  // Case-insensitive: the group heading is styled `uppercase`, and Playwright
-  // applies text-transform when it computes an accessible name, so this reads as
-  // "ACTIVE (1)" no matter what the JSX says.
-  // Case-insensitive: the group heading is styled `uppercase`, and Playwright
-  // applies text-transform when it computes an accessible name, so this reads as
-  // "ACTIVE (1)" no matter what the JSX says.
-  const activeSection = () => page.locator('section').filter({
-    has: page.getByRole('heading', { level: 2, name: /^active \(/i }),
-  });
+async function asApi<T>(
+  page: Page,
+  path: string,
+  init?: { method?: string; body?: unknown; pick?: 'firstId' },
+): Promise<T> {
+  return page.evaluate(async ({ path, method, body, pick }) => {
+    const res = await fetch(`/api${path}`, {
+      method: method ?? 'GET',
+      headers: {
+        'content-type': 'application/json',
+        'x-auth-token': localStorage.getItem('atlas_token') ?? '',
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const json = await res.json();
+    return pick === 'firstId' ? json[0].id : json;
+  }, {
+    path,
+    method: init?.method ?? null,
+    body: init?.body ?? null,
+    pick: init?.pick ?? null,
+  } as never);
+}
 
-  const parked: string[] = [];
+/**
+ * Atlas refuses to reopen a sprint while another one is running, and this suite
+ * shares one database with specs that leave sprints running. Park them so a reopen
+ * has a clear field, and report what was parked so the caller can put it back —
+ * the sprints screen groups by status, so parked sprints reorder later specs.
+ *
+ * Driven through the API rather than the cards: this is setup, not the behaviour
+ * under test, and walking the UI cost a page load per sprint — enough to exhaust
+ * the test budget once the run had collected a dozen of them.
+ */
+async function parkActiveSprints(page: Page, projectId: string): Promise<string[]> {
+  const sprints = await asApi<SprintRow[]>(page, `/projects/${projectId}/sprints`);
+  const running = sprints.filter((s) => s.status === 'active');
 
-  // Every spec in the run shares one database and several leave a sprint running,
-  // so the guard is generous. It is a guard, not an expectation.
-  for (let guard = 0; guard < 25; guard += 1) {
-    // Reload rather than lean on the in-place refresh: one deterministic load per
-    // pass, so the group check never races a re-render it did not start.
-    await page.goto('/sprints');
-    await awaitSprintList(page);
-    if (await activeSection().count() === 0) break;
-
-    const combo = activeSection().getByRole('combobox').first();
-    const label = await combo.getAttribute('aria-label');
-    await combo.click();
-    await page.getByRole('option', { name: 'planning' }).click();
-    await expect(page.getByText('Could not update sprint')).toHaveCount(0);
-    await page.waitForTimeout(400);
-    if (label) parked.push(label.replace(/^Status for /, ''));
+  for (const sprint of running) {
+    await asApi(page, `/sprints/${sprint.id}`, { method: 'PUT', body: { status: 'planning' } });
   }
 
   // Assert the precondition rather than discovering it as a 409 three steps later.
-  await page.goto('/sprints');
-  await awaitSprintList(page);
-  await expect(activeSection(), 'all active sprints parked before reopening').toHaveCount(0);
+  const after = await asApi<SprintRow[]>(page, `/projects/${projectId}/sprints`);
+  expect(after.filter((s) => s.status === 'active'), 'no sprint left running before a reopen').toHaveLength(0);
 
-  return parked;
+  return running.map((s) => s.id);
+}
+
+/** Put a sprint back to a given status without walking the UI. */
+async function restoreSprintStatus(page: Page, sprintId: string, status: string) {
+  await asApi(page, `/sprints/${sprintId}`, { method: 'PUT', body: { status } });
 }
 
 test('A completed sprint keeps its rename but loses status and delete', async ({ page }) => {
@@ -187,10 +183,6 @@ test('An active sprint cannot be deleted', async ({ page }) => {
 });
 
 test('A completed sprint can be reopened from its detail screen', async ({ page }) => {
-  // Reopening needs a clear field, and clearing it means walking every sprint the
-  // rest of the suite left running — a page load each. Well past the 30s default.
-  test.setTimeout(120_000);
-
   await login(page);
   await page.goto('/sprints');
   await assertNoCrash(page);
@@ -202,9 +194,11 @@ test('A completed sprint can be reopened from its detail screen', async ({ page 
   await page.getByRole('option', { name: 'completed' }).click();
   await expect(page.getByRole('combobox', { name: `Status for ${name}` })).toHaveCount(0);
 
-  const parked = await parkActiveSprints(page);
+  const projectId = await asApi<string>(page, '/projects', { pick: 'firstId' });
+  const parked = await parkActiveSprints(page, projectId);
 
   try {
+    await page.goto('/sprints');
     await page.getByRole('link', { name }).first().click();
     await assertNoCrash(page);
 
@@ -230,10 +224,13 @@ test('A completed sprint can be reopened from its detail screen', async ({ page 
     // Hand the project back as we found it, pass or fail. These specs share one
     // database and the sprints screen groups by status, so a sprint left running
     // reorders the page under every later spec that reads "the first sprint".
-    await page.goto('/sprints');
-    await setSprintStatus(page, name, 'completed').catch(() => {});
-    for (const parkedName of parked) {
-      await setSprintStatus(page, parkedName, 'active').catch(() => {});
+    const mine = await asApi<SprintRow[]>(page, `/projects/${projectId}/sprints`);
+    const reopened = mine.find((s) => s.name === name);
+    if (reopened && reopened.status === 'active') {
+      await restoreSprintStatus(page, reopened.id, 'completed');
+    }
+    for (const parkedId of parked) {
+      await restoreSprintStatus(page, parkedId, 'active');
     }
   }
 });

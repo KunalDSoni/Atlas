@@ -72,13 +72,30 @@ the restriction as a hard block rather than a toggle. Adding parallel sprints is
 out of scope.
 
 **Definition of "complete".** Jira counts a work item as complete only when it sits
-in the rightmost board column. Atlas has no board-column mapping, so it keeps its
-own definition — but which one matters. Sprint *statistics* use the literal
-`status = 'done'` (`enrichSprint`). The subtask precondition instead uses the
-workflow-aware predicate the epic rollup already uses in `routes/issues.js`: done
-is `status = 'done'` **or** a status the project's workflow maps to the `done`
-category. A project whose done column is not literally named `done` would otherwise
-have every one of its sprints wedged permanently shut.
+in the rightmost board column. Atlas has no board-column mapping, so it uses the
+nearest equivalent it already has: done is `status = 'done'` **or** a status the
+project's workflow maps to the `done` category — the same predicate the epic rollup
+uses in `routes/issues.js`.
+
+This has to hold at every point in the sprint lifecycle, not just one. Projects can
+rename their done column, and a project whose done column is `shipped` was getting
+three different wrong answers from the same word:
+
+| Reads "done" | Was | Now |
+|---|---|---|
+| Sprint stats (`enrichSprint`) | Literal `'done'` | Workflow-aware |
+| Unfinished list at completion (`requestComplete`) | Literal `'done'` | Workflow-aware, via `useWorkflow().doneKeys` |
+| Subtask precondition | — (new) | Workflow-aware |
+
+The middle row is the one that mattered most: it decides which issues get *moved
+out of the sprint*, so a wrong answer there is a data change, not a display quirk.
+A `shipped` sprint would have reported 0% complete, had its shipped work swept into
+the backlog on completion, and then refused to close at all once a shipped subtask
+existed.
+
+Both backend halves share one `doneWhere(alias)` helper in `routes/sprints.js`.
+`routes/reports.js` still compares against the literal `'done'` in roughly fifteen
+places; that is the same bug in a different module and is left out of scope here.
 
 **Parent links are overloaded.** `issues.parent_id` carries both subtask→parent and
 story→epic relationships (see the branch on `nextType === 'subtask'` in
@@ -279,7 +296,10 @@ than deleted — the freeze is narrowing, not disappearing.
 - [ ] Reopen without `end_date` returns 400
 - [ ] Reopen from a non-board-admin returns 403
 - [ ] Completing with an unfinished subtask returns 409 and names the issue
+- [ ] An epic with unfinished stories does not block completion
 - [ ] Reopen writes an audit entry with `from`/`to`
+- [ ] A project whose done column is `shipped` counts shipped issues in sprint stats
+- [ ] A shipped subtask does not block completion in that project
 
 ### Frontend
 

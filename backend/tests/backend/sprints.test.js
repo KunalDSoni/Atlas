@@ -361,6 +361,71 @@ describe('completing a sprint with unfinished subtasks', () => {
   });
 });
 
+// Projects can rename their done column. Every sprint-lifecycle decision reads
+// "finished" from the project's workflow, not from the literal string 'done'.
+describe('a project whose done column is not called "done"', () => {
+  let shippedProjectId;
+  let sprintId;
+
+  beforeAll(async () => {
+    const suffix = Date.now().toString().slice(-6);
+    const project = await request(app)
+      .post('/api/projects')
+      .set(headers)
+      .send({ name: `Custom Workflow ${suffix}`, key: `CW${suffix}` });
+    shippedProjectId = project.body.id;
+
+    await request(app)
+      .post(`/api/projects/${shippedProjectId}/statuses`)
+      .set(headers)
+      .send({ label: 'Shipped', key: 'shipped', category: 'done' });
+
+    const sprint = await request(app)
+      .post(`/api/projects/${shippedProjectId}/sprints`)
+      .set(headers)
+      .send({ name: `Shipped Sprint ${suffix}` });
+    sprintId = sprint.body.id;
+  });
+
+  test('should count a shipped issue as done in the sprint stats', async () => {
+    const issue = await request(app)
+      .post(`/api/projects/${shippedProjectId}/issues`)
+      .set(headers)
+      .send({ title: 'Shipped work', type: 'story', priority: 'medium', sprint_id: sprintId, story_points: 5 });
+    await request(app).put(`/api/issues/${issue.body.id}`).set(headers).send({ status: 'shipped' });
+
+    const res = await request(app).get(`/api/sprints/${sprintId}`).set(headers);
+
+    expect(res.status).toBe(200);
+    expect(res.body.issue_count).toBe(1);
+    // A finished sprint reporting 0% is the visible half of this bug.
+    expect(res.body.done_count).toBe(1);
+    expect(res.body.done_points).toBe(5);
+  });
+
+  test('should not be blocked by a shipped subtask', async () => {
+    const parent = await request(app)
+      .post(`/api/projects/${shippedProjectId}/issues`)
+      .set(headers)
+      .send({ title: 'Parent with shipped subtask', type: 'story', priority: 'medium', sprint_id: sprintId });
+
+    const subtask = await request(app)
+      .post(`/api/projects/${shippedProjectId}/issues`)
+      .set(headers)
+      .send({ title: 'Shipped subtask', type: 'subtask', priority: 'medium', parent_id: parent.body.id });
+    await request(app).put(`/api/issues/${subtask.body.id}`).set(headers).send({ status: 'shipped' });
+
+    const res = await request(app)
+      .put(`/api/sprints/${sprintId}`)
+      .set(headers)
+      .send({ status: 'completed' });
+
+    // Reading 'shipped' as unfinished would wedge this sprint shut permanently.
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('completed');
+  });
+});
+
 describe('DELETE /api/sprints/:id', () => {
   // "The next sprint in the list" depends on what else is in the project, and the
   // demo project is shared with every other block in this file. Own project, own

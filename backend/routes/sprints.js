@@ -18,13 +18,18 @@ const { serverError } = require('../utils/errors');
 
 const router = express.Router();
 
-// A child counts as done when its literal status is 'done' (baked-in workflow) or
+// An issue counts as done when its literal status is 'done' (baked-in workflow) or
 // the project's workflow maps its status to the done category. Same rule the epic
-// rollup uses in routes/issues.js — a project whose done column is not literally
-// 'done' must not have its sprints wedged shut.
-const CHILD_DONE = `(child.status = 'done' OR EXISTS (
+// rollup uses in routes/issues.js. Projects can rename their done column, and every
+// sprint-lifecycle decision has to agree on what finished means: get this wrong and
+// a project whose done column is "shipped" reports 0% on a finished sprint, has its
+// shipped work swept out as "unfinished" at completion, and cannot close a sprint
+// at all once a shipped subtask exists.
+const doneWhere = (alias) => `(${alias}.status = 'done' OR EXISTS (
   SELECT 1 FROM project_statuses ps
-  WHERE ps.project_id = child.project_id AND ps.key = child.status AND ps.category = 'done'))`;
+  WHERE ps.project_id = ${alias}.project_id AND ps.key = ${alias}.status AND ps.category = 'done'))`;
+
+const CHILD_DONE = doneWhere('child');
 
 // Jira lets you rename a completed sprint but not re-date or re-status one, and
 // the only way back to active is POST /sprints/:id/reopen, which carries its own
@@ -87,10 +92,10 @@ async function nextSprintAfter(db, sprint) {
 async function enrichSprint(db, sprint) {
   const stats = await queryOne(db, `
     SELECT COUNT(*) as issue_count,
-      SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as done_count,
-      COALESCE(SUM(story_points), 0) as total_points,
-      COALESCE(SUM(CASE WHEN status = 'done' THEN story_points ELSE 0 END), 0) as done_points
-    FROM issues WHERE sprint_id = ?
+      SUM(CASE WHEN ${doneWhere('i')} THEN 1 ELSE 0 END) as done_count,
+      COALESCE(SUM(i.story_points), 0) as total_points,
+      COALESCE(SUM(CASE WHEN ${doneWhere('i')} THEN i.story_points ELSE 0 END), 0) as done_points
+    FROM issues i WHERE i.sprint_id = ?
   `, [sprint.id]);
   return { ...sprint, ...stats };
 }

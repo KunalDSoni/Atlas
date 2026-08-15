@@ -19,6 +19,7 @@ import {
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
 import { useProjects } from '@/hooks/use-projects';
+import { useWorkflow } from '@/hooks/use-workflow';
 import { SPRINT_TONE, canManageSprints } from '@/lib/domain';
 import type { Issue, Sprint, SprintStatus } from '@/lib/types';
 import { CardsSkeleton, EmptyState, ErrorState, PageHeader } from '@/components/app/primitives';
@@ -598,6 +599,7 @@ export default function SprintsScreen() {
   } | null>(null);
 
   const canManage = canManageSprints(user?.role);
+  const { doneKeys } = useWorkflow(currentProjectId);
 
   const load = useCallback(async () => {
     if (!currentProjectId) return;
@@ -619,7 +621,11 @@ export default function SprintsScreen() {
   const requestComplete = useCallback(async (sprint: Sprint, updates?: Partial<Sprint>) => {
     try {
       const issues = await api.issues.list(sprint.project_id, sprint.id);
-      const unfinished = issues.filter((issue) => issue.status !== 'done');
+      // Ask the project's workflow what finished means. Hardcoding 'done' would
+      // sweep a project's shipped work out of the sprint as unfinished, which is a
+      // data change, not a display quirk.
+      const done = new Set(doneKeys);
+      const unfinished = issues.filter((issue) => !done.has(issue.status));
       if (unfinished.length === 0) {
         // The server refuses this when an issue still has an open subtask; surface
         // its message rather than a bare failure.
@@ -633,7 +639,7 @@ export default function SprintsScreen() {
     } catch (err) {
       toast.error('Could not inspect sprint work', { description: err instanceof Error ? err.message : undefined });
     }
-  }, [load]);
+  }, [load, doneKeys]);
 
   if (projectsLoading || (loading && currentProjectId)) {
     return (
