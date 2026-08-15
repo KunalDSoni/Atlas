@@ -5,12 +5,19 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { formatBytes, timeAgo } from '@/lib/format';
 import { renderMentions } from '@/lib/mention-renderer';
-import { MentionAutocomplete } from '../mention-autocomplete';
+import { useMentions } from '@/hooks/use-mentions';
 import { UserAvatar } from '../primitives';
 import type { IssueDetail } from './use-issue-detail';
 
 export function IssueTabs({ detail }: { detail: IssueDetail }) {
   const { issue, comments, attachments, activity, commentBody, posting, setCommentBody, addComment, uploadFiles, user } = detail;
+  // Hooks run before the early return: an issue that has not loaded yet must
+  // not change how many hooks this component calls.
+  const mentions = useMentions({
+    projectId: issue?.project_id,
+    value: commentBody,
+    onChange: setCommentBody,
+  });
   if (!issue || !user) return null;
 
   return (
@@ -23,19 +30,15 @@ export function IssueTabs({ detail }: { detail: IssueDetail }) {
 
                   <TabsContent value="comments" className="space-y-3 pt-3">
                     <div className="flex gap-2">
-                      <MentionAutocomplete
-                        projectId={issue.project_id}
-                        authorId={user.id}
-                        onMentionInsert={() => {}}
-                      >
-                        <Textarea
-                          value={commentBody}
-                          onChange={(e) => setCommentBody(e.target.value)}
-                          placeholder="Add a comment…"
-                          rows={2}
-                          className="resize-none"
-                        />
-                      </MentionAutocomplete>
+                      <Textarea
+                        ref={mentions.ref}
+                        value={commentBody}
+                        {...mentions.inputProps}
+                        placeholder="Add a comment…"
+                        rows={2}
+                        className="flex-1 resize-none"
+                      />
+                      {mentions.dropdown}
                       <Button
                         size="icon"
                         onClick={addComment}

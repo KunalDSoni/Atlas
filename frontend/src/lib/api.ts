@@ -8,7 +8,7 @@ import type {
   AutomationAction, AutomationCondition, AutomationRule, AutomationTrigger, Comment, Issue, EpicSummary,
   DashboardGadget, DashboardLayout,
   ProfileResponse, Project, ProjectComponent, ProjectMember, ProjectStats, SavedFilter, SearchResults, Settings, Sprint, User, Version,
-  IssueLink, LinkType, LinkedIssueSummary, MentioningPage, JqlSearchIssue,
+  IssueLink, LinkType, LinkedIssueSummary, MentionCandidate, MentioningPage, JqlSearchIssue,
   CycleTimeResponse, TimeInStatusResponse, CumulativeFlowResponse, ControlChartResponse, VersionReportResponse,
   WikiComment, WikiPage, WikiRestriction, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
   PageApproval, PageApprovalEntry, PageTask,
@@ -222,6 +222,16 @@ export const api = {
     addMember: (id: string, user_id: string, role_in_project?: string) =>
       post<ProjectMember>(`/projects/${id}/members`, { user_id, role_in_project }),
     removeMember: (id: string, userId: string) => del<{ ok: boolean }>(`/projects/${id}/members/${userId}`),
+  },
+
+  mentions: {
+    /** Candidates for the @ picker: project members first, everyone else
+     *  reachable by search, each flagged with is_member. */
+    search: (q: string, projectId?: string) => {
+      const params = new URLSearchParams({ q });
+      if (projectId) params.set('projectId', projectId);
+      return get<MentionCandidate[]>(`/mentions/search?${params}`);
+    },
   },
 
   dashboard: {

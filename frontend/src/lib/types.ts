@@ -135,6 +135,16 @@ export interface LinkedIssueSummary {
 }
 
 /** A wiki page that mentions an issue, for the issue's back-link panel. */
+/** A candidate in the @ picker. `is_member` drives the "may not have access"
+ *  warning — non-members are still mentionable, and still get notified. */
+export interface MentionCandidate {
+  id: string;
+  name: string;
+  email: string;
+  avatar_color: string;
+  is_member: boolean;
+}
+
 export interface MentioningPage {
   id: string;
   title: string;
