@@ -29,6 +29,25 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+
+      # The tag names the release, so the manifests must agree with it. Without
+      # this the two drift silently: tags reached v14.1.8 while every
+      # package.json still said 1.1.0, so nothing in the image knew its own
+      # version. Bump with `npm version <v> --no-git-tag-version` in each of
+      # the three directories, then tag.
+      - name: Tag matches the package version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          mismatch=0
+          for dir in . backend frontend; do
+            found=$(node -p "require('./$dir/package.json').version")
+            if [ "$found" != "$tag" ]; then
+              echo "::error file=$dir/package.json::$dir/package.json is $found but the tag is $GITHUB_REF_NAME"
+              mismatch=1
+            fi
+          done
+          exit $mismatch
+
       - name: Install backend dependencies
         run: npm ci
         working-directory: backend
