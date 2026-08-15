@@ -197,12 +197,23 @@ information without it. Deactivated users render muted with no hover card.
 | Issue comments | `issue-detail/issue-tabs.tsx:31` | plain — repair existing |
 | Wiki page body | `rich-text.tsx:683` | HTML (contentEditable) |
 | Wiki comments | `wiki-page.tsx:610` | plain in, HTML out |
-| Service desk requests | `help-requests.tsx:254` | plain |
-| Portal | `portal.tsx:167` | plain |
-| Product outcomes | `outcome-dialog.tsx` | plain |
-| Product features | `feature-detail-sheet.tsx` | plain |
+| Product features | `product-features.tsx` | plain |
+| Product objectives | `product-objectives.tsx` | plain |
+| Product insights | `product-insights.tsx` | plain |
+| Portal ideas (staff only) | `portal.tsx` | plain |
 | Mobile comments | `mobile/src/components/CommentInput.tsx` | plain |
 | Mobile create issue | `mobile/src/screens/CreateIssueScreen.tsx` | plain |
+
+Two composers are deliberately **not** wired, both customer-facing:
+`help-requests.tsx` (a customer replying to their own request) and the outcome
+review dialog's non-notifying fields. A client cannot reach
+`/api/mentions/search` — it sits behind `blockClients` — so the picker could
+never open for them, and a mention they hand-typed would either notify nobody
+or let someone outside the company ping staff at will.
+
+The portal's idea composer is wired because staff use it too. The server
+enforces the boundary rather than the UI: `POST /api/portal/ideas` skips mention
+fan-out entirely when the submitter is a client.
 
 The wiki page body is the one surface needing its own insertion path:
 `contentEditable` has no `selectionStart`, so insertion goes through
@@ -312,6 +323,18 @@ Mobile ships last, after the web surfaces prove the format.
 
 Each phase is independently shippable. Phase 2 alone fixes the reported bug.
 
+## Customer-facing reads
+
+Three views render text a staff member wrote to an audience that cannot load
+the user directory: the customer's view of a service desk request, and the two
+portal feature views. These call `stripMentionSyntax` rather than the renderer,
+so a mention reads as `@Sarah Chen` instead of raw token syntax — and no
+directory fetch is attempted that would 403 for a client.
+
+The activity feed does the same, for a different reason: a description edit
+logs its full old and new text, which would otherwise show token syntax in the
+timeline.
+
 ## Out of scope
 
 - Group and team mentions (`@here`, `@team`) — neither Jira nor Confluence has
@@ -319,3 +342,5 @@ Each phase is independently shippable. Phase 2 alone fixes the reported bug.
 - Mention analytics or a "mentions of me" inbox view
 - Backfilling existing plain-text mentions
 - Muting specific users, proposed by the superseded spec and never built
+- A public per-user profile route, which is what a clickable mention badge
+  would need (see Renderer above)
