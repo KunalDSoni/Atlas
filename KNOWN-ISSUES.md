@@ -1,5 +1,58 @@
 # Known Issues
 
+## RESOLVED — an abandoned stopwatch timer credited 12 hours nobody worked
+
+**Symptom.** A person started the stopwatch, forgot to pause, and was recorded as
+having worked exactly twelve hours. Someone who worked half an hour and forgot
+was overstated 24x. The figure reached `work_logs`, `issues.time_spent`, the
+time-tracking report and its CSV export.
+
+Reported as "the timer doesn't work", which is how it feels from the outside: the
+stopwatch itself started, paused, resumed and displayed correctly, but nobody
+could trust a number it produced once they had found hours in their own timesheet
+they had not worked.
+
+**Root cause.** The fix for the entry below replaced an unbounded open segment
+with a flat `RUNAWAY_MINUTES` cap and committed it. That traded an obviously
+wrong value for a plausible wrong one. Three properties made it worse than what
+it replaced:
+
+1. **It fired on a read.** `closeStaleSegments` runs at the top of `timerState`
+   and `GET /api/me/timer`, and the header chip polls the latter every 60
+   seconds — so the fabricated figure was written by the app merely being open.
+2. **Configuring `business_hours` did not prevent it.** That was this document's
+   recommended mitigation. `workdayEndFor` returns `null` on a non-work day and
+   for a start after that day's close, so evening and weekend starts fell
+   through to the same cap with a profile fully configured.
+3. **The repair script could not see it.** `findTimerOvercounts` flagged spans
+   over `ABANDONED_AFTER_MINUTES` (24h); a row the cap had already written was
+   exactly 12h and slipped underneath.
+
+**Resolution.** The server may **bound** a timer using evidence — a configured
+workday end — but may never **invent** a duration. An abandoned segment now
+credits zero: `segmentMinutes` returns 0 when `auto_stopped = 'abandoned'`.
+
+`ended_at` still records when the segment was *found*, not a synthesised end,
+because `recentAutoStop` drops stops older than a day and the rail renders
+`timeAgo(stopped_at)` — back-dating it to force the zero would have silenced the
+explanation on exactly the timers that need one. The rail now states that nothing
+was logged and offers **Log the time you worked**, which opens the existing Log
+work dialog.
+
+Deriving the zero from `auto_stopped` rather than a new column means historical
+rows heal themselves as their issues are recomputed; no migration was needed.
+
+The workday-end path is unchanged — that boundary is evidence, and bounded.
+
+**Historical data.** `node backend/scripts/repair-timer-overcounts.js` now
+defines damage as a committed timer work log claiming more than its segments
+credit, so it catches both the pre-cap multi-day commits and the 12-hour rows the
+old threshold missed. Dry run by default; `--apply` removes fabricated time
+rather than re-capping it, and can only ever reduce a total. Segments a human has
+corrected (`settled_at`) are never touched.
+
+**Spec.** `docs/superpowers/specs/2026-08-15-abandoned-timer-credits-zero-design.md`
+
 ## RESOLVED — an abandoned stopwatch timer logged its full wall-clock span on Done
 
 **Symptom.** A user started the issue stopwatch
@@ -55,8 +108,12 @@ warning and pause it themselves, keeping their real elapsed time.
 
 **Historical data.** Segments already closed and committed with an impossible
 span keep it — the cap only applies to segments still open. `node
-backend/scripts/repair-timer-overcounts.js` re-caps them and rewrites the
-affected work logs. Dry run by default; `--apply` to write.
+backend/scripts/repair-timer-overcounts.js` rewrites the affected work logs.
+Dry run by default; `--apply` to write.
+
+**Superseded.** The cap this entry introduced is itself the subject of the entry
+above: crediting `RUNAWAY_MINUTES` was still fabricating a duration, and an
+abandoned segment now credits zero. The script no longer re-caps.
 
 ## RESOLVED — a fresh deployment had no way to create the first project
 
