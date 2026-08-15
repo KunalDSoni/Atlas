@@ -55,6 +55,7 @@ const slaRoutes = require('./routes/sla');
 const deflectionRoutes = require('./routes/deflection');
 const helpRoutes = require('./routes/help');
 const dashboardRoutes = require('./routes/dashboard');
+const mentionsRoutes = require('./routes/mentions');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -157,6 +158,10 @@ app.use('/api', issuesRoutes);
 // Note: issue-scoped routes are /api/issues/:id/comments
 // Direct comment routes are /api/comments/:id
 app.use('/api', commentsRoutes);
+
+// Mention picker lookup. Mounted after blockClients so a client-role user
+// cannot enumerate staff accounts through it.
+app.use('/api', mentionsRoutes);
 
 // Admin Module — admin dashboard stats
 app.use('/api/admin', adminRoutes);
