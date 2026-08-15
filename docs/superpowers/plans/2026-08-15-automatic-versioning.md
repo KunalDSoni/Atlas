@@ -4,7 +4,9 @@
 
 **Goal:** Every push to `main` that contains releasable work automatically bumps the version, updates the manifests, tags the commit, and builds the release image — with no human running `npm version` or `git tag` again.
 
-**Architecture:** A pure Node helper computes the next semver from Conventional Commit subjects since the last tag; it is unit-tested under the existing jest harness. A new `release-version.yml` workflow runs that helper on every push to `main`, and when it reports a release is warranted, bumps the three manifests, commits, tags, and invokes the image build. Because a tag pushed by `GITHUB_TOKEN` does not trigger other workflows, `release-build.yml` gains a `workflow_call` trigger and is invoked directly rather than relied on to fire from the tag.
+**Architecture:** A pure Node helper computes the next semver from Conventional Commit subjects since the last tag; it is unit-tested under the existing jest harness. A new `release-version.yml` workflow runs that helper on every push to `main`, and when it reports a release is warranted, bumps the three manifests, commits, and tags. The tag is pushed with a `RELEASE_TOKEN` PAT so the push is a real event that starts `release-build.yml`; `GITHUB_TOKEN` cannot do this, for two compounding reasons recorded under Constraints.
+
+**Superseded approach — do not retry it.** An earlier revision made `release-build.yml` a reusable workflow and called it from `release-version.yml`, to avoid needing a PAT. It fails at the AWS step with `Not authorized to perform sts:AssumeRoleWithWebIdentity`: a called workflow presents the *caller's* OIDC subject, `repo:KunalDSoni/Atlas:ref:refs/heads/main`, and the role's trust policy accepts only tag refs. That policy is a deliberate security boundary, documented at the top of `release-build.yml`, and widening it to accept `refs/heads/main` would let any push to main assume a role that can write to ECR. The PAT is the cheaper concession.
 
 **Tech Stack:** GitHub Actions, Node 20, jest (existing `backend` harness), `npm version`, Conventional Commits.
 
@@ -18,6 +20,10 @@
 - The release commit's subject must start with `chore(release):` — the workflow uses that prefix to skip its own commits and avoid an infinite loop.
 - Bumps use `npm version <v> --no-git-tag-version --allow-same-version` so lockfiles move with manifests. Never hand-edit a version string.
 - Repo is **private**; `default_workflow_permissions` is `read`. Workflows must declare `permissions: contents: write` to push.
+- **A tag pushed with `GITHUB_TOKEN` starts no workflow.** GitHub does not raise events from tokens it issued, so the image build must be started some other way.
+- **The AWS role's trust policy accepts only tag refs.** This rules out invoking `release-build.yml` as a reusable workflow, calling it via `workflow_dispatch` from `main`, or any path whose OIDC subject is a branch. The only subject AWS will accept is `refs/tags/vX.Y.Z`, which means a genuine tag-push event.
+- Together these force one conclusion: the tag must be pushed by a non-`GITHUB_TOKEN` identity — a fine-grained PAT in the `RELEASE_TOKEN` secret with **Contents: read and write**. Without it versioning still works; only the image build is skipped, and the job summary says so with the command to build it by hand.
+- Commit data must reach the helper through a **file**, never an environment variable: env vars are NUL-terminated and the record format uses `0x00`, so an env var silently truncates to the first commit's subject.
 
 ---
 

@@ -45,6 +45,14 @@ jobs:
           # Tags and full history: the helper needs every commit since the last
           # release to decide the bump.
           fetch-depth: 0
+          # RELEASE_TOKEN, when configured, is what makes the tag push a real
+          # event that starts release-build.yml. GITHUB_TOKEN cannot: GitHub
+          # does not start workflows from events it creates, and the AWS role's
+          # trust policy only issues credentials for a tag ref — a reusable
+          # call from this workflow presents refs/heads/main and is refused.
+          # Without the secret, versioning still works; only the image is
+          # skipped, and the summary below says so.
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
 
       - uses: actions/setup-node@v5
         with:
@@ -145,16 +153,15 @@ jobs:
             echo ""
             echo "Bump: **${{ steps.compute.outputs.bump }}**"
             echo ""
-            echo "Building the image now. **Nothing is deployed** — run *Release - deploy one customer* for that."
+            if [ -n "${{ secrets.RELEASE_TOKEN }}" ]; then
+              echo "The tag push starts *Release - build image*. **Nothing is deployed** — run *Release - deploy one customer* for that."
+            else
+              echo "⚠️ **No image was built.** The tag was pushed with \`GITHUB_TOKEN\`, and GitHub does not start workflows from events it creates."
+              echo ""
+              echo "To build automatically, add a repository secret \`RELEASE_TOKEN\` — a fine-grained PAT with **Contents: read and write** on this repo. Until then, build this release by re-pushing its tag from a terminal:"
+              echo ""
+              echo "\`\`\`"
+              echo "git push --delete origin ${{ steps.compute.outputs.tag }} && git push origin ${{ steps.compute.outputs.tag }}"
+              echo "\`\`\`"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
-
-  build:
-    name: Build image
-    needs: version
-    if: needs.version.outputs.released == 'true'
-    uses: ./.github/workflows/release-build.yml
-    permissions:
-      contents: read
-      id-token: write # OIDC for the AWS role; nothing else needs it
-    with:
-      tag: ${{ needs.version.outputs.tag }}
