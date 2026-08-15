@@ -11,7 +11,12 @@ class FeatureMergeHistory {
       VALUES (?, ?, ?, datetime('now'), ?, ?, ?)
     `;
 
-    await run(db, sql, [id, parentId, childId, userId, childRequestCount, notes]);
+    // `notes` is optional, and the driver rejects a bound `undefined` outright
+    // ("tried to bind a value of an unknown type"). That turned every merge
+    // submitted without a reason into a 400 whose body carried no message,
+    // and left no history row — so the merge's own undo then answered 404.
+    // Only the old UI's habit of sending reason: '' kept it out of sight.
+    await run(db, sql, [id, parentId, childId, userId, childRequestCount ?? 0, notes ?? null]);
     return this.findById(id);
   }
 

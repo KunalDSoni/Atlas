@@ -1,18 +1,19 @@
 import React from 'react';
+import { Paperclip } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 
 interface RequestCountBadgeProps {
   count: number;
+  /** Marks a count that arrived by merge rather than directly. */
   merged?: boolean;
 }
 
-export const RequestCountBadge: React.FC<RequestCountBadgeProps> = ({ count, merged = false }) => {
-  const bgColor = merged ? 'bg-yellow-100' : 'bg-blue-100';
-  const textColor = merged ? 'text-yellow-800' : 'text-blue-800';
-
-  return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${bgColor} ${textColor}`}>
-      {count} request{count !== 1 ? 's' : ''}
-      {merged && <span className="ml-1">📎</span>}
-    </span>
-  );
-};
+export const RequestCountBadge: React.FC<RequestCountBadgeProps> = ({ count, merged = false }) => (
+  <Badge
+    variant="secondary"
+    className={merged ? 'bg-warning-muted text-warning-foreground' : 'bg-primary-muted text-accent-foreground'}
+  >
+    {count} request{count !== 1 ? 's' : ''}
+    {merged && <Paperclip className="size-3" aria-label="from a merge" />}
+  </Badge>
+);

@@ -1,9 +1,26 @@
 # Productboard vs Atlas: Remaining Features ❌
 
-**Last Updated:** August 7, 2026  
+**Last Updated:** August 7, 2026 — **partially stale, see below**  
+**Last verified:** August 15, 2026  
 **Purpose:** Track missing Productboard features needed for full parity
 
-This document lists **ALL features from Productboard that are NOT YET implemented in Atlas.**
+This document lists features from Productboard that were not implemented in
+Atlas **as of August 7, 2026**. It has not been re-surveyed since, and several
+items below shipped that same week — including three of its own five
+"CRITICAL / implement next" picks. Treat every entry as a lead to verify
+against the code, not as a statement about today.
+
+## Known-stale entries
+
+| Entry below | Actual status |
+|---|---|
+| Feature Request Aggregation | **Shipped.** `backend/routes/product-features.js` (merge, unmerge, candidates, history), `backend/lib/similarity.js`. Duplicate detection, merge/undo, and request-count rollup all exist. See `KNOWN-ISSUES.md` for the wiring bugs found and fixed on 2026-08-15. |
+| Feature Impact Measurement | **Shipped.** Forecast vs actual with variance, per-metric history, and a dashboard at `/product/impact`. |
+| No-Code Automation Builder | **Shipped.** `backend/routes/automations.js`, `frontend/src/screens/automation.tsx`. |
+| Advanced Audit Logging | **Shipped.** `backend/routes/auditlog.js`, `frontend/src/screens/audit-log.tsx`. |
+| Mobile App | Expo app covers 13 screens; parity with web is still partial, so this entry stands. |
+
+Everything else below is unverified since August 7.
 
 ---
 

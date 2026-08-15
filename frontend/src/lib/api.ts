@@ -16,6 +16,7 @@ import type {
   WorkLog, WorkflowStatus, TimerState, MyTimer, UnresolvedTimer, MyTimeResponse,
   PbCompany, PbCustomer, PbInsight, PbFeature, PbFeatureOutcome, PbObjective,
   ImpactMetricType, PbFeatureImpact, PbImpactDashboard, PbImpactMetric,
+  PbMergeCandidate, PbMergeHistoryEntry,
   PbOutcomesResponse, PbTheme, PbThemeSuggestion, PortalFeature, PortalMe, PortalSubmission,
   PublicRequest, RequestType, Queue, QueueIssue, SlaGoal, SlaState,
   ArticleSuggestion, CuratedArticle, ServiceDeskReport,
@@ -76,11 +77,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const data = text ? safeJson(text) : null;
 
   if (!res.ok) {
-    const serverMessage =
-      data && typeof data === 'object' && 'error' in data
-        ? String((data as { error: unknown }).error)
-        : '';
-    throw new ApiError(serverMessage || `Request failed (${res.status})`, res.status);
+    throw new ApiError(serverMessage(data) || `Request failed (${res.status})`, res.status);
   }
   return data as T;
 }
@@ -91,6 +88,21 @@ function safeJson(text: string): unknown {
   } catch {
     return null;
   }
+}
+
+/**
+ * Pulls the human-readable half out of an error body. Most routes answer with
+ * `{ error: 'what went wrong' }`, but the product-feature merge routes answer
+ * with `{ error: true, message: 'what went wrong' }`. Reading `error` blindly
+ * turned that second shape into the string "true", so a rejected merge told the
+ * user "true" instead of "Cannot merge: would create cycle".
+ */
+function serverMessage(data: unknown): string {
+  if (!data || typeof data !== 'object') return '';
+  const body = data as { error?: unknown; message?: unknown };
+  if (typeof body.error === 'string' && body.error) return body.error;
+  if (typeof body.message === 'string' && body.message) return body.message;
+  return '';
 }
 
 const get = <T>(p: string) => request<T>(p);
@@ -546,6 +558,26 @@ export const api = {
     unlinkIssue: (linkId: string) => del<{ ok: boolean }>(`/product/feature-issues/${linkId}`),
     voteFeature: (featureId: string) =>
       post<{ voted: boolean; vote_count: number }>(`/product/features/${featureId}/vote`),
+
+    // Merge / request aggregation. Note the path: these live under
+    // `/product/features/` like the rest of feature CRUD, NOT under the
+    // `/product-features/` prefix the impact endpoints below use. The two
+    // prefixes are a genuine seam in the server's routing table, so every
+    // caller goes through these wrappers rather than writing the path out.
+    // Bodies are camelCase here because that is what the merge routes read.
+    mergeCandidates: (featureId: string, limit?: number) =>
+      get<{ data: PbMergeCandidate[] }>(
+        `/product/features/${featureId}/merge-candidates${limit ? `?limit=${limit}` : ''}`,
+      ).then(r => r.data),
+    mergeFeatures: (featureId: string, childFeatureIds: string[], reason?: string) =>
+      post<{ data: PbFeature; merged_count: number }>(
+        `/product/features/${featureId}/merge`,
+        { childFeatureIds, reason },
+      ),
+    mergeHistory: (featureId: string) =>
+      get<{ data: PbMergeHistoryEntry[] }>(`/product/features/${featureId}/merge-history`).then(r => r.data),
+    unmergeFeature: (featureId: string, childFeatureId: string) =>
+      post<{ data: PbFeature }>(`/product/features/${featureId}/unmerge`, { childFeatureId }).then(r => r.data),
 
     // Impact measurement. These endpoints wrap their payload in `{ data }`
     // rather than returning it bare like the rest of the API — unwrap here so

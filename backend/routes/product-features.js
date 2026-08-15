@@ -135,7 +135,10 @@ async function withDemand(db, features) {
 router.get('/product/features', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const clauses = [];
+    // A feature merged away into another is not a feature any more — listing it
+    // beside the one that absorbed it is the duplicate the merge was meant to
+    // remove. `?include_merged=1` is the escape hatch for anything auditing.
+    const clauses = req.query.include_merged ? [] : ['f.merged_into_id IS NULL'];
     const params = [];
     if (req.query.project_id) { clauses.push('f.project_id = ?'); params.push(req.query.project_id); }
     if (req.query.status) { clauses.push('f.status = ?'); params.push(req.query.status); }
@@ -546,6 +549,29 @@ router.post('/product/features/:id/merge', requireAuth, adminOrProjectOwner, asy
         const childCount = child.request_count || 0;
         totalRequestCount += childCount;
 
+        // Move the child's feedback to the parent. Without this the merge only
+        // moved a number: the insights stayed pointed at a feature the UI no
+        // longer surfaces, so the parent's evidence panel, user_impact and
+        // demand all stayed blind to everything the merge was supposed to
+        // gather. `request_count` is set explicitly below rather than derived
+        // from the moved rows, so the totals stay exactly as the merge design
+        // specifies. Links the parent already holds for the same insight are
+        // dropped rather than moved — pb_insight_links is unique per
+        // (insight, feature), and a duplicate would fail the insert.
+        await run(db,
+          `DELETE FROM pb_insight_links
+            WHERE feature_id = ?
+              AND insight_id IN (SELECT insight_id FROM pb_insight_links WHERE feature_id = ?)`,
+          [childId, req.params.id]);
+        await run(db,
+          'UPDATE pb_insight_links SET feature_id = ?, merged_from_feature_id = ? WHERE feature_id = ?',
+          [req.params.id, childId, childId]);
+
+        // Take the child out of circulation. It stays readable by id so old
+        // links still resolve; it just stops being listed and stops being
+        // offered as a duplicate of the feature that absorbed it.
+        await run(db, 'UPDATE pb_features SET merged_into_id = ? WHERE id = ?', [req.params.id, childId]);
+
         // Update parent with accumulated merged_from_ids
         currentMergedFrom = Array.from(new Set([
           ...currentMergedFrom,
@@ -615,10 +641,19 @@ router.post('/product/features/:id/unmerge', requireAuth, adminOrProjectOwner, a
     }
 
     try {
-      // Restore child feature
+      // Restore child feature, and put it back in the lists it was taken out of.
       await run(db,
-        `UPDATE pb_features SET merged_from_ids = '[]' WHERE id = ?`,
+        `UPDATE pb_features SET merged_from_ids = '[]', merged_into_id = NULL WHERE id = ?`,
         [childFeatureId]
+      );
+
+      // Hand back the feedback the merge moved. Only rows stamped with this
+      // child move — evidence the parent held before the merge, or gained
+      // after it, stays where it is.
+      await run(db,
+        `UPDATE pb_insight_links SET feature_id = ?, merged_from_feature_id = NULL
+          WHERE merged_from_feature_id = ? AND feature_id = ?`,
+        [childFeatureId, childFeatureId, history.parent_feature_id]
       );
 
       // Update parent request count

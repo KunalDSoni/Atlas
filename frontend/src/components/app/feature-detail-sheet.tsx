@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Activity, DollarSign, FileText, MessageSquareQuote, Pencil, Rocket, Target, Trash2, TrendingUp, Users2, Vote } from 'lucide-react';
+import { Activity, Copy, DollarSign, FileText, Gauge, MessageSquareQuote, Pencil, Rocket, Target, Trash2, TrendingUp, Users2, Vote } from 'lucide-react';
 import { toast } from 'sonner';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
@@ -59,6 +59,9 @@ export function FeatureDetailSheet({
   const [showMergeDialog, setShowMergeDialog] = useState(false);
   const [selectedForMerge, setSelectedForMerge] = useState<{ id: string; name: string; request_count: number }[]>([]);
   const [isMerging, setIsMerging] = useState(false);
+  // Bumped after a merge or undo so the suggestion list and history refetch —
+  // both are stale the moment either succeeds.
+  const [mergeVersion, setMergeVersion] = useState(0);
 
   const load = useCallback(async () => {
     if (!featureId) return;
@@ -168,17 +171,15 @@ export function FeatureDetailSheet({
     setIsMerging(true);
     try {
       const childIds = selectedForMerge.map((f) => f.id);
-      await fetch(`/api/product-features/${feature.id}/merge`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ child_feature_ids: childIds, reason: reason || '' }),
-      });
-      toast.success('Features merged successfully');
+      const { merged_count } = await api.product.mergeFeatures(feature.id, childIds, reason);
+      toast.success(`Merged ${merged_count} feature${merged_count !== 1 ? 's' : ''}`);
       setShowMergeDialog(false);
       setSelectedForMerge([]);
+      setMergeVersion((v) => v + 1);
       await load();
       onChange?.();
     } catch (e) {
+      // The dialog stays open on failure so the selection survives a retry.
       toast.error('Merge failed', { description: e instanceof Error ? e.message : undefined });
     } finally {
       setIsMerging(false);
@@ -188,12 +189,9 @@ export function FeatureDetailSheet({
   async function handleUnmerge(childFeatureId: string) {
     if (!feature) return;
     try {
-      await fetch(`/api/product-features/${feature.id}/unmerge`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ child_feature_id: childFeatureId }),
-      });
+      await api.product.unmergeFeature(feature.id, childFeatureId);
       toast.success('Merge undone');
+      setMergeVersion((v) => v + 1);
       await load();
       onChange?.();
     } catch (e) {
@@ -427,22 +425,24 @@ export function FeatureDetailSheet({
 
               {/* Manage Duplicates */}
               <div className="border-t pt-6">
-                <h3 className="text-lg font-semibold mb-4">Manage Duplicates</h3>
+                <h3 className="mb-4 flex items-center gap-1.5 text-sm font-semibold"><Copy className="size-4" /> Duplicates</h3>
                 <div className="space-y-4">
                   <MergeSuggestions
                     featureId={feature.id}
                     onSelectForMerge={handleSelectForMerge}
+                    refreshKey={mergeVersion}
                   />
                   <MergeHistoryTimeline
                     featureId={feature.id}
                     onUnmerge={handleUnmerge}
+                    refreshKey={mergeVersion}
                   />
                 </div>
               </div>
 
               {/* Impact Measurement */}
               <div className="border-t pt-6">
-                <h3 className="text-lg font-semibold mb-4">Impact Measurement</h3>
+                <h3 className="mb-4 flex items-center gap-1.5 text-sm font-semibold"><Gauge className="size-4" /> Impact</h3>
                 <div className="space-y-4">
                   <ForecastCard
                     featureId={feature.id}

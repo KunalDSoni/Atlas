@@ -57,8 +57,11 @@ router.get('/portal/features', async (req, res) => {
   try {
     const db = await getDb();
     const rows = await queryAll(db,
+      // merged_into_id: a duplicate folded into another feature must not keep
+      // its own public entry, or customers see and vote on both halves of a
+      // request the team has already treated as one.
       `${PORTAL_FEATURE_SELECT}
-        WHERE f.portal_status IS NOT NULL
+        WHERE f.portal_status IS NOT NULL AND f.merged_into_id IS NULL
         ORDER BY vote_count DESC, f.created_at DESC`, viewerParams(req.userId));
     res.json(rows.map(toPublicFeature));
   } catch (e) { serverError(res, e); }

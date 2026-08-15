@@ -1,5 +1,13 @@
 import React, { useId, useState } from 'react';
 import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { api } from '@/lib/api';
 import type { ImpactMetricType } from '@/lib/types';
 
@@ -7,6 +15,22 @@ interface MetricsInputProps {
   featureId: string;
   onMetricRecorded: () => void;
 }
+
+const METRIC_LABELS: Record<ImpactMetricType, string> = {
+  adoption: 'Adoption %',
+  satisfaction: 'Satisfaction score',
+  revenue: 'Revenue impact ($)',
+  bug_rate: 'Bug rate %',
+  engagement: 'Engagement score',
+};
+
+const UNITS: Record<ImpactMetricType, string> = {
+  adoption: 'percentage',
+  satisfaction: 'score',
+  revenue: 'dollars',
+  bug_rate: 'percentage',
+  engagement: 'score',
+};
 
 export const MetricsInput: React.FC<MetricsInputProps> = ({ featureId, onMetricRecorded }) => {
   const [metricType, setMetricType] = useState<ImpactMetricType>('adoption');
@@ -21,14 +45,6 @@ export const MetricsInput: React.FC<MetricsInputProps> = ({ featureId, onMetricR
     value: `${fieldId}-value`,
     date: `${fieldId}-date`,
     notes: `${fieldId}-notes`,
-  };
-
-  const unitMap: Record<ImpactMetricType, string> = {
-    adoption: 'percentage',
-    satisfaction: 'score',
-    revenue: 'dollars',
-    bug_rate: 'percentage',
-    engagement: 'score',
   };
 
   // Calendar dates are compared as ISO strings, never as Date objects: the
@@ -70,7 +86,7 @@ export const MetricsInput: React.FC<MetricsInputProps> = ({ featureId, onMetricR
       const metric = await api.product.recordImpactMetric(featureId, {
         metricType,
         actualValue: parsedValue,
-        unit: unitMap[metricType],
+        unit: UNITS[metricType],
         measurementDate,
         notes: notes || undefined,
       });
@@ -80,110 +96,100 @@ export const MetricsInput: React.FC<MetricsInputProps> = ({ featureId, onMetricR
       setMeasurementDate(new Date().toISOString().split('T')[0]);
       setAcknowledgeReadOnly(false);
       toast.success(metric.editable
-        ? 'Metric recorded successfully'
+        ? 'Metric recorded'
         : 'Metric recorded as read-only audit trail');
       onMetricRecorded();
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to record metric';
-      toast.error(`Failed to record metric: ${message}`);
+      toast.error('Failed to record metric', {
+        description: error instanceof Error ? error.message : undefined,
+      });
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="p-4 bg-white border border-gray-200 rounded-lg space-y-3">
-      <h3 className="font-semibold">Record Post-Launch Metric</h3>
+    <div className="space-y-3 rounded-lg border bg-card p-4">
+      <h4 className="font-semibold">Record post-launch metric</h4>
 
-      <div>
-        <label htmlFor={ids.type} className="block text-sm font-medium text-gray-700 mb-1">
-          Metric Type
-        </label>
-        <select
-          id={ids.type}
-          value={metricType}
-          onChange={(e) => setMetricType(e.target.value as ImpactMetricType)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-        >
-          <option value="adoption">Adoption %</option>
-          <option value="satisfaction">Satisfaction Score</option>
-          <option value="revenue">Revenue Impact ($)</option>
-          <option value="bug_rate">Bug Rate %</option>
-          <option value="engagement">Engagement Score</option>
-        </select>
+      <div className="space-y-1.5">
+        <Label htmlFor={ids.type}>Metric type</Label>
+        <Select value={metricType} onValueChange={v => setMetricType(v as ImpactMetricType)}>
+          <SelectTrigger id={ids.type}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {(Object.keys(METRIC_LABELS) as ImpactMetricType[]).map(type => (
+              <SelectItem key={type} value={type}>{METRIC_LABELS[type]}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
-      <div>
-        <label htmlFor={ids.value} className="block text-sm font-medium text-gray-700 mb-1">
-          Actual Value
-        </label>
-        <input
+      <div className="space-y-1.5">
+        <Label htmlFor={ids.value}>Actual value</Label>
+        <Input
           id={ids.value}
           type="number"
           value={actualValue}
-          onChange={(e) => setActualValue(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-          placeholder="e.g., 35.5"
+          onChange={e => setActualValue(e.target.value)}
+          placeholder="e.g. 35.5"
           step="0.1"
           min="0"
         />
       </div>
 
-      <div>
-        <label htmlFor={ids.date} className="block text-sm font-medium text-gray-700 mb-1">
-          Measurement Date
-        </label>
-        <input
+      <div className="space-y-1.5">
+        <Label htmlFor={ids.date}>Measurement date</Label>
+        <Input
           id={ids.date}
           type="date"
           value={measurementDate}
-          onChange={(e) => {
+          onChange={e => {
             setMeasurementDate(e.target.value);
             setAcknowledgeReadOnly(false);
           }}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-          max={new Date().toISOString().split('T')[0]}
+          max={todayIso()}
         />
         {isReadOnly && (
-          <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded">
-            <p className="text-xs text-amber-700 mb-2">
-              Warning: This measurement date is {'>30'} days in the past. It will be marked as read-only for audit trail purposes and cannot be edited after recording.
+          <div className="mt-2 space-y-2 rounded border bg-warning-muted p-2 text-warning-foreground">
+            <p className="text-xs">
+              This measurement date is more than 30 days in the past. It will be recorded
+              read-only as audit trail and cannot be edited afterwards.
             </p>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
+            <label className="flex cursor-pointer items-center gap-2">
+              <Checkbox
                 checked={acknowledgeReadOnly}
-                onChange={(e) => setAcknowledgeReadOnly(e.target.checked)}
-                className="w-4 h-4"
+                onCheckedChange={checked => setAcknowledgeReadOnly(checked === true)}
+                // Explicit: Radix renders a button, not an input, so the
+                // wrapping <label> alone does not name it for assistive tech.
+                aria-label="I acknowledge this metric will be read-only"
               />
-              <span className="text-xs text-amber-700">I acknowledge this metric will be read-only</span>
+              <span className="text-xs">I acknowledge this metric will be read-only</span>
             </label>
           </div>
         )}
       </div>
 
-      <div>
-        <label htmlFor={ids.notes} className="block text-sm font-medium text-gray-700 mb-1">
-          Notes (optional)
-        </label>
-        <textarea
+      <div className="space-y-1.5">
+        <Label htmlFor={ids.notes}>Notes (optional)</Label>
+        <Textarea
           id={ids.notes}
           value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+          onChange={e => setNotes(e.target.value)}
           rows={2}
-          placeholder="e.g., Based on analytics dashboard, measured after 2 weeks"
+          placeholder="e.g. from the analytics dashboard, measured after 2 weeks"
         />
       </div>
 
-      <button
+      <Button
         onClick={handleSubmit}
         disabled={!actualValue || isLoading || (isReadOnly && !acknowledgeReadOnly)}
-        className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-        title={isReadOnly && !acknowledgeReadOnly ? 'Please acknowledge the read-only status' : ''}
+        className="w-full"
+        title={isReadOnly && !acknowledgeReadOnly ? 'Please acknowledge the read-only status' : undefined}
       >
-        {isLoading ? 'Recording...' : 'Record Metric'}
-      </button>
+        {isLoading ? 'Recording…' : 'Record metric'}
+      </Button>
     </div>
   );
 };

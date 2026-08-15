@@ -96,6 +96,39 @@ describe('GET /api/product/features/:id/merge-candidates', () => {
 });
 
 describe('POST /api/product/features/:id/merge', () => {
+  // The reason is documented as optional, but omitting it used to bind
+  // `undefined` into the history insert, which the driver refuses. Every
+  // reason-less merge came back 400 with an empty message and wrote no
+  // history, so its own undo then answered 404. Every other test in this file
+  // happens to send a reason, which is why it survived to production.
+  test('should merge when no reason is given', async () => {
+    const parent = await request(app).post('/api/product/features').set(headers)
+      .send({ name: 'Reasonless parent', description: 'no reason given', project_id: projectId });
+    const child = await request(app).post('/api/product/features').set(headers)
+      .send({ name: 'Reasonless child', description: 'no reason given', project_id: projectId });
+
+    const res = await request(app)
+      .post(`/api/product/features/${parent.body.id}/merge`)
+      .set(headers)
+      .send({ childFeatureIds: [child.body.id] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.merged_count).toBe(1);
+
+    // The history row must exist, or the 24h undo has nothing to reverse.
+    const history = await request(app)
+      .get(`/api/product/features/${parent.body.id}/merge-history`)
+      .set(headers);
+    expect(history.body.data).toHaveLength(1);
+    expect(history.body.data[0].child_feature_id).toBe(child.body.id);
+
+    const undo = await request(app)
+      .post(`/api/product/features/${parent.body.id}/unmerge`)
+      .set(headers)
+      .send({ childFeatureId: child.body.id });
+    expect(undo.status).toBe(200);
+  });
+
   test('should merge child feature into parent', async () => {
     // Create fresh features for this test to avoid state issues
     const parent = await request(app)

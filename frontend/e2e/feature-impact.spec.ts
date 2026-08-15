@@ -170,21 +170,21 @@ test.describe('Feature Impact Measurement — UI', () => {
 
     const sheet = page.locator('[role="dialog"]');
     await expect(sheet).toBeVisible({ timeout: 10_000 });
-    await expect(sheet.getByText('Impact Measurement')).toBeVisible();
+    await expect(sheet.getByRole('heading', { name: 'Impact', exact: true })).toBeVisible();
     await assertNoCrash(page);
 
     // Forecast
     await sheet.getByRole('button', { name: 'Edit' }).first().click();
-    await sheet.getByLabel('Expected Adoption %').fill('45');
-    await sheet.getByLabel('Expected Revenue ($)').fill('50000');
+    await sheet.getByLabel('Expected adoption %').fill('45');
+    await sheet.getByLabel('Expected revenue ($)').fill('50000');
     await sheet.getByRole('button', { name: 'Save', exact: true }).click();
 
     await expect(sheet.getByText('45%')).toBeVisible({ timeout: 10_000 });
 
     // Actual — this is the call that silently 401'd when the components used
     // raw fetch(), so the success toast is the real assertion here.
-    await sheet.getByLabel('Actual Value').fill('38');
-    await sheet.getByRole('button', { name: 'Record Metric' }).click();
+    await sheet.getByLabel('Actual value').fill('38');
+    await sheet.getByRole('button', { name: 'Record metric' }).click();
     await expect(page.getByText(/Metric recorded/i)).toBeVisible({ timeout: 10_000 });
 
     await assertNoCrash(page);
@@ -206,7 +206,7 @@ test.describe('Feature Impact Measurement — UI', () => {
     const sheet = page.locator('[role="dialog"]');
     await expect(sheet).toBeVisible({ timeout: 10_000 });
 
-    const dateInput = sheet.getByLabel('Measurement Date');
+    const dateInput = sheet.getByLabel('Measurement date');
     await expect(dateInput).toHaveAttribute('max', new Date().toISOString().split('T')[0]);
 
     // No warning for a fresh date.
@@ -216,8 +216,8 @@ test.describe('Feature Impact Measurement — UI', () => {
     await dateInput.fill(dateNDaysAgo(31));
     await expect(sheet.getByText(/read-only/i).first()).toBeVisible();
 
-    await sheet.getByLabel('Actual Value').fill('12');
-    const record = sheet.getByRole('button', { name: 'Record Metric' });
+    await sheet.getByLabel('Actual value').fill('12');
+    const record = sheet.getByRole('button', { name: 'Record metric' });
     await expect(record).toBeDisabled();
 
     await sheet.getByLabel(/I acknowledge/i).check();
@@ -243,18 +243,18 @@ test.describe('Feature Impact Measurement — UI', () => {
     });
 
     await page.goto('/product/impact');
-    await expect(page.getByText('Features Analyzed')).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText('Avg Adoption Variance')).toBeVisible();
+    await expect(page.getByText('Features analyzed')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Avg adoption variance')).toBeVisible();
 
     // Empty dashboard would render 0 / N/A; this proves the rollup reached it.
     // Scoped to adoption on purpose: this test seeds no revenue data, so
     // "Avg Revenue Variance: N/A" is correct and must not fail the assertion.
     const adoptionVariance = page
-      .getByText('Avg Adoption Variance')
+      .getByText('Avg adoption variance')
       .locator('xpath=following-sibling::div[1]');
     await expect(adoptionVariance).not.toHaveText('N/A');
     await expect(adoptionVariance).toHaveText(/%$/);
-    await expect(page.getByText('Adoption: Forecast vs Actual')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Adoption: forecast vs actual' })).toBeVisible();
     await assertNoCrash(page);
   });
 });

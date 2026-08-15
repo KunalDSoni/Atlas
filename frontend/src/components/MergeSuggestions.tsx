@@ -1,91 +1,104 @@
 import React, { useEffect, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { api } from '@/lib/api';
+import type { PbMergeCandidate } from '@/lib/types';
 import { RequestCountBadge } from './RequestCountBadge';
-
-interface MergeSuggestion {
-  feature: { id: string; name: string; request_count: number };
-  similarity: number;
-}
 
 interface MergeSuggestionsProps {
   featureId: string;
   onSelectForMerge: (childIds: string[]) => void;
   isLoading?: boolean;
+  /** Bumped by the parent after a merge or undo so the list refetches. */
+  refreshKey?: number;
 }
 
 export const MergeSuggestions: React.FC<MergeSuggestionsProps> = ({
   featureId,
   onSelectForMerge,
   isLoading = false,
+  refreshKey = 0,
 }) => {
-  const [suggestions, setSuggestions] = useState<MergeSuggestion[]>([]);
+  const [suggestions, setSuggestions] = useState<PbMergeCandidate[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchSuggestions = async () => {
-      try {
-        const res = await fetch(`/api/product-features/${featureId}/merge-candidates`);
-        const data = await res.json();
-        setSuggestions(data.data || []);
-      } catch (error) {
-        console.error('Failed to fetch merge candidates:', error);
-      }
-    };
-
-    fetchSuggestions();
-  }, [featureId]);
+    let cancelled = false;
+    setLoading(true);
+    api.product.mergeCandidates(featureId)
+      .then(candidates => {
+        if (cancelled) return;
+        setSuggestions(candidates);
+        setError(null);
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        // Surfaced rather than swallowed to the console: a failure here used to
+        // be indistinguishable from "no duplicates found", which is the answer
+        // a broken request is most likely to be mistaken for.
+        setError(e instanceof Error ? e.message : 'Failed to load merge candidates');
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [featureId, refreshKey]);
 
   const toggleSelection = (id: string) => {
-    const newSelected = new Set(selected);
-    if (newSelected.has(id)) {
-      newSelected.delete(id);
-    } else {
-      newSelected.add(id);
-    }
-    setSelected(newSelected);
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   const handleMerge = () => {
-    if (selected.size > 0) {
-      onSelectForMerge(Array.from(selected));
-      setSelected(new Set());
-    }
+    if (selected.size === 0) return;
+    onSelectForMerge(Array.from(selected));
+    setSelected(new Set());
   };
 
-  if (isLoading) {
-    return <div className="text-gray-500">Loading suggestions...</div>;
+  if (isLoading || loading) {
+    return <div className="text-sm text-muted-foreground">Loading suggestions...</div>;
+  }
+
+  if (error) {
+    return <div className="text-sm text-destructive">{error}</div>;
   }
 
   if (suggestions.length === 0) {
-    return <div className="text-gray-500">No duplicate features found</div>;
+    return <div className="text-sm text-muted-foreground">No duplicate features found</div>;
   }
 
   return (
     <div className="space-y-3">
-      <div className="bg-white border border-gray-200 rounded-lg divide-y">
-        {suggestions.map((suggestion) => (
-          <div key={suggestion.feature.id} className="p-3 flex items-center gap-3">
-            <input
-              type="checkbox"
-              checked={selected.has(suggestion.feature.id)}
-              onChange={() => toggleSelection(suggestion.feature.id)}
-              className="rounded border-gray-300"
+      <div className="divide-y rounded-lg border bg-card">
+        {suggestions.map(({ feature, similarity }) => (
+          <label
+            key={feature.id}
+            className="flex cursor-pointer items-center gap-3 p-3 first:rounded-t-lg last:rounded-b-lg hover:bg-muted/50"
+          >
+            <Checkbox
+              checked={selected.has(feature.id)}
+              onCheckedChange={() => toggleSelection(feature.id)}
+              aria-label={`Select ${feature.name} to merge`}
             />
-            <div className="flex-1">
-              <div className="font-medium">{suggestion.feature.name}</div>
-              <div className="text-sm text-gray-500">
-                {Math.round(suggestion.similarity * 100)}% match • <RequestCountBadge count={suggestion.feature.request_count} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-medium">{feature.name}</div>
+              <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                {Math.round(similarity * 100)}% match
+                <span aria-hidden>•</span>
+                <RequestCountBadge count={feature.request_count} />
               </div>
             </div>
-          </div>
+          </label>
         ))}
       </div>
       {selected.size > 0 && (
-        <button
-          onClick={handleMerge}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-        >
-          Merge {selected.size} Feature{selected.size !== 1 ? 's' : ''}
-        </button>
+        <Button onClick={handleMerge} size="sm">
+          Merge {selected.size} feature{selected.size !== 1 ? 's' : ''}
+        </Button>
       )}
     </div>
   );

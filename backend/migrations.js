@@ -1214,6 +1214,43 @@ const MIGRATIONS = [
       },
     ],
   },
+  {
+    id: '032_insight_link_merge_origin',
+    description: 'Remember which feature a linked insight came from before a merge',
+    steps: [
+      {
+        // A merge re-points the child's insight links at the parent, so the
+        // parent inherits the evidence and not just the count. Undoing that
+        // needs to know which of the parent's links arrived that way — the
+        // rows are otherwise indistinguishable from the parent's own. Set on
+        // transfer, cleared when an undo hands them back.
+        addColumn: {
+          table: 'pb_insight_links', column: 'merged_from_feature_id',
+          sqlite: 'ALTER TABLE pb_insight_links ADD COLUMN merged_from_feature_id VARCHAR(36)',
+          mysql: 'ALTER TABLE pb_insight_links ADD COLUMN merged_from_feature_id VARCHAR(36)',
+        },
+      },
+    ],
+  },
+  {
+    id: '033_feature_merged_into',
+    description: 'Mark a feature that has been merged away into another',
+    steps: [
+      {
+        // `merged_from_ids` records absorption from the parent's side only, so
+        // nothing marked the child: a merged-away duplicate kept its place in
+        // the features list next to the feature that swallowed it, and kept
+        // being offered as a merge candidate for that same parent. Merging
+        // duplicates therefore never removed a duplicate from anyone's view.
+        // This is that column's inverse, and it is what the read paths filter on.
+        addColumn: {
+          table: 'pb_features', column: 'merged_into_id',
+          sqlite: 'ALTER TABLE pb_features ADD COLUMN merged_into_id VARCHAR(36)',
+          mysql: 'ALTER TABLE pb_features ADD COLUMN merged_into_id VARCHAR(36)',
+        },
+      },
+    ],
+  },
 ];
 
 const LEDGER_SQL = {

@@ -76,7 +76,13 @@ function findSimilarFeatures(feature, allFeatures, threshold = 0.6) {
   if (!Array.isArray(allFeatures)) return [];
 
   const candidates = allFeatures
-    .filter(f => f.id !== feature.id && (JSON.parse(f.merged_from_ids || '[]').length === 0))
+    // Excluded: the feature itself; anything that has already absorbed others
+    // (the merge route refuses to re-merge a parent); and anything already
+    // merged away, which otherwise kept being offered as a duplicate of the
+    // very feature that swallowed it.
+    .filter(f => f.id !== feature.id
+      && !f.merged_into_id
+      && JSON.parse(f.merged_from_ids || '[]').length === 0)
     .map(f => ({
       feature: f,
       similarity: calculateFeatureSimilarity(feature, f),

@@ -1003,6 +1003,12 @@ export interface PbFeature {
   delivery_done: number;
   rice: number | null;
   request_count: number;
+  /** JSON array of the child feature ids folded into this one. Non-empty means
+   *  this feature is itself a merge parent; a child that has been merged away
+   *  keeps `'[]'` here, so this never tells you a feature *was* merged. */
+  merged_from_ids?: string | null;
+  merged_at?: string | null;
+  merged_by_id?: string | null;
   insights?: PbFeatureInsight[];
   issues?: PbFeatureIssue[];
   objectives?: PbFeatureObjective[];
@@ -1010,6 +1016,25 @@ export interface PbFeature {
   needs_outcome_metric?: boolean;
   post_launch_insight_count?: number;
   post_launch_insights?: PbPostLaunchInsight[];
+}
+
+/** A possible duplicate, as scored by the server's name/description similarity. */
+export interface PbMergeCandidate {
+  feature: PbFeature;
+  /** 0-1. The server only returns candidates at or above its threshold. */
+  similarity: number;
+}
+
+export interface PbMergeHistoryEntry {
+  id: string;
+  parent_feature_id: string;
+  child_feature_id: string;
+  merged_by_id: string;
+  merged_at: string;
+  /** What the child contributed to the parent's total, kept so an undo can
+   *  subtract exactly what was added rather than recounting. */
+  child_request_count: number;
+  reason?: string | null;
 }
 
 export interface PbFeatureOutcome {

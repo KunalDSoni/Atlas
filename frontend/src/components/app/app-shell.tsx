@@ -4,7 +4,7 @@ import {
   Bell, CalendarRange, ChevronsUpDown, Clock, Columns3, FileClock, Gauge, LayoutDashboard, ListTodo, LogOut, Menu, Package,
   Rocket, Search, Settings as SettingsIcon, Shield, User as UserIcon, Users, BookOpen, Zap,
   Activity, Inbox, Lightbulb, Target, Map as MapIcon, Building2, MessagesSquare, Plus, ListFilter,
-  Headphones, SlidersHorizontal,
+  Headphones, SlidersHorizontal, TrendingUp,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -61,6 +61,7 @@ const PRODUCT_NAV: NavItem[] = [
   { to: '/product/roadmap', label: 'Product roadmap', icon: MapIcon },
   { to: '/product/objectives', label: 'Objectives', icon: Target },
   { to: '/product/outcomes', label: 'Outcomes', icon: Activity },
+  { to: '/product/impact', label: 'Impact', icon: TrendingUp },
   { to: '/product/customers', label: 'Customers', icon: Building2 },
   { to: '/portal', label: 'Ideas portal', icon: MessagesSquare },
 ];

@@ -1,159 +1,200 @@
 import { test, expect, type Page } from '@playwright/test';
 import { login, assertNoCrash } from './helpers';
 
-// Feature merge E2E tests verifying the complete merge workflow
-// Tests use existing test credentials and handle async waits properly
+// What the previous version of this file did NOT do was merge anything. It
+// created features, asserted a dialog opened, and passed — while all four merge
+// calls in the app were hitting a path the server does not serve, with no auth
+// header and a snake_case body, and the UI toasted "Features merged
+// successfully" over the resulting 404. A merge spec has to perform a merge.
 
-// Creating a feature deliberately opens that feature's detail sheet
-// (product-features.tsx calls setDetailId after a successful create), so the
-// modal covers the "New feature" button. Any test that creates more than one
-// feature has to dismiss the sheet, or the next create click never lands.
-async function createFeature(page: Page, name: string, description: string) {
-  await page.getByRole('button', { name: 'New feature' }).click();
-  await page.locator('input[placeholder="Feature name"]').fill(name);
-  await page.locator('textarea[placeholder="Description"]').fill(description);
-  await page.getByRole('button', { name: 'Create' }).click();
-  // .first(): creating several features in a row stacks multiple toasts, and an
-  // unscoped match is a strict-mode violation once the second one appears.
-  await expect(page.getByText('Feature created').first()).toBeVisible({ timeout: 5_000 });
-  await page.getByRole('button', { name: 'Create' }).waitFor({ state: 'hidden' });
-
-  // Close the detail sheet the create just opened, so the page is usable again.
-  await expect(page.locator('[role="dialog"]')).toBeVisible({ timeout: 5_000 });
-  await page.keyboard.press('Escape');
-  await expect(page.locator('[role="dialog"]')).toBeHidden({ timeout: 5_000 });
+/** The session token the SPA stores after login, in the header shape the API wants. */
+async function authHeaders(page: Page) {
+  const token = await page.evaluate(() => localStorage.getItem('atlas_token'));
+  expect(token, 'expected a session token after login').toBeTruthy();
+  return { 'x-auth-token': token as string, 'Content-Type': 'application/json' };
 }
 
-/**
- * Test 1: Merge Feature and Undo Within 24h Window
- * Verifies that users can merge duplicate features and safely undo within 24 hours
- */
-test.describe('Feature merge and undo', () => {
-  test('should merge child feature into parent and allow undo within 24h', async ({ page }) => {
+type Headers = Record<string, string>;
+
+async function firstProjectId(page: Page, headers: Headers) {
+  const projects = await (await page.request.get('/api/projects', { headers })).json();
+  return projects[0].id as string;
+}
+
+async function createFeature(page: Page, headers: Headers, projectId: string, name: string, description: string) {
+  const res = await page.request.post('/api/product/features', {
+    headers,
+    data: { name, description, project_id: projectId, status: 'idea' },
+  });
+  expect(res.status(), 'feature fixture should be created').toBe(201);
+  return (await res.json()).id as string;
+}
+
+/** Files a piece of customer feedback against a feature — the only thing that moves request_count. */
+async function fileRequest(page: Page, headers: Headers, featureId: string, title: string) {
+  const insight = await page.request.post('/api/product/insights', {
+    headers,
+    data: { title, content: title, source: 'portal' },
+  });
+  expect(insight.status()).toBe(201);
+  const link = await page.request.post(`/api/product/insights/${(await insight.json()).id}/links`, {
+    headers,
+    data: { feature_id: featureId, importance: 2 },
+  });
+  expect(link.status()).toBe(201);
+}
+
+async function getFeature(page: Page, headers: Headers, id: string) {
+  const res = await page.request.get(`/api/product/features/${id}`, { headers });
+  expect(res.status()).toBe(200);
+  return res.json();
+}
+
+test.describe('Feature merge — API contract', () => {
+  test('rolls the child request count and its evidence into the parent', async ({ page }) => {
     await login(page);
-    await page.goto('/product/features');
-    await expect(page.getByRole('heading', { name: 'Features' })).toBeVisible({ timeout: 15_000 });
-    await assertNoCrash(page);
+    const headers = await authHeaders(page);
+    const projectId = await firstProjectId(page, headers);
 
-    // Create parent feature
-    const parentName = `Parent Feature ${Date.now()}`;
-    await createFeature(page, parentName, 'Parent feature for merge test');
+    const parentId = await createFeature(page, headers, projectId, `Bulk edit ${Date.now()}`, 'Edit many issues at once');
+    const childId = await createFeature(page, headers, projectId, `Bulk editing ${Date.now()}`, 'Edit many issues at once');
 
-    // Create child feature
-    const childName = `Child Feature ${Date.now()}`;
-    await createFeature(page, childName, 'Child feature to merge into parent');
+    await fileRequest(page, headers, parentId, 'Parent-side request');
+    await fileRequest(page, headers, childId, 'Child-side request');
+    await fileRequest(page, headers, childId, 'Another child-side request');
 
-    // Verify both features appear in the list
-    await page.goto('/product/features');
-    await expect(page.getByText(parentName)).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText(childName)).toBeVisible({ timeout: 15_000 });
-    await assertNoCrash(page);
+    const merge = await page.request.post(`/api/product/features/${parentId}/merge`, {
+      headers,
+      data: { childFeatureIds: [childId] },
+    });
+    expect(merge.status(), 'merge must succeed without a reason').toBe(200);
+
+    const parent = await getFeature(page, headers, parentId);
+    expect(parent.request_count).toBe(3);
+    expect(parent.insight_count).toBe(3);
+  });
+
+  test('refuses a merge that would create a cycle, with a readable message', async ({ page }) => {
+    await login(page);
+    const headers = await authHeaders(page);
+    const projectId = await firstProjectId(page, headers);
+
+    const parentId = await createFeature(page, headers, projectId, `Cycle parent ${Date.now()}`, 'cycle fixture');
+    const childId = await createFeature(page, headers, projectId, `Cycle child ${Date.now()}`, 'cycle fixture');
+
+    expect((await page.request.post(`/api/product/features/${parentId}/merge`, {
+      headers, data: { childFeatureIds: [childId] },
+    })).status()).toBe(200);
+
+    const again = await page.request.post(`/api/product/features/${parentId}/merge`, {
+      headers, data: { childFeatureIds: [childId] },
+    });
+    expect(again.status()).toBe(400);
+    // The client renders `message`; a body carrying only `error: true` shows
+    // the user the word "true".
+    expect((await again.json()).message).toBeTruthy();
+  });
+
+  test('undo returns the count and the evidence to the child', async ({ page }) => {
+    await login(page);
+    const headers = await authHeaders(page);
+    const projectId = await firstProjectId(page, headers);
+
+    const parentId = await createFeature(page, headers, projectId, `Undo parent ${Date.now()}`, 'undo fixture');
+    const childId = await createFeature(page, headers, projectId, `Undo child ${Date.now()}`, 'undo fixture');
+
+    await fileRequest(page, headers, parentId, 'Stays with the parent');
+    await fileRequest(page, headers, childId, 'Goes back to the child');
+
+    await page.request.post(`/api/product/features/${parentId}/merge`, {
+      headers, data: { childFeatureIds: [childId] },
+    });
+    expect((await getFeature(page, headers, parentId)).request_count).toBe(2);
+
+    const undo = await page.request.post(`/api/product/features/${parentId}/unmerge`, {
+      headers, data: { childFeatureId: childId },
+    });
+    expect(undo.status()).toBe(200);
+
+    expect((await getFeature(page, headers, parentId)).request_count).toBe(1);
+    expect((await getFeature(page, headers, childId)).insight_count).toBe(1);
   });
 });
 
-/**
- * Test 2: Prevent Re-merging Already-Merged Features
- * Verifies that the system prevents merging features that already contain merged children
- */
-test.describe('Prevent re-merging', () => {
-  test('should prevent merging a feature that already contains merged children', async ({ page }) => {
+test.describe('Feature merge — through the UI', () => {
+  test('merges a duplicate from the feature sheet and shows the combined count', async ({ page }) => {
     await login(page);
+    const headers = await authHeaders(page);
+    const projectId = await firstProjectId(page, headers);
+
+    // Identical name and description puts the pair well over the server's 0.6
+    // similarity threshold, so the child is offered as a merge candidate.
+    const stamp = Date.now();
+    const sharedName = `Single sign-on ${stamp}`;
+    const parentId = await createFeature(page, headers, projectId, sharedName, 'Let people sign in with their IdP');
+    await createFeature(page, headers, projectId, sharedName, 'Let people sign in with their IdP');
+
+    await fileRequest(page, headers, parentId, 'Parent request');
+
     await page.goto('/product/features');
     await expect(page.getByRole('heading', { name: 'Features' })).toBeVisible({ timeout: 15_000 });
+
+    // Open the parent's detail sheet.
+    await page.getByText(sharedName).first().click();
+    const sheet = page.locator('[role="dialog"]');
+    await expect(sheet).toBeVisible({ timeout: 5_000 });
+
+    // The suggestion list is the first thing a broken path breaks: a 404 there
+    // used to render as the reassuring "No duplicate features found".
+    const suggestion = sheet.getByRole('checkbox', { name: new RegExp(`Select ${sharedName}`) });
+    await expect(suggestion).toBeVisible({ timeout: 10_000 });
+    await suggestion.check();
+
+    await sheet.getByRole('button', { name: /^Merge 1 feature$/ }).click();
+
+    const confirm = page.getByRole('dialog').filter({ hasText: 'Confirm merge' });
+    await expect(confirm).toBeVisible({ timeout: 5_000 });
+    await confirm.getByRole('button', { name: /^Merge 1 feature$/ }).click();
+
+    // A success toast must mean the server said yes.
+    await expect(page.getByText('Merged 1 feature')).toBeVisible({ timeout: 10_000 });
     await assertNoCrash(page);
 
-    // Create three test features for cycle prevention test
-    const featAName = `Feature A ${Date.now()}`;
-    const featBName = `Feature B ${Date.now()}`;
-    const featCName = `Feature C ${Date.now()}`;
+    const parent = await getFeature(page, headers, parentId);
+    expect(parent.merged_from_ids, 'the merge must have reached the database').not.toBe('[]');
 
-    // Create Feature A
-    await createFeature(page, featAName, 'Test feature A');
-
-    // Create Feature B
-    await createFeature(page, featBName, 'Test feature B');
-
-    // Create Feature C
-    await createFeature(page, featCName, 'Test feature C');
-
-    // Verify all features are listed
-    await page.goto('/product/features');
-    await expect(page.getByText(featAName)).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText(featBName)).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText(featCName)).toBeVisible({ timeout: 15_000 });
-    await assertNoCrash(page);
+    // And the undo the merge promises is offered.
+    await expect(sheet.getByRole('button', { name: 'Undo' }).first()).toBeVisible({ timeout: 10_000 });
   });
-});
 
-/**
- * Test 3: Merged Feature Badge Display
- * Verifies that merged features display a visual badge/indicator in the UI
- */
-test.describe('Merged feature badge display', () => {
-  test('should display merged status badge for merged features', async ({ page }) => {
+  // The "success toast over a failed request" half of this is asserted where it
+  // can actually be provoked: src/lib/__tests__/api-merge.test.ts drives the
+  // client against a 400 and requires it to reject.
+  test('a duplicate already merged away is no longer offered', async ({ page }) => {
     await login(page);
+    const headers = await authHeaders(page);
+    const projectId = await firstProjectId(page, headers);
+
+    const stamp = Date.now();
+    const sharedName = `Audit export ${stamp}`;
+    const parentId = await createFeature(page, headers, projectId, sharedName, 'Export the audit log');
+    const childId = await createFeature(page, headers, projectId, sharedName, 'Export the audit log');
+
+    // Merge it server-side first, so the merge the UI attempts is refused.
+    await page.request.post(`/api/product/features/${parentId}/merge`, {
+      headers, data: { childFeatureIds: [childId] },
+    });
+
     await page.goto('/product/features');
     await expect(page.getByRole('heading', { name: 'Features' })).toBeVisible({ timeout: 15_000 });
+    await page.getByText(sharedName).first().click();
+
+    const sheet = page.locator('[role="dialog"]');
+    await expect(sheet).toBeVisible({ timeout: 5_000 });
+
+    // A merged child is filtered out of the candidates, so there is nothing to
+    // select — which is itself the correct behaviour and worth asserting.
+    await expect(sheet.getByText('No duplicate features found')).toBeVisible({ timeout: 10_000 });
     await assertNoCrash(page);
-
-    // Create a test feature
-    const featureName = `Merge Test ${Date.now()}`;
-    await page.getByRole('button', { name: 'New feature' }).click();
-    await page.locator('input[placeholder="Feature name"]').fill(featureName);
-    await page.locator('textarea[placeholder="Description"]').fill('Feature to test merge badge display');
-    await page.getByRole('button', { name: 'Create' }).click();
-    await expect(page.getByText('Feature created')).toBeVisible({ timeout: 5_000 });
-    await page.getByRole('button', { name: 'Create' }).waitFor({ state: 'hidden' });
-
-    // Navigate back to features list and verify the feature appears
-    await page.goto('/product/features');
-    await expect(page.getByText(featureName)).toBeVisible({ timeout: 15_000 });
-    await assertNoCrash(page);
-
-    // Click on the feature to open detail sheet
-    await page.getByText(featureName).click();
-    await expect(page.locator('[role="dialog"]')).toBeVisible({ timeout: 5_000 });
-    await assertNoCrash(page);
-
-    // Verify the detail sheet shows feature information
-    const detailSheet = page.locator('[role="dialog"]');
-    await expect(detailSheet).toContainText(featureName);
-  });
-});
-
-/**
- * Test 4: Feature Merge History Timeline
- * Verifies that merge operations are tracked and displayed in a history timeline
- */
-test.describe('Feature merge history timeline', () => {
-  test('should track and display merge history for features', async ({ page }) => {
-    await login(page);
-    await page.goto('/product/features');
-    await expect(page.getByRole('heading', { name: 'Features' })).toBeVisible({ timeout: 15_000 });
-    await assertNoCrash(page);
-
-    // Create a feature to track merge history
-    const featureName = `History Test ${Date.now()}`;
-    await page.getByRole('button', { name: 'New feature' }).click();
-    await page.locator('input[placeholder="Feature name"]').fill(featureName);
-    await page.locator('textarea[placeholder="Description"]').fill('Feature for merge history tracking');
-    await page.getByRole('button', { name: 'Create' }).click();
-    await expect(page.getByText('Feature created')).toBeVisible({ timeout: 5_000 });
-    await page.getByRole('button', { name: 'Create' }).waitFor({ state: 'hidden' });
-
-    // Navigate to the feature and verify it can be viewed
-    await page.goto('/product/features');
-    await expect(page.getByText(featureName)).toBeVisible({ timeout: 15_000 });
-    await page.getByText(featureName).click();
-    await expect(page.locator('[role="dialog"]')).toBeVisible({ timeout: 5_000 });
-    await assertNoCrash(page);
-
-    // Verify the detail sheet is displaying
-    const detailSheet = page.locator('[role="dialog"]');
-    await expect(detailSheet).toContainText(featureName);
-
-    // Close the detail sheet
-    await page.keyboard.press('Escape');
-    await expect(page.locator('[role="dialog"]')).toBeHidden({ timeout: 5_000 });
   });
 });

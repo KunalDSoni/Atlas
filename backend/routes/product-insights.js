@@ -191,6 +191,12 @@ router.post('/product/insights/:id/links', requireAuth, async (req, res) => {
     await run(db, 'INSERT INTO pb_insight_links (id, insight_id, feature_id, importance, quote, created_by) VALUES (?, ?, ?, ?, ?, ?)',
       [id, req.params.id, feature_id, Number(importance) || 1, quote || null, req.userId]);
     await run(db, 'UPDATE pb_insights SET processed = 1 WHERE id = ?', [req.params.id]);
+    // request_count is "total customer feedback count" (the merge design). It is
+    // a stored counter rather than a COUNT(*) because merging folds a child's
+    // total into its parent, and that sum has to survive the child going away.
+    // Keeping it in step with the links here is what gives the number a value
+    // other than zero — nothing else in the app ever wrote to it.
+    await run(db, 'UPDATE pb_features SET request_count = request_count + 1 WHERE id = ?', [feature_id]);
     const link = await queryOne(db,
       `SELECT il.*, f.name as feature_name FROM pb_insight_links il
        JOIN pb_features f ON il.feature_id = f.id WHERE il.id = ?`, [id]);
@@ -202,7 +208,17 @@ router.post('/product/insights/:id/links', requireAuth, async (req, res) => {
 router.delete('/product/insight-links/:id', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
+    // Read the feature before the delete: afterwards there is nothing left to
+    // say which counter to decrement. MAX(...,0) because a feature whose count
+    // was folded into a merge parent must not be driven negative by a later
+    // unlink of a link that has already moved.
+    const link = await queryOne(db, 'SELECT feature_id FROM pb_insight_links WHERE id = ?', [req.params.id]);
     await run(db, 'DELETE FROM pb_insight_links WHERE id = ?', [req.params.id]);
+    if (link) {
+      await run(db,
+        'UPDATE pb_features SET request_count = MAX(request_count - 1, 0) WHERE id = ?',
+        [link.feature_id]);
+    }
     res.json({ ok: true });
   } catch (e) { serverError(res, e); }
 });

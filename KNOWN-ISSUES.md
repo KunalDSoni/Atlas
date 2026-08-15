@@ -1,5 +1,102 @@
 # Known Issues
 
+## RESOLVED — "Features merged successfully" over a request that 404'd
+
+**Symptom.** A PM selected a duplicate feature, confirmed the merge, and got a
+green "Features merged successfully" toast. Nothing merged. The duplicate stayed
+in the list, the request counts stayed apart, and the merge history stayed
+empty. Reloading showed the two features exactly as before.
+
+**Root cause.** Feature merge was built on both ends and the ends were never
+connected. Four independent breaks, each sufficient on its own:
+
+1. **Wrong path.** The server registers merge under `/api/product/features/:id/`
+   (like the rest of feature CRUD). All four client calls used
+   `/api/product-features/:id/` — the prefix the *impact* endpoints use, and the
+   one the design doc specifies. Every call 404'd.
+2. **No credentials.** The calls used raw `fetch()` rather than `lib/api.ts`, so
+   they carried no `x-auth-token`. Correcting only the path would have turned
+   every 404 into a 401.
+3. **Wrong body.** They sent `child_feature_ids`; the route reads
+   `childFeatureIds`. Correcting path and auth would have turned every 401 into
+   a 400.
+4. **Nothing checked the result.** `fetch()` does not throw on 4xx, and no call
+   site read `res.ok`. `await fetch(...)` followed by
+   `toast.success('Features merged successfully')` reports success for every one
+   of the failures above. The suggestion list and history swallowed their errors
+   into `console.error` and rendered "No duplicate features found" — a broken
+   request was indistinguishable from a correct empty answer.
+
+The e2e spec named `feature-merge.spec.ts` never merged anything: its four tests
+created features and asserted that a dialog opened.
+
+**Also found, once merges could actually run:**
+
+- **A merge with no reason crashed.** `notes` arrived `undefined` and the driver
+  refuses to bind it ("tried to bind a value of an unknown type"). The 400 it
+  produced carried no message, because `JSON.stringify` drops an `undefined`
+  field — and since no history row was written, that merge's own undo then
+  answered 404. Every existing test happened to pass a reason.
+- **`request_count` was always 0.** Nothing in the application ever wrote it;
+  only the merge arithmetic and hand-seeded test rows did. The number the whole
+  aggregation feature exists to show was decorative. It now tracks linked
+  customer feedback: `+1` when an insight is linked to a feature, `-1` on
+  unlink, floored at 0.
+- **Merging moved a number but not the evidence.** The design says "transfer all
+  linked feedback records to parent"; the route only summed counters, leaving
+  the insights attached to a feature the UI no longer shows. Links now move to
+  the parent, stamped with `pb_insight_links.merged_from_feature_id` so an undo
+  returns exactly the rows the merge took and leaves the parent's own alone.
+- **The swallowed duplicate never went away.** `merged_from_ids` records
+  absorption from the parent's side only, so nothing marked the child: it stayed
+  in the features list beside the feature that absorbed it, stayed on the public
+  portal collecting its own votes, and stayed on offer as a merge candidate for
+  that same parent. `pb_features.merged_into_id` is the inverse, and the read
+  paths filter on it. A merged feature is still readable by id, so existing
+  links resolve; `?include_merged=1` restores it to the list for auditing.
+
+**Resolution.** All four calls go through `lib/api.ts` (`mergeCandidates`,
+`mergeFeatures`, `mergeHistory`, `unmergeFeature`), which owns the path, the
+auth header, the body casing, and the `{ data }` unwrapping, so no caller can
+get them wrong again. The client also learned the merge routes' error shape:
+they answer `{ error: true, message }` where the rest of the API answers
+`{ error: 'message' }`, and reading `error` blindly rendered that as the string
+"true".
+
+**Regression cover.** `frontend/src/lib/__tests__/api-merge.test.ts` asserts the
+wire format directly — path, method, body casing, token, and that a 400 rejects
+rather than resolves. That is the only layer that sees all four original breaks
+at once. `backend/tests/backend/feature-request-aggregation.test.js` covers the
+counter and the evidence transfer together, because either alone is wrong.
+`frontend/e2e/feature-merge.spec.ts` now performs a merge.
+
+**If you add a product-feature endpoint:** check which prefix you are mounting
+under. `/product/features/` carries CRUD and merge; `/product-features/` carries
+impact. Both are live, and the split is not guessable — route new client calls
+through `lib/api.ts` rather than writing the path at the call site.
+
+## RESOLVED — the impact dashboard existed but nothing linked to it
+
+**Symptom.** Post-launch impact measurement shipped complete — migrations,
+model, routes, tests, a screen — and no one could reach the screen. `/product/impact`
+was routed in `App.tsx` but absent from `PRODUCT_NAV`, so it was reachable only
+by typing the URL.
+
+**Fix.** The entry is in the Product section of the sidebar. The screen was also
+the only one of 43 named in PascalCase (`ImpactDashboard.tsx`), and the only one
+that skipped `PageHeader`/`EmptyState`, rendering bare "Loading..." and
+"No data" strings; it is now `screens/product-impact.tsx` and uses the shared
+primitives, including an empty state that distinguishes "nothing measured yet"
+from "nothing launched".
+
+**Related.** That whole 2026-08-07 batch was styled outside the theme: 47
+hardcoded `bg-white`/`text-gray-*` classes across its eight files, against zero
+in `board.tsx` or `my-time.tsx`, so it rendered as light-mode panels inside a
+dark app. `MergeConfirmDialog` hand-rolled a `fixed inset-0` modal instead of
+using the shadcn `Dialog`, so it had no focus trap and no Escape-to-close. Both
+are corrected; `ImpactChart` now draws from the shared `SERIES_COLORS` ramp and
+ships the screen-reader table the chart primitives require.
+
 ## RESOLVED — an abandoned stopwatch timer credited 12 hours nobody worked
 
 **Symptom.** A person started the stopwatch, forgot to pause, and was recorded as
