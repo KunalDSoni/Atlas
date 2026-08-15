@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { useMentions } from '@/hooks/use-mentions';
 import { api } from '@/lib/api';
 import { PRIORITIES, PRIORITY_LABEL, STATUSES, STATUS_LABEL, TYPE_LABEL } from '@/lib/domain';
 import type { IssueStatus, IssueType, Priority, Sprint, User } from '@/lib/types';
@@ -37,6 +38,7 @@ export function CreateIssueDialog({
 }) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const mentions = useMentions({ projectId: projectId ?? undefined, value: description, onChange: setDescription });
   const [type, setType] = useState<IssueType>('task');
   const [status, setStatus] = useState<IssueStatus>('todo');
   const [priority, setPriority] = useState<Priority>('medium');
@@ -110,13 +112,15 @@ export function CreateIssueDialog({
             <div className="space-y-2">
               <Label htmlFor="issue-desc">Description</Label>
               <Textarea
+                ref={mentions.ref}
                 id="issue-desc"
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                {...mentions.inputProps}
                 placeholder="Add more detail…"
                 rows={3}
                 className="resize-none"
               />
+              {mentions.dropdown}
             </div>
 
             <div className="grid grid-cols-2 gap-3">

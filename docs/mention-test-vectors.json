@@ -61,6 +61,21 @@
       "name": "token at very start of text",
       "input": "@[Ann Lee](user:aaa-111) opened this",
       "expected": ["aaa-111"]
+    },
+    {
+      "name": "html span form, used by wiki page bodies",
+      "input": "<p>cc <span data-mention-id=\"aaa-111\">@Ann Lee</span></p>",
+      "expected": ["aaa-111"]
+    },
+    {
+      "name": "html span with single quotes",
+      "input": "<span data-mention-id='bbb-222'>@Bob Roy</span>",
+      "expected": ["bbb-222"]
+    },
+    {
+      "name": "both forms in one document, deduplicated",
+      "input": "<p>@[Ann Lee](user:aaa-111) and <span data-mention-id=\"aaa-111\">@Ann Lee</span> and <span data-mention-id=\"bbb-222\">@Bob Roy</span></p>",
+      "expected": ["aaa-111", "bbb-222"]
     }
   ],
 

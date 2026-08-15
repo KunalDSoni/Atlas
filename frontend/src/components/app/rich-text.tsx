@@ -27,6 +27,7 @@ import {
 import { useAIEnabled } from '@/hooks/use-ai';
 import { isInactive, useUserDirectory, type MentionDirectory } from '@/hooks/use-user-directory';
 import { expandLegacyMentions, tokenizeMentions } from '@/lib/mentions';
+import { useContentEditableMentions } from '@/hooks/use-mentions-contenteditable';
 import { cn } from '@/lib/utils';
 import { issueUrl } from '@/lib/urls';
 
@@ -498,6 +499,7 @@ export function RichTextEditor({
   const [draftOpen, setDraftOpen] = useState(false);
   const [draftPrompt, setDraftPrompt] = useState('');
   const [linkOpen, setLinkOpen] = useState(false);
+  const mentions = useContentEditableMentions({ editorRef: ref, onInserted: () => emit() });
   const [linkUrl, setLinkUrl] = useState('');
   // execCommand acts on the live selection, which is lost when focus moves to the
   // popover input — so stash the range and restore it before applying the link.
@@ -767,8 +769,10 @@ export function RichTextEditor({
         aria-label="Page content"
         onInput={emit}
         onBlur={emit}
+        {...mentions.editorProps}
         className="wiki-prose min-h-[60vh] px-5 py-4 focus:outline-none"
       />
+      {mentions.dropdown}
     </div>
   );
 }

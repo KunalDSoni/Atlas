@@ -9,6 +9,7 @@ const { syncPageIssueLinks } = require('../utils/issue-keys');
 const { extractTasks } = require('../utils/wiki-tasks');
 const { placeholders } = require('../utils/sql');
 const { signWikiImages, unsignWikiImages } = require('./wiki-attachments');
+const { notify, mentionedUserIds } = require('../utils/notify');
 const router = express.Router();
 
 /**
@@ -221,10 +222,38 @@ router.post('/wiki/spaces/:spaceId/pages', requireAuth, async (req, res) => {
       }
     }
     await syncPageIssueLinks(db, id, body || '');
+    await notifyPageMentions(db, {
+      pageId: id, title, actorId: req.userId, body: body || '', previousBody: '',
+    });
     const page = await queryOne(db, 'SELECT * FROM wiki_pages WHERE id = ?', [id]);
     res.status(201).json(page);
   } catch (e) { serverError(res, e); }
 });
+
+/**
+ * Notify people newly mentioned in a page body or comment. Only ids absent
+ * from `previousBody` are notified, so editing a paragraph next to a mention
+ * does not ping that person again.
+ */
+async function notifyPageMentions(db, { pageId, title, actorId, body, previousBody = '', commentQuote }) {
+  const before = new Set(await mentionedUserIds(db, previousBody, actorId));
+  const after = await mentionedUserIds(db, body, actorId);
+  const fresh = after.filter((id) => !before.has(id));
+  if (fresh.length === 0) return;
+
+  const actor = await queryOne(db, 'SELECT name FROM users WHERE id = ?', [actorId]);
+  const where = commentQuote ? `a comment on "${title}"` : `"${title}"`;
+  for (const userId of fresh) {
+    await notify(db, {
+      userId,
+      actorId,
+      type: 'mention',
+      message: `${actor?.name || 'Someone'} mentioned you in ${where}`,
+      link: `/wiki/page/${pageId}`,
+      wikiPageId: pageId,
+    });
+  }
+}
 
 /**
  * Full enrichment for one page: access check, view count, labels, breadcrumb,
@@ -339,7 +368,6 @@ router.put('/wiki/pages/:id', requireAuth, async (req, res) => {
 
     // Content edits notify the page's watchers.
     if (title !== undefined || body !== undefined) {
-      const { notify } = require('../utils/notify');
       const actor = await queryOne(db, 'SELECT name FROM users WHERE id = ?', [req.userId]);
       const watchers = await queryAll(db, 'SELECT user_id FROM wiki_page_watchers WHERE page_id = ?', [req.params.id]);
       for (const w of watchers) {
@@ -351,8 +379,17 @@ router.put('/wiki/pages/:id', requireAuth, async (req, res) => {
       }
     }
 
-    // Only a body edit can change which issues the page mentions.
-    if (body !== undefined) await syncPageIssueLinks(db, req.params.id, body);
+    // Only a body edit can change which issues, or which people, the page mentions.
+    if (body !== undefined) {
+      await syncPageIssueLinks(db, req.params.id, body);
+      await notifyPageMentions(db, {
+        pageId: req.params.id,
+        title: title || page.title,
+        actorId: req.userId,
+        body,
+        previousBody: page.body || '',
+      });
+    }
 
     // A rename bumps the version but does not change what a reviewer read, so
     // carry an existing approval forward rather than letting it read as stale.
@@ -719,6 +756,14 @@ router.post('/wiki/pages/:id/comments', requireAuth, async (req, res) => {
     const id = uuidv4();
     await run(db, "INSERT INTO wiki_page_comments (id, page_id, parent_id, author_id, body, quote) VALUES (?,?,?,?,?,?)",
       [id, req.params.id, parent_id || null, req.userId, body, quote ? String(quote).slice(0, 500) : null]);
+    const page = await queryOne(db, 'SELECT title FROM wiki_pages WHERE id = ?', [req.params.id]);
+    await notifyPageMentions(db, {
+      pageId: req.params.id,
+      title: page?.title || 'a page',
+      actorId: req.userId,
+      body,
+      commentQuote: true,
+    });
     const comment = await queryOne(db, `SELECT c.*, u.name as author_name, u.avatar_color as author_color FROM wiki_page_comments c LEFT JOIN users u ON c.author_id = u.id WHERE c.id = ?`, [id]);
     res.status(201).json(comment);
   } catch (e) { serverError(res, e); }

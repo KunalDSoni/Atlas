@@ -25,6 +25,9 @@ export type MentionSegment =
 /** Display: 1-100 chars, no ']' (the delimiter) and no newline. Id: url-safe. */
 export const MENTION_RE = /@\[([^\]\n]{1,100})\]\(user:([A-Za-z0-9_-]{1,64})\)/g;
 
+/** The HTML form, written into wiki page bodies by the rich-text editor. */
+export const MENTION_SPAN_RE = /data-mention-id=["']([A-Za-z0-9_-]{1,64})["']/g;
+
 /** Longest query we will keep an autocomplete open for. */
 const MAX_QUERY = 50;
 
@@ -34,16 +37,27 @@ function canTriggerAfter(ch: string | undefined): boolean {
   return ch === undefined || /[\s([]/.test(ch);
 }
 
-/** Unique user ids referenced by `text`, in the order they first appear. */
+/**
+ * Unique user ids referenced by `text`, in the order they first appear.
+ *
+ * Two shapes count. Plain-text fields store the token; HTML fields (wiki page
+ * bodies) store a `data-mention-id` span. Callers see both kinds of body and
+ * cannot always tell them apart, so both are scanned here.
+ */
 export function parseMentionIds(text: string | null | undefined): string[] {
-  if (!text || typeof text !== 'string' || !text.includes('@[')) return [];
+  if (!text || typeof text !== 'string' || !text.includes('@')) return [];
   const ids: string[] = [];
   const seen = new Set<string>();
-  for (const m of text.matchAll(MENTION_RE)) {
-    if (seen.has(m[2])) continue;
-    seen.add(m[2]);
-    ids.push(m[2]);
-  }
+  const collect = (re: RegExp, group: number) => {
+    for (const m of text.matchAll(re)) {
+      const id = m[group];
+      if (seen.has(id)) continue;
+      seen.add(id);
+      ids.push(id);
+    }
+  };
+  collect(MENTION_RE, 2);
+  if (text.includes('data-mention-id')) collect(MENTION_SPAN_RE, 1);
   return ids;
 }
 

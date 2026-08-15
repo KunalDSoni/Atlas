@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { ErrorState, LabelChip, RowsSkeleton, UserAvatar } from '@/components/app/primitives';
 import { RichTextEditor, RichTextView, extractHeadings } from '@/components/app/rich-text';
+import { useMentions } from '@/hooks/use-mentions';
 import { WikiTree } from '@/components/app/wiki-tree';
 import { WikiBreadcrumb, OnThisPage, type Crumb } from '@/components/app/wiki-doc';
 import { useAIEnabled } from '@/hooks/use-ai';
@@ -91,6 +92,9 @@ export default function WikiPageScreen() {
   const [saving, setSaving] = useState(false);
 
   const [commentBody, setCommentBody] = useState('');
+  // A wiki page belongs to a space, not a project, so there is no project to
+  // rank members by — everyone is searchable and flagged as a non-member.
+  const commentMentions = useMentions({ value: commentBody, onChange: setCommentBody });
   const [posting, setPosting] = useState(false);
   const [createChildOpen, setCreateChildOpen] = useState(false);
   const [watching, setWatching] = useState(false);
@@ -608,12 +612,14 @@ export default function WikiPageScreen() {
             <div className="flex gap-2.5">
               <UserAvatar name={user?.name ?? null} color={user?.avatar_color} className="mt-0.5 shrink-0" />
               <Textarea
+                ref={commentMentions.ref}
                 value={commentBody}
-                onChange={(e) => setCommentBody(e.target.value)}
+                {...commentMentions.inputProps}
                 placeholder={quote ? 'Comment on the selected text…' : 'Add a comment…'}
                 rows={2}
                 className="min-h-9 resize-none border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
               />
+              {commentMentions.dropdown}
             </div>
             <div className="mt-2 flex items-center justify-end gap-1.5 border-t border-border-light pt-2">
               <Button
