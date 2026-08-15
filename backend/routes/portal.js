@@ -15,6 +15,7 @@ const { v4: uuidv4 } = require('uuid');
 const { getDb, queryAll, queryOne, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
+const { notifyNewMentions } = require('../utils/notify');
 const { toPublicFeature, toPublicSubmission } = require('../utils/portal');
 
 const router = express.Router();
@@ -154,6 +155,18 @@ router.post('/portal/ideas', requireAuth, async (req, res) => {
       VALUES (?, ?, ?, 'portal', ?, ?, 'portal', ?)`,
       [id, title, content, customer?.id || null, req.userId,
        String(content || title).slice(0, 500)]);
+    // Staff drafting an idea can mention a colleague. A customer cannot: the
+    // picker is closed to them, and honouring a hand-typed name here would let
+    // anyone outside the company notify staff at will.
+    if (req.userRole !== 'client') {
+      await notifyNewMentions(db, {
+        text: content,
+        actorId: req.userId,
+        where: `the idea "${title}"`,
+        link: '/product/insights',
+      });
+    }
+
     const created = await queryOne(db,
       'SELECT id, title, content, processed, dismissed_at, created_at FROM pb_insights WHERE id = ?', [id]);
     res.status(201).json({ ok: true, ...toPublicSubmission(created) });

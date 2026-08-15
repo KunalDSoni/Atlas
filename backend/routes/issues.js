@@ -12,7 +12,7 @@ const { auditLog } = require('../middleware/logger');
 const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
-const { notify, mentionedUserIds } = require('../utils/notify');
+const { notify, notifyNewMentions } = require('../utils/notify');
 const { projectStatuses } = require('./workflows');
 const { runAutomation, checkAllSubtasksDone } = require('../utils/automation');
 const { dispatch: dispatchWebhook } = require('../utils/webhooks');
@@ -341,20 +341,13 @@ router.post('/projects/:projectId/issues', requireAuth, requireBoardAdmin, async
     // A description written at creation time mentions people just as much as
     // one added later; only the edit path used to notice.
     if (description) {
-      const mentioned = await mentionedUserIds(db, description, req.userId);
-      if (mentioned.length > 0) {
-        const actor = await queryOne(db, 'SELECT name FROM users WHERE id = ?', [req.userId]);
-        for (const userId of mentioned) {
-          await notify(db, {
-            userId,
-            actorId: req.userId,
-            type: 'mention',
-            message: `${actor?.name || 'Someone'} mentioned you in ${issue.issue_key}`,
-            link: issueLink(issue.issue_key),
-            issueId: issue.id,
-          });
-        }
-      }
+      await notifyNewMentions(db, {
+        text: description,
+        actorId: req.userId,
+        where: issue.issue_key,
+        link: issueLink(issue.issue_key),
+        issueId: issue.id,
+      });
     }
 
     await runAutomation(db, { type: 'issue_created', issue, actorId: req.userId });
@@ -478,28 +471,17 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
       });
     }
 
-    // Mention notifications. Only ids that are new to the description are
-    // notified, so correcting a typo does not ping everyone a second time.
+    // Only ids new to the description are notified, so correcting a typo does
+    // not ping everyone a second time.
     if (req.body.description !== undefined && req.body.description !== issue.description) {
-      const before = new Set(await mentionedUserIds(db, issue.description, req.userId));
-      const after = await mentionedUserIds(db, req.body.description, req.userId);
-      const newlyMentioned = after.filter((id) => !before.has(id));
-
-      if (newlyMentioned.length > 0) {
-        const actor = await queryOne(db, 'SELECT name FROM users WHERE id = ?', [req.userId]);
-        for (const userId of newlyMentioned) {
-          await notify(db, {
-            userId,
-            actorId: req.userId,
-            // 'mention' is the only type email.js maps to notify_mentions.
-            // The old 'mentioned' silently bypassed the recipient's opt-out.
-            type: 'mention',
-            message: `${actor?.name || 'Someone'} mentioned you in ${issue.issue_key}`,
-            link: issueLink(issue.issue_key),
-            issueId: issue.id,
-          });
-        }
-      }
+      await notifyNewMentions(db, {
+        text: req.body.description,
+        previousText: issue.description,
+        actorId: req.userId,
+        where: issue.issue_key,
+        link: issueLink(issue.issue_key),
+        issueId: issue.id,
+      });
     }
 
     let updated = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);

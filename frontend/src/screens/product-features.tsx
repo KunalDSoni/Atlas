@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { useMentions } from '@/hooks/use-mentions';
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -38,6 +39,12 @@ export default function ProductFeaturesScreen() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({ name: '', description: '', project_id: '', status: 'idea', timeframe: '' });
+  // The product board is not project-scoped, so everyone is searchable and
+  // flagged as a non-member.
+  const descMentions = useMentions({
+    value: form.description,
+    onChange: (next) => setForm((f) => ({ ...f, description: next })),
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -163,7 +170,14 @@ export default function ProductFeaturesScreen() {
           <DialogHeader><DialogTitle>New feature</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <Input placeholder="Feature name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-            <Textarea placeholder="Description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} />
+            <Textarea
+              ref={descMentions.ref}
+              placeholder="Description"
+              value={form.description}
+              {...descMentions.inputProps}
+              rows={3}
+            />
+            {descMentions.dropdown}
             <div className="grid grid-cols-2 gap-3">
               <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>

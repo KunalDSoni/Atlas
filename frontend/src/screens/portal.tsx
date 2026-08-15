@@ -9,11 +9,13 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
+import { stripMentionSyntax } from '@/lib/mentions';
 import { api } from '@/lib/api';
 import type { PortalFeature, PortalStatus } from '@/lib/types';
 import { EmptyState, ErrorState, PageHeader, RowsSkeleton } from '@/components/app/primitives';
 import { PORTAL_STATUS_LABELS } from '@/lib/product';
 import { useAuth } from '@/context/auth-provider';
+import { useMentions } from '@/hooks/use-mentions';
 import { cn } from '@/lib/utils';
 
 const COLUMNS: { key: PortalStatus; accent: string; description: string }[] = [
@@ -32,6 +34,13 @@ export default function PortalScreen() {
   const [ideaOpen, setIdeaOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [idea, setIdea] = useState({ title: '', content: '' });
+  // Staff drafting an idea can mention a colleague. For a customer the lookup
+  // is closed by design, so the picker simply never opens for them — and the
+  // server ignores mentions in a customer's idea for the same reason.
+  const ideaMentions = useMentions({
+    value: idea.content,
+    onChange: (next) => setIdea((prev) => ({ ...prev, content: next })),
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -135,7 +144,7 @@ export default function PortalScreen() {
                         </button>
                         <Link to={`/portal/features/${feature.id}`} className="min-w-0 flex-1 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                           <h3 className="text-sm font-medium leading-snug hover:text-primary">{feature.name}</h3>
-                          {feature.description && <p className="mt-1 line-clamp-3 text-xs text-muted-foreground">{feature.description}</p>}
+                          {feature.description && <p className="mt-1 line-clamp-3 text-xs text-muted-foreground">{stripMentionSyntax(feature.description)}</p>}
                         </Link>
                       </div>
                       <div className="flex items-center justify-end gap-1 text-[11px] text-muted-foreground">
@@ -164,8 +173,15 @@ export default function PortalScreen() {
           <div className="space-y-3">
             <Input aria-label="Idea title" placeholder="What would you like to see?" value={idea.title}
               onChange={(event) => setIdea({ ...idea, title: event.target.value })} />
-            <Textarea aria-label="Idea details" placeholder="Tell us more (optional)" value={idea.content}
-              onChange={(event) => setIdea({ ...idea, content: event.target.value })} rows={4} />
+            <Textarea
+              ref={ideaMentions.ref}
+              aria-label="Idea details"
+              placeholder="Tell us more (optional)"
+              value={idea.content}
+              {...ideaMentions.inputProps}
+              rows={4}
+            />
+            {ideaMentions.dropdown}
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setIdeaOpen(false)}>Cancel</Button>

@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { MentionText } from '@/components/app/mention-text';
 import { api } from '@/lib/api';
 import { useProjects } from '@/hooks/use-projects';
 import type { PbFeature, WikiSpace } from '@/lib/types';
@@ -360,7 +361,7 @@ export function FeatureDetailSheet({
                 ))}
               </div>
 
-              {feature.description && <p className="whitespace-pre-wrap text-sm text-muted-foreground">{feature.description}</p>}
+              {feature.description && <p className="whitespace-pre-wrap text-sm text-muted-foreground"><MentionText text={feature.description} /></p>}
 
               <Button size="sm" variant="outline" onClick={() => void vote()}><Vote className="size-3.5" /> Vote ({feature.vote_count})</Button>
 

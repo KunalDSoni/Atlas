@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EmptyState, ErrorState, PageHeader, RowsSkeleton } from '@/components/app/primitives';
 import { useAuth } from '@/context/auth-provider';
+import { stripMentionSyntax } from '@/lib/mentions';
 import { formatDate } from '@/lib/format';
 import { api } from '@/lib/api';
 import { PORTAL_STATUS_LABELS } from '@/lib/product';
@@ -112,7 +113,7 @@ export default function PortalMineScreen() {
                       <Link to={`/portal/features/${feature.id}`} className="mt-2 block font-medium hover:text-primary">
                         {feature.name}
                       </Link>
-                      {feature.description && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{feature.description}</p>}
+                      {feature.description && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{stripMentionSyntax(feature.description)}</p>}
                     </div>
                     <Button size="sm" variant="ghost" onClick={() => void unfollow(feature.id)}>Unfollow</Button>
                   </div>

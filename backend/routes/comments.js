@@ -9,7 +9,7 @@ const { v4: uuidv4 } = require('uuid');
 const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
-const { notify, mentionedUserIds } = require('../utils/notify');
+const { notify, notifyNewMentions } = require('../utils/notify');
 const sla = require('../utils/sla-clocks');
 const { issueLink } = require('../utils/links');
 
@@ -77,16 +77,14 @@ router.post('/issues/:issueId/comments', requireAuth, async (req, res) => {
       // An internal note is invisible to clients, so a client mentioned in one
       // is deliberately not notified — the alert would reveal the note exists
       // and link them to something they cannot open.
-      const mentioned = await mentionedUserIds(db, commentBody, authorId, {
+      const mentioned = await notifyNewMentions(db, {
+        text: commentBody,
+        actorId: authorId,
+        where: issue.issue_key,
+        link: issueLink(issue.issue_key),
+        issueId: issue.id,
         allowClients: visibility !== 'internal',
       });
-      for (const uid of mentioned) {
-        await notify(db, {
-          userId: uid, actorId: authorId, type: 'mention',
-          message: `${actorName} mentioned you on ${issue.issue_key}`,
-          link: issueLink(issue.issue_key), issueId: issue.id,
-        });
-      }
       const watchers = await queryAll(db, 'SELECT user_id FROM issue_watchers WHERE issue_id = ?', [req.params.issueId]);
       for (const w of watchers) {
         if (mentioned.includes(w.user_id)) continue;

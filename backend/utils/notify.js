@@ -118,6 +118,40 @@ async function mentionedUserIds(db, text, authorId, opts = {}) {
 }
 
 /**
+ * Notify everyone newly mentioned in `text`, and nobody who was already
+ * mentioned in `previousText`. Every surface that stores prose funnels through
+ * here so the rules — the mention type, the edit diff, the message wording —
+ * live in one place rather than being restated per route.
+ *
+ *   where   what the mention is in, e.g. 'ATLAS-12' or 'the feature "Search"'
+ *   returns the ids notified, so callers can suppress a weaker notification
+ *           (a watcher alert) for the same people
+ */
+async function notifyNewMentions(db, {
+  text, previousText = '', actorId, where, link, issueId, wikiPageId, allowClients = true,
+}) {
+  const before = new Set(await mentionedUserIds(db, previousText, actorId, { allowClients }));
+  const after = await mentionedUserIds(db, text, actorId, { allowClients });
+  const fresh = after.filter((id) => !before.has(id));
+  if (fresh.length === 0) return [];
+
+  const actor = await queryOne(db, 'SELECT name FROM users WHERE id = ?', [actorId]);
+  for (const userId of fresh) {
+    await notify(db, {
+      userId,
+      actorId,
+      // 'mention' is the only type email.js maps to notify_mentions.
+      type: 'mention',
+      message: `${actor?.name || 'Someone'} mentioned you in ${where}`,
+      link,
+      issueId,
+      wikiPageId,
+    });
+  }
+  return fresh;
+}
+
+/**
  * Retained for callers that pass a project id positionally. Membership no
  * longer filters recipients — mentioning someone outside the project is
  * deliberate and the composer warns about it — so this is a thin alias.
@@ -126,4 +160,4 @@ async function mentionedUserIdsInProject(db, text, authorId, _projectId) {
   return mentionedUserIds(db, text, authorId);
 }
 
-module.exports = { notify, mentionedUserIds, mentionedUserIdsInProject };
+module.exports = { notify, notifyNewMentions, mentionedUserIds, mentionedUserIdsInProject };

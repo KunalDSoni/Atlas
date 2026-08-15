@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ErrorState, RowsSkeleton } from '@/components/app/primitives';
 import { useAuth } from '@/context/auth-provider';
+import { stripMentionSyntax } from '@/lib/mentions';
 import { api } from '@/lib/api';
 import { PORTAL_STATUS_LABELS } from '@/lib/product';
 import type { PortalFeature } from '@/lib/types';
@@ -87,7 +88,7 @@ export default function PortalFeatureScreen() {
           </div>
           <h1 className="mt-4 text-3xl font-semibold tracking-tight">{feature.name}</h1>
           <p className="mt-3 whitespace-pre-wrap text-base leading-7 text-muted-foreground">
-            {feature.description || 'No public description has been added yet.'}
+            {feature.description ? stripMentionSyntax(feature.description) : 'No public description has been added yet.'}
           </p>
         </div>
 

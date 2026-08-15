@@ -12,6 +12,7 @@ const { v4: uuidv4 } = require('uuid');
 const { getDb, queryAll, queryOne, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
+const { notifyNewMentions } = require('../utils/notify');
 const { resolveOrigin } = require('../utils/insight-origin');
 
 const router = express.Router();
@@ -61,6 +62,12 @@ router.post('/product/insights', requireAuth, async (req, res) => {
     const id = uuidv4();
     await run(db, 'INSERT INTO pb_insights (id, title, content, source, customer_id, created_by) VALUES (?, ?, ?, ?, ?, ?)',
       [id, title.trim(), content || '', source || 'other', customer_id || null, req.userId]);
+    await notifyNewMentions(db, {
+      text: content || '',
+      actorId: req.userId,
+      where: `the insight "${title.trim()}"`,
+      link: '/product/insights',
+    });
     const insight = await queryOne(db, `${ENRICHED_SELECT} WHERE ins.id = ?`, [id]);
     res.status(201).json(insight);
   } catch (e) { serverError(res, e); }

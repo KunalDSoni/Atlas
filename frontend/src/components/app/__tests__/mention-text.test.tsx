@@ -127,8 +127,11 @@ describe('degradation', () => {
     await waitFor(() => expect(container.textContent).toBe('hi @Ann Lee'));
   });
 
-  test('empty text renders nothing', () => {
+  test('empty text renders nothing', async () => {
     const { container } = render(<MentionText text="" />);
     expect(container.textContent).toBe('');
+    // The directory still loads behind the empty render; await it so the state
+    // update lands inside the test rather than after it.
+    await waitFor(() => expect(api.users.list).toHaveBeenCalled());
   });
 });

@@ -9,7 +9,7 @@ const { syncPageIssueLinks } = require('../utils/issue-keys');
 const { extractTasks } = require('../utils/wiki-tasks');
 const { placeholders } = require('../utils/sql');
 const { signWikiImages, unsignWikiImages } = require('./wiki-attachments');
-const { notify, mentionedUserIds } = require('../utils/notify');
+const { notify, notifyNewMentions } = require('../utils/notify');
 const router = express.Router();
 
 /**
@@ -236,23 +236,14 @@ router.post('/wiki/spaces/:spaceId/pages', requireAuth, async (req, res) => {
  * does not ping that person again.
  */
 async function notifyPageMentions(db, { pageId, title, actorId, body, previousBody = '', commentQuote }) {
-  const before = new Set(await mentionedUserIds(db, previousBody, actorId));
-  const after = await mentionedUserIds(db, body, actorId);
-  const fresh = after.filter((id) => !before.has(id));
-  if (fresh.length === 0) return;
-
-  const actor = await queryOne(db, 'SELECT name FROM users WHERE id = ?', [actorId]);
-  const where = commentQuote ? `a comment on "${title}"` : `"${title}"`;
-  for (const userId of fresh) {
-    await notify(db, {
-      userId,
-      actorId,
-      type: 'mention',
-      message: `${actor?.name || 'Someone'} mentioned you in ${where}`,
-      link: `/wiki/page/${pageId}`,
-      wikiPageId: pageId,
-    });
-  }
+  return notifyNewMentions(db, {
+    text: body,
+    previousText: previousBody,
+    actorId,
+    where: commentQuote ? `a comment on "${title}"` : `"${title}"`,
+    link: `/wiki/page/${pageId}`,
+    wikiPageId: pageId,
+  });
 }
 
 /**

@@ -28,7 +28,7 @@ const { buildSpecBody } = require('../utils/spec-draft');
 const { complete, aiEnabled, MODELS } = require('./ai');
 const { projectStatuses } = require('./workflows');
 const { outcomeDetailsForFeature, sqlTimestamp } = require('../utils/product-outcomes');
-const { notify } = require('../utils/notify');
+const { notify, notifyNewMentions } = require('../utils/notify');
 const FeatureMergeHistory = require('../models/feature-merge-history');
 const FeatureImpactMetrics = require('../models/feature-impact-metrics');
 const { findSimilarFeatures } = require('../lib/similarity');
@@ -165,6 +165,12 @@ router.post('/product/features', requireAuth, async (req, res) => {
        timeframe || null, portal_status || null, owner_id || null,
        effort ?? null, value ?? null, reach ?? null, impact ?? null, confidence ?? null,
        release_id || null, featureStatus === 'launched' ? sqlTimestamp() : null, req.userId]);
+    await notifyNewMentions(db, {
+      text: description || '',
+      actorId: req.userId,
+      where: `the feature "${name.trim()}"`,
+      link: '/product/features',
+    });
     res.status(201).json(await getFeatureWithOutcome(db, id));
   } catch (e) { serverError(res, e); }
 });
@@ -269,6 +275,16 @@ router.put('/product/features/:id', requireAuth, async (req, res) => {
       ? sqlTimestamp() : existing.launched_at;
     await run(db, `UPDATE pb_features SET project_id = ?, name = ?, description = ?, status = ?, timeframe = ?, portal_status = ?, owner_id = ?, effort = ?, value = ?, reach = ?, impact = ?, confidence = ?, release_id = ?, impact_status = ?, launched_at = ?, updated_at = datetime('now') WHERE id = ?`,
       [...fields.map(fld => updated[fld]), launchedAt, req.params.id]);
+
+    if (body.description !== undefined && updated.description !== existing.description) {
+      await notifyNewMentions(db, {
+        text: updated.description || '',
+        previousText: existing.description || '',
+        actorId: req.userId,
+        where: `the feature "${updated.name}"`,
+        link: '/product/features',
+      });
+    }
 
     // A follower asked to hear when the public promise changes. Fan out only
     // after the update succeeds, and use the existing notify helper so in-app,

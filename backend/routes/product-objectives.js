@@ -14,6 +14,7 @@ const { v4: uuidv4 } = require('uuid');
 const { getDb, queryAll, queryOne, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
+const { notifyNewMentions } = require('../utils/notify');
 
 const router = express.Router();
 
@@ -47,6 +48,12 @@ router.post('/product/objectives', requireAuth, async (req, res) => {
     const id = uuidv4();
     await run(db, 'INSERT INTO pb_objectives (id, name, description, status, target_date, owner_id) VALUES (?, ?, ?, ?, ?, ?)',
       [id, name.trim(), description || '', status || 'on_track', target_date || null, owner_id || null]);
+    await notifyNewMentions(db, {
+      text: description || '',
+      actorId: req.userId,
+      where: `the objective "${name.trim()}"`,
+      link: '/product/objectives',
+    });
     const objective = await queryOne(db, `${ENRICHED_SELECT} WHERE o.id = ?`, [id]);
     res.status(201).json(objective);
   } catch (e) { serverError(res, e); }
@@ -90,6 +97,15 @@ router.put('/product/objectives/:id', requireAuth, async (req, res) => {
        target_date !== undefined ? target_date : existing.target_date,
        owner_id !== undefined ? owner_id : existing.owner_id,
        req.params.id]);
+    if (description !== undefined && description !== existing.description) {
+      await notifyNewMentions(db, {
+        text: description || '',
+        previousText: existing.description || '',
+        actorId: req.userId,
+        where: `the objective "${name !== undefined ? name : existing.name}"`,
+        link: '/product/objectives',
+      });
+    }
     const objective = await queryOne(db, `${ENRICHED_SELECT} WHERE o.id = ?`, [req.params.id]);
     res.json(objective);
   } catch (e) { serverError(res, e); }

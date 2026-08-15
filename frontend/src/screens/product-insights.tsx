@@ -7,6 +7,8 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { useMentions } from '@/hooks/use-mentions';
+import { MentionText } from '@/components/app/mention-text';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -40,6 +42,12 @@ export default function ProductInsightsScreen() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({ title: '', content: '', source: 'other', customer_id: '' });
+  // The product board is not project-scoped, so everyone is searchable and
+  // flagged as a non-member.
+  const contentMentions = useMentions({
+    value: form.content,
+    onChange: (next) => setForm((f) => ({ ...f, content: next })),
+  });
 
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkForm, setLinkForm] = useState({ feature_id: '', importance: '1', quote: '' });
@@ -371,7 +379,7 @@ export default function ProductInsightsScreen() {
                 {/* The captured excerpt is what a customer actually said, so it
                     outranks the hand-written content field when both exist. */}
                 {(i.origin_excerpt || i.content) && (
-                  <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{i.origin_excerpt || i.content}</p>
+                  <p className="mt-1 line-clamp-2 text-xs text-muted-foreground"><MentionText text={i.origin_excerpt || i.content} /></p>
                 )}
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   {i.customer_name && <span>{i.customer_name}</span>}
@@ -443,7 +451,7 @@ export default function ProductInsightsScreen() {
                   </span>
                 </blockquote>
               )}
-              {selected.content && <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{selected.content}</p>}
+              {selected.content && <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground"><MentionText text={selected.content} /></p>}
               <div className="mt-3 space-y-1 text-xs text-muted-foreground">
                 {selected.customer_name && <p>Customer: <span className="text-foreground">{selected.customer_name}</span></p>}
                 {selected.company_name && <p>Company: <span className="text-foreground">{selected.company_name}</span></p>}
@@ -521,7 +529,14 @@ export default function ProductInsightsScreen() {
           <DialogHeader><DialogTitle>Capture feedback</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <Input placeholder="Summary" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
-            <Textarea placeholder="What did the customer say?" value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} rows={4} />
+            <Textarea
+              ref={contentMentions.ref}
+              placeholder="What did the customer say?"
+              value={form.content}
+              {...contentMentions.inputProps}
+              rows={4}
+            />
+            {contentMentions.dropdown}
             <div className="grid grid-cols-2 gap-3">
               <Select value={form.source} onValueChange={(v) => setForm({ ...form, source: v })}>
                 <SelectTrigger><SelectValue placeholder="Source" /></SelectTrigger>

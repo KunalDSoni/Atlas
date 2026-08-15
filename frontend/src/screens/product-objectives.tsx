@@ -6,6 +6,8 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { useMentions } from '@/hooks/use-mentions';
+import { MentionText } from '@/components/app/mention-text';
 import { Progress } from '@/components/ui/progress';
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -28,6 +30,12 @@ export default function ProductObjectivesScreen() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({ name: '', description: '', status: 'on_track', target_date: '' });
+  // The product board is not project-scoped, so everyone is searchable and
+  // flagged as a non-member.
+  const descMentions = useMentions({
+    value: form.description,
+    onChange: (next) => setForm((f) => ({ ...f, description: next })),
+  });
 
   const [linkOpen, setLinkOpen] = useState<PbObjective | null>(null);
   const [linkFeatureId, setLinkFeatureId] = useState('');
@@ -122,7 +130,7 @@ export default function ProductObjectivesScreen() {
                   </button>
                   <Badge className={cn('font-medium', OBJECTIVE_STATUS_CLASS[o.status])}>{OBJECTIVE_STATUS_LABELS[o.status]}</Badge>
                 </div>
-                {o.description && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{o.description}</p>}
+                {o.description && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground"><MentionText text={o.description} /></p>}
                 <div className="mt-3">
                   <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
                     <span>{o.launched_count}/{o.feature_count} features launched</span>
@@ -157,7 +165,7 @@ export default function ProductObjectivesScreen() {
                   </Select>
                   {detail.target_date && <span className="text-xs text-muted-foreground">Due {formatDate(detail.target_date)}</span>}
                 </div>
-                {detail.description && <p className="text-sm text-muted-foreground">{detail.description}</p>}
+                {detail.description && <p className="text-sm text-muted-foreground"><MentionText text={detail.description} /></p>}
                 <div>
                   <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Linked features</p>
                   <div className="space-y-1.5">
@@ -195,7 +203,14 @@ export default function ProductObjectivesScreen() {
           <DialogHeader><DialogTitle>New objective</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <Input placeholder="Objective name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-            <Textarea placeholder="Description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} />
+            <Textarea
+              ref={descMentions.ref}
+              placeholder="Description"
+              value={form.description}
+              {...descMentions.inputProps}
+              rows={3}
+            />
+            {descMentions.dropdown}
             <div className="grid grid-cols-2 gap-3">
               <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>

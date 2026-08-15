@@ -6,6 +6,7 @@ const express = require('express');
 const { getDb, queryAll, queryOne, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
+const { notifyNewMentions } = require('../utils/notify');
 const {
   OUTCOME_VERDICTS, daysSince, getOutcome, postLaunchSignalsForFeatures, sqlTimestamp,
 } = require('../utils/product-outcomes');
@@ -142,6 +143,17 @@ router.put('/product/features/:id/outcome', requireAuth, async (req, res) => {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [req.params.id, next.metric, next.target, next.baseline, next.measured,
          next.verdict, reviewedAt, reviewedBy, next.notes]);
+    }
+
+    if (body.notes !== undefined && next.notes !== (existing?.notes ?? null)) {
+      const named = await queryOne(db, 'SELECT name FROM pb_features WHERE id = ?', [req.params.id]);
+      await notifyNewMentions(db, {
+        text: next.notes || '',
+        previousText: existing?.notes || '',
+        actorId: req.userId,
+        where: `the outcome review for "${named?.name || 'a feature'}"`,
+        link: '/product/outcomes',
+      });
     }
 
     res.json(await getOutcome(db, req.params.id));
