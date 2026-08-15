@@ -9,6 +9,13 @@ test('the board is titled with the sprint it shows', async ({ page }) => {
   await page.goto('/board');
   await assertNoCrash(page);
 
+  // Wait for the board itself before reading the heading. While the sprints load,
+  // the screen renders column skeletons under a placeholder "Board" title, and
+  // assertNoCrash is satisfied by the skeleton — so reading any earlier measures
+  // the placeholder rather than the sprint, and the test fails whenever the load
+  // is a little slow.
+  await expect(page.locator('article').first()).toBeVisible();
+
   const title = (await page.getByRole('heading', { level: 1 }).innerText()).trim();
   expect(title).toMatch(/^Sprint /);
 
