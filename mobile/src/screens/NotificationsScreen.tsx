@@ -6,7 +6,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SwipeableListView,
   Alert,
   RefreshControl,
 } from 'react-native';

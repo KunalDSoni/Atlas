@@ -122,10 +122,11 @@ export function SearchScreen({ navigation }: any) {
         <FlatList
           data={filteredResults}
           keyExtractor={(item) => item.id}
+          // IssueCard is itself a Pressable and takes the handler directly.
+          // Wrapping it in another touchable nested two press targets and left
+          // the inner one without an onPress.
           renderItem={({ item }) => (
-            <TouchableOpacity onPress={() => handleSelectIssue(item.id)}>
-              <IssueCard issue={item} />
-            </TouchableOpacity>
+            <IssueCard issue={item} onPress={() => handleSelectIssue(item.id)} />
           )}
           contentContainerStyle={styles.listContent}
         />

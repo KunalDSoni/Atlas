@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View,
-  FlatList,
+  SectionList,
   ActivityIndicator,
   Text,
   StyleSheet,
@@ -136,23 +136,25 @@ export function SprintsScreen({ route, navigation }: any) {
         <ActivityIndicator size="large" color="#0066cc" style={styles.spinner} />
       )}
 
+      {/* SectionList, not FlatList: `sections` and `renderSectionHeader` are
+          SectionList props and a FlatList silently ignores both, so the
+          grouping was written, flagged by TypeScript, and never rendered.
+          Empty groups are filtered out rather than returning false from the
+          header renderer, which SectionList would still reserve space for. */}
       {!isLoading && sprints && sprints.length > 0 && (
-        <FlatList
-          data={sprints}
+        <SectionList
           keyExtractor={(item) => item.id}
           renderItem={renderSprint}
-          renderSectionHeader={({ section }: any) =>
-            section.data.length > 0 && (
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>{section.title}</Text>
-              </View>
-            )
-          }
+          renderSectionHeader={({ section }) => (
+            <View style={styles.sectionHeader} testID="sprint-section-header">
+              <Text style={styles.sectionTitle}>{section.title}</Text>
+            </View>
+          )}
           sections={[
             { title: 'Active', data: activeSprints },
             { title: 'Planned', data: plannedSprints },
             { title: 'Completed', data: completedSprints },
-          ]}
+          ].filter((section) => section.data.length > 0)}
           contentContainerStyle={styles.listContent}
         />
       )}
