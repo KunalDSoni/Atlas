@@ -488,11 +488,17 @@ jobs:
 
           # Records separated by 0x1e, subject and body by 0x00, so a commit
           # body containing newlines cannot be mistaken for a record boundary.
-          commits=$(git log $range --no-merges --format='%s%x00%b%x1e')
+          #
+          # Via a file, never an environment variable: env vars are
+          # NUL-terminated, so passing this through one silently truncates at
+          # the first 0x00 and only the first commit's subject survives. That
+          # failure is invisible — it just quietly stops cutting releases.
+          git log $range --no-merges --format='%s%x00%b%x1e' > "$RUNNER_TEMP/commits.bin"
 
-          result=$(COMMITS="$commits" CURRENT="$current" node -e '
+          result=$(CURRENT="$current" COMMITS_FILE="$RUNNER_TEMP/commits.bin" node -e '
+            const fs = require("fs");
             const { nextVersion } = require("./backend/scripts/next-version");
-            const commits = (process.env.COMMITS || "")
+            const commits = fs.readFileSync(process.env.COMMITS_FILE, "utf8")
               .split("\x1e")
               .map((r) => r.replace(/^\n/, ""))
               .filter((r) => r.trim() !== "")
@@ -591,16 +597,24 @@ pushing anything. Run from the repo root:
 ```bash
 last_tag=$(git tag -l 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
 current=$(node -p "require('./package.json').version")
-commits=$(git log "${last_tag}..HEAD" --no-merges --format='%s%x00%b%x1e')
-COMMITS="$commits" CURRENT="$current" node -e '
+git log "${last_tag}..HEAD" --no-merges --format='%s%x00%b%x1e' > /tmp/commits.bin
+CURRENT="$current" node -e '
+  const fs = require("fs");
   const { nextVersion } = require("./backend/scripts/next-version");
-  const commits = (process.env.COMMITS || "").split("\x1e")
+  const commits = fs.readFileSync("/tmp/commits.bin", "utf8").split("\x1e")
     .map((r) => r.replace(/^\n/, "")).filter((r) => r.trim() !== "")
     .map((r) => { const [s, b = ""] = r.split("\x00"); return { subject: s.trim(), body: b }; });
   console.log("commits considered:", commits.length);
+  commits.forEach((c) => console.log("  -", c.subject));
   console.log("result:", JSON.stringify(nextVersion(process.env.CURRENT, commits)));
 '
 ```
+
+The commits go through a **file**, never an environment variable. Environment
+variables are NUL-terminated, so `COMMITS="$(git log ...)"` truncates at the
+first `0x00` and the helper sees only the first commit's subject — which looks
+like it works, and silently stops cutting releases whenever the first commit in
+a push happens to be a docs or chore commit.
 
 Expected: it prints the number of commits since `v14.1.10` and either `null`
 (when only docs/chores have landed) or `{"version":"...","bump":"..."}`. Confirm

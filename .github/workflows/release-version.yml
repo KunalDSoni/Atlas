@@ -1,0 +1,160 @@
+# Cut a version for every push to main that earns one.
+#
+# "Earns one" means the push contains a feat, a fix, a perf, or a breaking
+# change. Docs and chores cut nothing — releasing on every commit would burn a
+# version on a typo and push a container image for it. The mapping lives in
+# backend/scripts/next-version.js and is unit-tested there.
+#
+# Two GitHub behaviours shape this file:
+#
+#  1. Events created with GITHUB_TOKEN do not start workflows. The tag pushed
+#     below therefore cannot be relied on to trigger release-build.yml, so this
+#     workflow calls it directly. The same rule works in our favour for the
+#     release commit: it does not re-run CI, so there is no loop.
+#  2. Default workflow permissions on this repo are read-only, so the write
+#     scope is requested explicitly below.
+name: Release - version on main
+
+on:
+  push:
+    branches: [main]
+
+# One release at a time. Two pushes landing together must not race to compute
+# the same next version and then fight over the tag.
+concurrency:
+  group: release-version
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    name: Compute and tag
+    runs-on: ubuntu-latest
+    # Skip this workflow's own release commit. Belt and braces: a GITHUB_TOKEN
+    # push does not trigger workflows anyway, but if that ever changes this is
+    # what stops the loop.
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
+    outputs:
+      released: ${{ steps.compute.outputs.released }}
+      tag: ${{ steps.compute.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Tags and full history: the helper needs every commit since the last
+          # release to decide the bump.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+
+      - name: Work out the next version
+        id: compute
+        run: |
+          set -euo pipefail
+
+          current=$(node -p "require('./package.json').version")
+          last_tag=$(git tag -l 'v*' --sort=-v:refname \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
+
+          if [ -z "$last_tag" ]; then
+            echo "No release tag yet; considering the whole history."
+            range=""
+          else
+            echo "Last release tag: $last_tag"
+            range="${last_tag}..HEAD"
+          fi
+
+          # Records separated by 0x1e, subject and body by 0x00, so a commit
+          # body containing newlines cannot be mistaken for a record boundary.
+          #
+          # Via a file, never an environment variable: env vars are
+          # NUL-terminated, so passing this through one silently truncates at
+          # the first 0x00 and only the first commit's subject survives. That
+          # failure is invisible — it just quietly stops cutting releases.
+          git log $range --no-merges --format='%s%x00%b%x1e' > "$RUNNER_TEMP/commits.bin"
+
+          result=$(CURRENT="$current" COMMITS_FILE="$RUNNER_TEMP/commits.bin" node -e '
+            const fs = require("fs");
+            const { nextVersion } = require("./backend/scripts/next-version");
+            const commits = fs.readFileSync(process.env.COMMITS_FILE, "utf8")
+              .split("\x1e")
+              .map((r) => r.replace(/^\n/, ""))
+              .filter((r) => r.trim() !== "")
+              .map((r) => {
+                const [subject, body = ""] = r.split("\x00");
+                return { subject: subject.trim(), body };
+              });
+            const next = nextVersion(process.env.CURRENT, commits);
+            process.stdout.write(JSON.stringify(next));
+          ')
+
+          if [ "$result" = "null" ]; then
+            echo "No releasable commits since ${last_tag:-the beginning}."
+            echo "released=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### No release"
+              echo ""
+              echo "Nothing since \`${last_tag:-the beginning}\` warrants a version — only docs or chores."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          version=$(echo "$result" | node -pe 'JSON.parse(require("fs").readFileSync(0)).version')
+          bump=$(echo "$result" | node -pe 'JSON.parse(require("fs").readFileSync(0)).bump')
+          echo "Next version: $version ($bump)"
+          echo "released=true" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "bump=$bump" >> "$GITHUB_OUTPUT"
+
+      - name: Bump the manifests
+        if: steps.compute.outputs.released == 'true'
+        run: |
+          set -euo pipefail
+          for dir in . backend frontend; do
+            (cd "$dir" && npm version "${{ steps.compute.outputs.version }}" \
+              --no-git-tag-version --allow-same-version >/dev/null)
+            echo "$dir -> $(node -p "require('./$dir/package.json').version")"
+          done
+
+      - name: Commit, tag and push
+        if: steps.compute.outputs.released == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add package.json backend/package.json frontend/package.json \
+                  backend/package-lock.json frontend/package-lock.json
+          git commit -m "chore(release): ${{ steps.compute.outputs.version }}"
+
+          # Tag the release commit, so the tag points at the code whose
+          # manifests say that version. release-build.yml asserts exactly this.
+          git tag "${{ steps.compute.outputs.tag }}"
+          git push origin HEAD:main
+          git push origin "${{ steps.compute.outputs.tag }}"
+
+      - name: Summary
+        if: steps.compute.outputs.released == 'true'
+        run: |
+          {
+            echo "### Released ${{ steps.compute.outputs.tag }}"
+            echo ""
+            echo "Bump: **${{ steps.compute.outputs.bump }}**"
+            echo ""
+            echo "Building the image now. **Nothing is deployed** — run *Release - deploy one customer* for that."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: Build image
+    needs: version
+    if: needs.version.outputs.released == 'true'
+    uses: ./.github/workflows/release-build.yml
+    permissions:
+      contents: read
+      id-token: write # OIDC for the AWS role; nothing else needs it
+    with:
+      tag: ${{ needs.version.outputs.tag }}
