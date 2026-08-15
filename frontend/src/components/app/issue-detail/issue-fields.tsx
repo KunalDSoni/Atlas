@@ -292,6 +292,21 @@ export function IssueFields({ detail }: { detail: IssueDetail }) {
                     </p>
                   )}
 
+                  {/* Who tracked what, once more than one person has. A
+                      single-name list is noise, so it stays hidden below two.
+                      No extra request: by_user rides along on the timer state
+                      this page already fetches. */}
+                  {timer && timer.by_user.length > 1 && (
+                    <dl className="space-y-1 border-t pt-2 text-xs">
+                      {timer.by_user.map((u) => (
+                        <div key={u.user_id} className="flex justify-between gap-2">
+                          <dt className="truncate text-muted-foreground">{u.name}</dt>
+                          <dd className="tabular-nums">{formatDuration(u.minutes)}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+
                   <Button variant="outline" size="sm" className="w-full gap-1.5" onClick={() => setLogOpen(true)}>
                     <Clock className="size-3.5" /> Log work
                   </Button>

@@ -2,7 +2,7 @@ const { createTestApp, getApp, adminHeaders } = require('./setup');
 const request = require('supertest');
 const { getDb, queryOne, queryAll, run } = require('../../database');
 const {
-  closeStaleSegments, startTimer, pauseTimer, timerState, commitTimer, issueTimerUserIds, issueTimerTotals,
+  closeStaleSegments, startTimer, pauseTimer, timerState, commitTimer, issueTimerUserIds,
   RUNAWAY_MINUTES, findTimerOvercounts, settleSegments,
 } = require('../../utils/timers');
 const { v4: uuidv4 } = require('uuid');
@@ -410,7 +410,11 @@ describe('timer routes', () => {
   });
 });
 
-describe('issueTimerTotals aggregates per-user cumulative time', () => {
+// The per-user split is produced by timerState's by_user, which the issue page
+// already fetches. The separate issueTimerTotals helper and its /timer/totals
+// endpoint duplicated it and had no callers, so they were removed — these
+// assertions moved to the surviving producer rather than being deleted with it.
+describe('timerState.by_user aggregates per-user cumulative time', () => {
   test('returns per-user minute totals across all segments', async () => {
     const issue = await mkIssue('Timer totals');
     const otherUserRes = await require('./setup').userHeaders();
@@ -424,7 +428,7 @@ describe('issueTimerTotals aggregates per-user cumulative time', () => {
     // Other user: one segment of 45 minutes
     await addSegment(issue.id, otherUserId, '2026-07-06 14:00:00', '2026-07-06 14:45:00');
 
-    const totals = await issueTimerTotals(db, issue.id);
+    const totals = (await timerState(db, issue.id, adminId)).by_user;
     expect(totals.length).toBe(2);
 
     const adminTotal = totals.find((u) => u.user_id === adminId);
@@ -438,7 +442,7 @@ describe('issueTimerTotals aggregates per-user cumulative time', () => {
     const issue = await mkIssue('Timer totals exclude');
     await addSegment(issue.id, adminId, '2026-07-06 09:00:00', '2026-07-06 10:00:00');
 
-    const totals = await issueTimerTotals(db, issue.id);
+    const totals = (await timerState(db, issue.id, adminId)).by_user;
     expect(totals.length).toBe(1);
     expect(totals[0].user_id).toBe(adminId);
   });
@@ -447,7 +451,7 @@ describe('issueTimerTotals aggregates per-user cumulative time', () => {
     const issue = await mkIssue('Timer totals names');
     await addSegment(issue.id, adminId, '2026-07-06 09:00:00', '2026-07-06 10:00:00');
 
-    const totals = await issueTimerTotals(db, issue.id);
+    const totals = (await timerState(db, issue.id, adminId)).by_user;
     expect(totals[0].name).toBeDefined();
     expect(totals[0].name).not.toBe('Unknown');
   });

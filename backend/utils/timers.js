@@ -384,6 +384,33 @@ async function settleSegments(db, issueId, userId) {
     [nowStamp(), issueId, userId]);
 }
 
+// Beyond this, an unresolved timer stops being presented as actionable. The
+// segment is kept; it is simply no longer asked about, because a list that
+// grows without limit becomes a second thing to ignore and month-old time is
+// not going to be remembered accurately anyway.
+const UNRESOLVED_WINDOW_DAYS = 30;
+
+/**
+ * Abandoned segments this user has not yet accounted for.
+ *
+ * An abandoned segment credits nothing, so unless the person says how long they
+ * worked, the time is never recorded at all. Only 'abandoned' qualifies: a
+ * workday-end close already credited its time and needs no answer.
+ *
+ * Resolution is `settled_at`, which already means "a human has taken ownership
+ * of this time" — set either by logging work on the issue or by dismissing.
+ */
+async function unresolvedSegments(db, userId) {
+  const cutoff = stampOf(new Date(Date.now() - UNRESOLVED_WINDOW_DAYS * 24 * 60 * 60_000));
+  return queryAll(db, `
+    SELECT t.id, t.issue_id, t.started_at, t.ended_at, i.issue_key, i.title
+    FROM timer_segments t
+    JOIN issues i ON i.id = t.issue_id
+    WHERE t.user_id = ? AND t.auto_stopped = ? AND t.settled_at IS NULL
+      AND t.ended_at >= ?
+    ORDER BY t.ended_at DESC`, [userId, STOP_ABANDONED, cutoff]);
+}
+
 /**
  * The stop this user most recently experienced on this issue, when the server
  * caused it, so the UI can explain a stop nobody asked for.
@@ -472,24 +499,6 @@ async function issueTimerUserIds(db, issueId) {
   return rows.map((r) => r.user_id);
 }
 
-/** Per-user minute totals for all completed timer segments on the issue. */
-async function issueTimerTotals(db, issueId) {
-  const segments = await queryAll(db,
-    `SELECT t.*, u.name AS user_name FROM timer_segments t
-     LEFT JOIN users u ON u.id = t.user_id
-     WHERE t.issue_id = ? AND t.settled_at IS NULL ORDER BY t.started_at`, [issueId]);
-
-  const now = new Date();
-  const byUser = new Map();
-  for (const seg of segments) {
-    if (!byUser.has(seg.user_id)) {
-      byUser.set(seg.user_id, { user_id: seg.user_id, name: seg.user_name || 'Unknown', minutes: 0 });
-    }
-    byUser.get(seg.user_id).minutes += segmentMinutes(seg, now);
-  }
-  return [...byUser.values()].map((u) => ({ ...u, minutes: Math.round(u.minutes) }));
-}
-
 /** Timer state for one user on one issue, plus per-user totals for everyone. */
 async function timerState(db, issueId, userId) {
   await closeStaleSegments(db, { userId });
@@ -570,8 +579,9 @@ async function commitTimer(db, issueId, userId) {
 }
 
 module.exports = {
-  RUNAWAY_MINUTES, ABANDONED_AFTER_MINUTES, nowStamp, closeStaleSegments,
+  RUNAWAY_MINUTES, ABANDONED_AFTER_MINUTES, UNRESOLVED_WINDOW_DAYS,
+  unresolvedSegments, nowStamp, closeStaleSegments,
   startTimer, pauseTimer, timerState, commitTimer, issueTimerUserIds,
-  issueTimerTotals, recentAutoStop, settleSegments, findTimerOvercounts,
+  recentAutoStop, settleSegments, findTimerOvercounts,
   STOP_WORKDAY_END, STOP_ABANDONED, STOP_ISSUE_DONE, STOP_SWITCHED, STOP_DUPLICATE,
 };

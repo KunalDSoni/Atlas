@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { RunningTimerChip } from './running-timer-chip';
+import { UnresolvedTimersChip } from './unresolved-timers-chip';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { api } from '@/lib/api';
@@ -487,6 +488,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               is only discoverable by returning to the issue that started it —
               which is how timers get left running for days. */}
           <RunningTimerChip />
+          <UnresolvedTimersChip />
           <NotificationBell />
           <UserMenu />
         </header>

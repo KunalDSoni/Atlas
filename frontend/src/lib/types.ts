@@ -419,6 +419,20 @@ export interface MyTimer {
   runaway: boolean;
 }
 
+/**
+ * A timer the server stopped without crediting any time, because it had no
+ * evidence for how long the session really was. It stays here until the person
+ * who ran it logs the real time or dismisses it — nobody else can answer.
+ */
+export interface UnresolvedTimer {
+  id: string;
+  issue_id: string;
+  issue_key: string;
+  title: string;
+  started_at: string;
+  ended_at: string;
+}
+
 export interface Comment {
   id: string;
   issue_id: string;

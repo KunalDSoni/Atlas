@@ -13,7 +13,7 @@ import type {
   WikiComment, WikiPage, WikiRestriction, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
   PageApproval, PageApprovalEntry, PageTask,
   WikiAttachment, ApiToken, Webhook, CustomField,
-  WorkLog, WorkflowStatus, TimerState, TimerUserTotal, MyTimer,
+  WorkLog, WorkflowStatus, TimerState, MyTimer, UnresolvedTimer,
   PbCompany, PbCustomer, PbInsight, PbFeature, PbFeatureOutcome, PbObjective,
   ImpactMetricType, PbFeatureImpact, PbImpactDashboard, PbImpactMetric,
   PbOutcomesResponse, PbTheme, PbThemeSuggestion, PortalFeature, PortalMe, PortalSubmission,
@@ -338,8 +338,9 @@ export const api = {
     start: (issueId: string) => post<TimerState>(`/issues/${issueId}/timer/start`, {}),
     pause: (issueId: string) => post<TimerState>(`/issues/${issueId}/timer/pause`, {}),
     commit: (issueId: string) => post<{ ok: boolean; minutes: number }>(`/issues/${issueId}/timer/commit`, {}),
-    totals: (issueId: string) => get<{ by_user: TimerUserTotal[] }>(`/issues/${issueId}/timer/totals`),
     mine: () => get<MyTimer | null>('/me/timer'),
+    unresolved: () => get<UnresolvedTimer[]>('/me/timer/unresolved'),
+    resolve: (segmentId: string) => post<{ ok: boolean }>(`/timer-segments/${segmentId}/resolve`, {}),
   },
 
   notifications: {
