@@ -4,7 +4,7 @@
 // and role from that token alone — client-supplied identity headers are ignored.
 
 import type {
-  ActivityEntry, AdminStats, AppNotification, Attachment, AuditLogPage, AuthUser,
+  ActivityEntry, AdminStats, AppNotification, Attachment, AuditLogPage, AuthUser, BusinessHours,
   AutomationAction, AutomationCondition, AutomationRule, AutomationTrigger, Comment, Issue, EpicSummary,
   DashboardGadget, DashboardLayout,
   ProfileResponse, Project, ProjectComponent, ProjectMember, ProjectStats, SavedFilter, SearchResults, Settings, Sprint, User, Version,
@@ -13,7 +13,7 @@ import type {
   WikiComment, WikiPage, WikiRestriction, WikiSpace, WikiTemplate, WikiTreeNode, WikiVersion,
   PageApproval, PageApprovalEntry, PageTask,
   WikiAttachment, ApiToken, Webhook, CustomField,
-  WorkLog, WorkflowStatus, TimerState, TimerUserTotal, MyTimer,
+  WorkLog, WorkflowStatus, TimerState, MyTimer, UnresolvedTimer, MyTimeResponse,
   PbCompany, PbCustomer, PbInsight, PbFeature, PbFeatureOutcome, PbObjective,
   ImpactMetricType, PbFeatureImpact, PbImpactDashboard, PbImpactMetric,
   PbOutcomesResponse, PbTheme, PbThemeSuggestion, PortalFeature, PortalMe, PortalSubmission,
@@ -196,10 +196,20 @@ export const api = {
     deactivate: (id: string) => del<{ ok: boolean }>(`/users/${id}`),
   },
 
+  /** The caller's work logs across every project, for one date range. */
+  myTime: (from: string, to: string) =>
+    get<MyTimeResponse>(`/me/time?from=${from}&to=${to}`),
+
   profile: {
     get: () => get<ProfileResponse>('/profile'),
     update: (body: Partial<Pick<User, 'name' | 'phone' | 'department' | 'job_title' | 'bio' | 'timezone' | 'avatar_color'>>) =>
       put<User>('/profile', body),
+    // Separate from update() because the wire type differs: the server takes an
+    // object (or null to clear) and stores the JSON, while User carries the
+    // stored string. Omitting the field leaves the stored value alone, so this
+    // must never be folded into a general profile save.
+    setBusinessHours: (business_hours: BusinessHours | null) =>
+      put<User>('/profile', { business_hours }),
     changePassword: (current_password: string, new_password: string) =>
       put<{ ok: boolean }>('/profile/password', { current_password, new_password }),
     changeEmail: (email: string) => put<User>('/profile/email', { email }),
@@ -216,6 +226,9 @@ export const api = {
     create: (body: { name: string; key: string; description?: string; lead_id?: string }) =>
       post<Project>('/projects', body),
     update: (id: string, body: Partial<Project>) => put<Project>(`/projects/${id}`, body),
+    // See profile.setBusinessHours — same reason for keeping it off update().
+    setBusinessHours: (id: string, business_hours: BusinessHours | null) =>
+      put<Project>(`/projects/${id}`, { business_hours }),
     remove: (id: string) => del<{ ok: boolean }>(`/projects/${id}`),
     stats: (id: string) => get<ProjectStats>(`/projects/${id}/stats`),
     members: (id: string) => get<ProjectMember[]>(`/projects/${id}/members`),
@@ -329,8 +342,9 @@ export const api = {
     start: (issueId: string) => post<TimerState>(`/issues/${issueId}/timer/start`, {}),
     pause: (issueId: string) => post<TimerState>(`/issues/${issueId}/timer/pause`, {}),
     commit: (issueId: string) => post<{ ok: boolean; minutes: number }>(`/issues/${issueId}/timer/commit`, {}),
-    totals: (issueId: string) => get<{ by_user: TimerUserTotal[] }>(`/issues/${issueId}/timer/totals`),
     mine: () => get<MyTimer | null>('/me/timer'),
+    unresolved: () => get<UnresolvedTimer[]>('/me/timer/unresolved'),
+    resolve: (segmentId: string) => post<{ ok: boolean }>(`/timer-segments/${segmentId}/resolve`, {}),
   },
 
   notifications: {

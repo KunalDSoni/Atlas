@@ -30,7 +30,10 @@ import type { IssueDetail } from './use-issue-detail';
  */
 const STOP_REASON_TEXT: Record<TimerStopReason, string> = {
   workday_end: 'left running overnight, so it was stopped at the end of that working day',
-  abandoned: 'left running for more than a day, so it was capped at 12 hours',
+  // No duration is claimed. The server cannot know how long this session was,
+  // and guessing put hours nobody worked into people's timesheets — see
+  // docs/superpowers/specs/2026-08-15-abandoned-timer-credits-zero-design.md.
+  abandoned: 'left running for more than a day, so it was stopped without logging any time',
   issue_done: 'stopped because this issue was moved to a done status',
   switched_issue: 'stopped because you started a timer on another issue',
 };
@@ -273,9 +276,35 @@ export function IssueFields({ detail }: { detail: IssueDetail }) {
                   {timer?.auto_stopped && !timer.running && (
                     <p className="text-xs text-muted-foreground" role="status">
                       Your timer was {stopReasonText(timer.auto_stopped.reason)} (
-                      {timeAgo(timer.auto_stopped.stopped_at)}). Adjust the entry below if
-                      that is wrong.
+                      {timeAgo(timer.auto_stopped.stopped_at)}).{' '}
+                      {timer.auto_stopped.reason === 'abandoned' ? (
+                        <>
+                          {/* Nothing was recorded, so "adjust the entry below" would
+                              point at an entry that does not exist. The only useful
+                              action is to state the real duration. */}
+                          <button className="underline" onClick={() => setLogOpen(true)}>
+                            Log the time you worked
+                          </button>.
+                        </>
+                      ) : (
+                        'Adjust the entry below if that is wrong.'
+                      )}
                     </p>
+                  )}
+
+                  {/* Who tracked what, once more than one person has. A
+                      single-name list is noise, so it stays hidden below two.
+                      No extra request: by_user rides along on the timer state
+                      this page already fetches. */}
+                  {timer && timer.by_user.length > 1 && (
+                    <dl className="space-y-1 border-t pt-2 text-xs">
+                      {timer.by_user.map((u) => (
+                        <div key={u.user_id} className="flex justify-between gap-2">
+                          <dt className="truncate text-muted-foreground">{u.name}</dt>
+                          <dd className="tabular-nums">{formatDuration(u.minutes)}</dd>
+                        </div>
+                      ))}
+                    </dl>
                   )}
 
                   <Button variant="outline" size="sm" className="w-full gap-1.5" onClick={() => setLogOpen(true)}>

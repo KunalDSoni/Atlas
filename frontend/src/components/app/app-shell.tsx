@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
-  Bell, CalendarRange, ChevronsUpDown, Columns3, FileClock, Gauge, LayoutDashboard, ListTodo, LogOut, Menu, Package,
+  Bell, CalendarRange, ChevronsUpDown, Clock, Columns3, FileClock, Gauge, LayoutDashboard, ListTodo, LogOut, Menu, Package,
   Rocket, Search, Settings as SettingsIcon, Shield, User as UserIcon, Users, BookOpen, Zap,
   Activity, Inbox, Lightbulb, Target, Map as MapIcon, Building2, MessagesSquare, Plus, ListFilter,
   Headphones, SlidersHorizontal,
@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { RunningTimerChip } from './running-timer-chip';
+import { UnresolvedTimersChip } from './unresolved-timers-chip';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { api } from '@/lib/api';
@@ -394,6 +395,9 @@ function UserMenu() {
           <button type="button" role="menuitem" className={itemClass} onClick={() => go('/profile')}>
             <UserIcon className="size-4" /> Profile
           </button>
+          <button type="button" role="menuitem" className={itemClass} onClick={() => go('/my-time')}>
+            <Clock className="size-4" /> My time
+          </button>
           <button type="button" role="menuitem" className={itemClass} onClick={() => go('/settings')}>
             <SettingsIcon className="size-4" /> Settings
           </button>
@@ -487,6 +491,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               is only discoverable by returning to the issue that started it —
               which is how timers get left running for days. */}
           <RunningTimerChip />
+          <UnresolvedTimersChip />
           <NotificationBell />
           <UserMenu />
         </header>

@@ -22,6 +22,19 @@ export type Priority = 'highest' | 'high' | 'medium' | 'low';
 export type SprintStatus = 'planning' | 'active' | 'completed';
 export type LinkType = 'relates_to' | 'blocks' | 'is_blocked_by' | 'duplicates' | 'is_duplicated_by';
 
+/**
+ * Working hours, stored as JSON on both projects and users. `work_days` holds
+ * ISO weekday numbers (1 = Monday), and `end_hour` must be strictly later than
+ * `start_hour` — the server rejects anything else, because a profile it cannot
+ * order reads back as unconfigured.
+ */
+export interface BusinessHours {
+  timezone: string;
+  work_days: number[];
+  start_hour: number;
+  end_hour: number;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -34,6 +47,8 @@ export interface User {
   job_title: string | null;
   bio: string | null;
   timezone: string | null;
+  /** Personal override of the project's working hours; null = use the project's. */
+  business_hours?: string | null;
   is_active: number;
   last_login: string | null;
   created_at: string;
@@ -49,6 +64,8 @@ export interface Project {
   key: string;
   description: string | null;
   wip_limits: string | null;
+  /** Working hours for everyone on the project; a user may override it. */
+  business_hours?: string | null;
   lead_id: string | null;
   created_at: string;
   lead_name: string | null;
@@ -354,6 +371,9 @@ export interface AppNotification {
 }
 
 /** Work log entry from GET /issues/:id/worklogs. Minutes-based. */
+/** Where a work log came from: entered by hand, derived from status, or measured. */
+export type WorkLogSource = 'manual' | 'auto' | 'timer';
+
 export interface WorkLog {
   id: string;
   issue_id: string;
@@ -363,7 +383,7 @@ export interface WorkLog {
   created_at: string;
   user_name: string | null;
   user_color: string | null;
-  source: 'manual' | 'auto' | 'timer';
+  source: WorkLogSource;
   locked_from_auto: number;
 }
 
@@ -400,6 +420,45 @@ export interface MyTimer {
   started_at: string;
   elapsed_minutes: number;
   runaway: boolean;
+}
+
+/**
+ * A timer the server stopped without crediting any time, because it had no
+ * evidence for how long the session really was. It stays here until the person
+ * who ran it logs the real time or dismisses it — nobody else can answer.
+ */
+export interface UnresolvedTimer {
+  id: string;
+  issue_id: string;
+  issue_key: string;
+  title: string;
+  started_at: string;
+  ended_at: string;
+}
+
+/** One work-log entry in the personal timesheet, with its issue and project. */
+export interface MyTimeEntry {
+  id: string;
+  issue_id: string;
+  issue_key: string;
+  title: string;
+  project_key: string;
+  minutes: number;
+  source: WorkLogSource;
+  comment: string | null;
+  created_at: string;
+  /** Calendar date the entry falls on, in the user's timezone. */
+  date: string;
+}
+
+export interface MyTimeResponse {
+  from: string;
+  to: string;
+  /** The zone the days were bucketed in — surfaced so totals are unambiguous. */
+  timezone: string;
+  total_minutes: number;
+  by_day: { date: string; minutes: number }[];
+  entries: MyTimeEntry[];
 }
 
 export interface Comment {

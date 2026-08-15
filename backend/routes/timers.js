@@ -10,11 +10,12 @@
 // Every route acts on req.userId: a user can only drive their own timer.
 
 const express = require('express');
-const { getDb, queryOne } = require('../database');
+const { getDb, queryOne, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
 const {
-  startTimer, pauseTimer, timerState, commitTimer, closeStaleSegments, RUNAWAY_MINUTES, issueTimerTotals,
+  startTimer, pauseTimer, timerState, commitTimer, closeStaleSegments, RUNAWAY_MINUTES,
+  unresolvedSegments, nowStamp,
 } = require('../utils/timers');
 
 const router = express.Router();
@@ -109,14 +110,33 @@ router.get('/me/timer', requireAuth, async (req, res) => {
   } catch (e) { serverError(res, e); }
 });
 
-// GET /api/issues/:issueId/timer/totals — per-user cumulative timer minutes
-router.get('/issues/:issueId/timer/totals', requireAuth, async (req, res) => {
+// GET /api/me/timer/unresolved — abandoned timers this user has not accounted
+// for. An abandoned segment credits nothing, so without an answer from the
+// person who ran it the time is never recorded anywhere.
+router.get('/me/timer/unresolved', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    if (!(await requireIssue(db, req.params.issueId, res))) return;
+    await closeStaleSegments(db, { userId: req.userId });
+    res.json(await unresolvedSegments(db, req.userId));
+  } catch (e) { serverError(res, e); }
+});
 
-    const byUser = await issueTimerTotals(db, req.params.issueId);
-    res.json({ by_user: byUser });
+// POST /api/timer-segments/:id/resolve — "I did not really work on that".
+// Settles without writing a work log, so clearing the prompt never requires
+// logging time that was not worked.
+router.post('/timer-segments/:id/resolve', requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    // Scoped to the caller: 404 rather than 403, because the existence of
+    // someone else's segment is not the caller's business.
+    const seg = await queryOne(db,
+      'SELECT id, issue_id FROM timer_segments WHERE id = ? AND user_id = ?',
+      [req.params.id, req.userId]);
+    if (!seg) return res.status(404).json({ error: 'Timer segment not found' });
+
+    await run(db, 'UPDATE timer_segments SET settled_at = ? WHERE id = ? AND settled_at IS NULL',
+      [nowStamp(), seg.id]);
+    res.json({ ok: true });
   } catch (e) { serverError(res, e); }
 });
 

@@ -2,7 +2,7 @@ const { createTestApp, getApp, adminHeaders } = require('./setup');
 const request = require('supertest');
 const { getDb, queryOne, queryAll, run } = require('../../database');
 const {
-  closeStaleSegments, startTimer, pauseTimer, timerState, commitTimer, issueTimerUserIds, issueTimerTotals,
+  closeStaleSegments, startTimer, pauseTimer, timerState, commitTimer, issueTimerUserIds,
   RUNAWAY_MINUTES, findTimerOvercounts, settleSegments,
 } = require('../../utils/timers');
 const { v4: uuidv4 } = require('uuid');
@@ -410,7 +410,11 @@ describe('timer routes', () => {
   });
 });
 
-describe('issueTimerTotals aggregates per-user cumulative time', () => {
+// The per-user split is produced by timerState's by_user, which the issue page
+// already fetches. The separate issueTimerTotals helper and its /timer/totals
+// endpoint duplicated it and had no callers, so they were removed — these
+// assertions moved to the surviving producer rather than being deleted with it.
+describe('timerState.by_user aggregates per-user cumulative time', () => {
   test('returns per-user minute totals across all segments', async () => {
     const issue = await mkIssue('Timer totals');
     const otherUserRes = await require('./setup').userHeaders();
@@ -424,7 +428,7 @@ describe('issueTimerTotals aggregates per-user cumulative time', () => {
     // Other user: one segment of 45 minutes
     await addSegment(issue.id, otherUserId, '2026-07-06 14:00:00', '2026-07-06 14:45:00');
 
-    const totals = await issueTimerTotals(db, issue.id);
+    const totals = (await timerState(db, issue.id, adminId)).by_user;
     expect(totals.length).toBe(2);
 
     const adminTotal = totals.find((u) => u.user_id === adminId);
@@ -438,7 +442,7 @@ describe('issueTimerTotals aggregates per-user cumulative time', () => {
     const issue = await mkIssue('Timer totals exclude');
     await addSegment(issue.id, adminId, '2026-07-06 09:00:00', '2026-07-06 10:00:00');
 
-    const totals = await issueTimerTotals(db, issue.id);
+    const totals = (await timerState(db, issue.id, adminId)).by_user;
     expect(totals.length).toBe(1);
     expect(totals[0].user_id).toBe(adminId);
   });
@@ -447,7 +451,7 @@ describe('issueTimerTotals aggregates per-user cumulative time', () => {
     const issue = await mkIssue('Timer totals names');
     await addSegment(issue.id, adminId, '2026-07-06 09:00:00', '2026-07-06 10:00:00');
 
-    const totals = await issueTimerTotals(db, issue.id);
+    const totals = (await timerState(db, issue.id, adminId)).by_user;
     expect(totals[0].name).toBeDefined();
     expect(totals[0].name).not.toBe('Unknown');
   });
@@ -500,18 +504,83 @@ describe('closeStaleSegments west of Greenwich', () => {
   });
 });
 
-describe('abandonment cap', () => {
-  test('caps a segment open past a day when no profile can bound it', async () => {
+describe('an abandoned segment credits nothing', () => {
+  // The server may BOUND a timer using evidence (a configured workday end). It
+  // may never INVENT a duration. Crediting the largest plausible session put
+  // hours nobody worked into work_logs, which is worse than an obviously-wrong
+  // open segment: it looks right.
+  // See docs/superpowers/specs/2026-08-15-abandoned-timer-credits-zero-design.md
+  test('credits 0 minutes when no profile can bound the segment', async () => {
     const issue = await mkIssue('No profile abandoned');
-    const segId = await addSegment(issue.id, adminId, stampAgo(60 * 30)); // 30h
+    const user = await freshUser('No profile');
+    await addSegment(issue.id, user, stampAgo(60 * 30)); // 30h
 
-    await closeStaleSegments(db, { userId: adminId });
+    await closeStaleSegments(db, { userId: user });
 
-    const seg = await queryOne(db, 'SELECT * FROM timer_segments WHERE id = ?', [segId]);
-    expect(seg.auto_stopped).toBe('abandoned');
-    const minutes = (new Date(`${seg.ended_at.replace(' ', 'T')}Z`)
-      - new Date(`${seg.started_at.replace(' ', 'T')}Z`)) / 60_000;
-    expect(minutes).toBe(RUNAWAY_MINUTES); // the plausible session, not the full 30h
+    expect((await timerState(db, issue.id, user)).elapsed_minutes).toBe(0);
+  });
+
+  test('writes no work log for an abandoned segment', async () => {
+    const issue = await mkIssue('Abandoned logs nothing');
+    const user = await freshUser('Logs nothing');
+    await addSegment(issue.id, user, stampAgo(60 * 30));
+
+    await closeStaleSegments(db, { userId: user });
+
+    const logs = await queryAll(db, 'SELECT * FROM work_logs WHERE issue_id = ?', [issue.id]);
+    expect(logs).toHaveLength(0);
+    const fresh = await queryOne(db, 'SELECT time_spent FROM issues WHERE id = ?', [issue.id]);
+    expect(Number(fresh.time_spent || 0)).toBe(0);
+  });
+
+  test('records when the segment was found, so the stop can still be explained', async () => {
+    // recentAutoStop drops stops older than a day and the rail renders
+    // timeAgo(stopped_at). Back-dating ended_at to force a zero credit would
+    // silence the explanation exactly when the user most needs it.
+    const issue = await mkIssue('Abandoned still explained');
+    const user = await freshUser('Still explained');
+    await addSegment(issue.id, user, stampAgo(60 * 30));
+
+    await closeStaleSegments(db, { userId: user });
+
+    const state = await timerState(db, issue.id, user);
+    expect(state.auto_stopped).toMatchObject({ reason: 'abandoned' });
+    const stoppedAgo = (Date.now() - new Date(`${state.auto_stopped.stopped_at.replace(' ', 'T')}Z`)) / 60_000;
+    expect(stoppedAgo).toBeLessThan(5); // found just now, not 30h ago
+  });
+
+  test('credits 0 for a Saturday start even with a business-hours profile', async () => {
+    // The mitigation KNOWN-ISSUES.md recommended. workdayEndFor returns null on
+    // a non-work day, so this fell through to the invented cap with a profile
+    // fully configured.
+    const issue = await mkIssue('Weekend start');
+    const user = await freshUser('Weekend');
+    await run(db, 'UPDATE projects SET business_hours = ? WHERE id = ?',
+      [JSON.stringify({ timezone: 'UTC', work_days: [1, 2, 3, 4, 5], start_hour: 9, end_hour: 18 }), projectId]);
+    try {
+      const d = new Date();
+      d.setUTCDate(d.getUTCDate() - 2);
+      while (d.getUTCDay() !== 6) d.setUTCDate(d.getUTCDate() - 1);
+      d.setUTCHours(15, 0, 0, 0);
+      await addSegment(issue.id, user, d.toISOString().slice(0, 19).replace('T', ' '));
+
+      await closeStaleSegments(db, { userId: user });
+
+      expect((await timerState(db, issue.id, user)).elapsed_minutes).toBe(0);
+    } finally {
+      await run(db, 'UPDATE projects SET business_hours = NULL WHERE id = ?', [projectId]);
+    }
+  });
+
+  test('a real tracked segment on the same issue still commits its own minutes', async () => {
+    const issue = await mkIssue('Real work beside abandoned');
+    const user = await freshUser('Real work');
+    await addSegment(issue.id, user, '2026-07-06 09:00:00', '2026-07-06 09:45:00'); // 45m worked
+    await addSegment(issue.id, user, stampAgo(60 * 30)); // and one abandoned
+
+    await closeStaleSegments(db, { userId: user });
+
+    expect((await timerState(db, issue.id, user)).elapsed_minutes).toBe(45);
   });
 
   test('leaves a segment under the cap open so the runaway warning stays actionable', async () => {
@@ -760,27 +829,46 @@ describe('repairing historical over-counts', () => {
     const mine = report.segments.filter((s) => s.issue_id === issue.id);
     expect(mine).toHaveLength(1);
     expect(Math.round(mine[0].minutes)).toBe(THREE_WEEKS_MINUTES);
-    expect(mine[0].capped_minutes).toBe(RUNAWAY_MINUTES);
+    expect(mine[0].credited_minutes).toBe(0);
     expect(report.applied).toBe(false);
 
     const untouched = await queryOne(db, "SELECT minutes FROM work_logs WHERE issue_id = ? AND source = 'timer'", [issue.id]);
     expect(Number(untouched.minutes)).toBe(THREE_WEEKS_MINUTES);
   });
 
-  test('applying caps the segment and rewrites the work log and time_spent', async () => {
+  test('applying removes the fabricated time rather than re-capping it', async () => {
     const { issue } = await seedOvercount('Applied');
 
     await findTimerOvercounts(db, { apply: true });
 
-    const seg = await queryOne(db, 'SELECT ended_at, auto_stopped FROM timer_segments WHERE issue_id = ?', [issue.id]);
-    expect(seg.ended_at).toBe('2026-07-04 04:00:00'); // 12h after the 16:00 start
+    const seg = await queryOne(db, 'SELECT auto_stopped FROM timer_segments WHERE issue_id = ?', [issue.id]);
     expect(seg.auto_stopped).toBe('abandoned');
 
+    // Re-capping to 12h swapped one invented figure for a smaller invented
+    // figure. An abandoned segment credits nothing, so the work log goes.
     const logs = await queryAll(db, 'SELECT minutes, source FROM work_logs WHERE issue_id = ?', [issue.id]);
-    expect(logs).toHaveLength(1);
-    expect(Number(logs[0].minutes)).toBe(RUNAWAY_MINUTES);
+    expect(logs).toHaveLength(0);
     const fresh = await queryOne(db, 'SELECT time_spent FROM issues WHERE id = ?', [issue.id]);
-    expect(Number(fresh.time_spent)).toBe(RUNAWAY_MINUTES);
+    expect(Number(fresh.time_spent || 0)).toBe(0);
+  });
+
+  test('reports a row already capped to exactly 12 hours', async () => {
+    // The threshold is ABANDONED_AFTER_MINUTES (24h), but a row the previous
+    // rule already capped is exactly RUNAWAY_MINUTES (12h) and slipped
+    // underneath it — so the damage the current cap caused was invisible to the
+    // very script meant to report it.
+    const issue = await mkIssue('Already capped');
+    const userId = await freshUser('Already capped user');
+    await addSegment(issue.id, userId, '2026-07-03 16:00:00', '2026-07-04 04:00:00');
+    await run(db, 'UPDATE timer_segments SET auto_stopped = ? WHERE issue_id = ?', ['abandoned', issue.id]);
+    await run(db, "INSERT INTO work_logs (id, issue_id, user_id, minutes, comment, source) VALUES (?, ?, ?, ?, ?, 'timer')",
+      [uuidv4(), issue.id, userId, RUNAWAY_MINUTES, 'Tracked with timer']);
+
+    const report = await findTimerOvercounts(db);
+
+    const mine = report.segments.filter((s) => s.issue_id === issue.id);
+    expect(mine).toHaveLength(1);
+    expect(Math.round(mine[0].minutes)).toBe(RUNAWAY_MINUTES);
   });
 
   test('a second pass finds nothing, and settled segments are never touched', async () => {

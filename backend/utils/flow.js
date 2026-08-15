@@ -66,6 +66,66 @@ function parseBusinessHours(json) {
 }
 
 /**
+ * Validate a business_hours profile on the way IN, and return it serialised.
+ *
+ * Deliberately stricter than parseBusinessHours above. That function returning
+ * null for malformed input is right for a READER — "unconfigured, fall back to
+ * wall-clock" — and silently wrong for a WRITER: a profile saved as 5pm-9am
+ * would read back as unconfigured, so the user's timers would keep losing time
+ * while the settings page displayed exactly what they typed.
+ *
+ * `null` is a valid value meaning "clear it". Callers distinguish that from an
+ * omitted field, which means "leave unchanged".
+ *
+ * Returns { ok: true, json } | { ok: false, error }, where `json` is the stored
+ * form — so routes never re-stringify and the column has one producer.
+ */
+function validateBusinessHours(value) {
+  if (value === null) return { ok: true, json: null };
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { ok: false, error: 'business_hours must be an object or null' };
+  }
+
+  const { timezone, work_days: workDays, start_hour: startHour, end_hour: endHour } = value;
+
+  if (typeof timezone !== 'string' || !timezone) {
+    return { ok: false, error: 'business_hours.timezone is required' };
+  }
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone });
+  } catch {
+    return { ok: false, error: `business_hours.timezone "${timezone}" is not a known IANA time zone` };
+  }
+
+  if (!Array.isArray(workDays) || workDays.length === 0) {
+    return { ok: false, error: 'business_hours.work_days must list at least one day' };
+  }
+  if (!workDays.every((d) => Number.isInteger(d) && d >= 1 && d <= 7)) {
+    return { ok: false, error: 'business_hours.work_days must be integers 1-7 (Monday-Sunday)' };
+  }
+  if (new Set(workDays).size !== workDays.length) {
+    return { ok: false, error: 'business_hours.work_days must not repeat a day' };
+  }
+
+  for (const [name, hour] of [['start_hour', startHour], ['end_hour', endHour]]) {
+    if (!Number.isInteger(hour) || hour < 0 || hour > 24) {
+      return { ok: false, error: `business_hours.${name} must be a whole hour from 0 to 24` };
+    }
+  }
+  // Not cosmetic: workdayEndFor computes midnight + end_hour and returns null
+  // when end <= start, so an inverted profile behaves identically to no profile
+  // at all — the exact silent failure this validator exists to prevent.
+  if (endHour <= startHour) {
+    return { ok: false, error: 'business_hours.end_hour must be later than start_hour' };
+  }
+
+  return {
+    ok: true,
+    json: JSON.stringify({ timezone, work_days: workDays, start_hour: startHour, end_hour: endHour }),
+  };
+}
+
+/**
  * Resolve the effective business-hours profile: user override wins over
  * project default; null when neither is configured (raw wall-clock fallback).
  */
@@ -164,5 +224,6 @@ function businessMinutesBetween(start, end, profile) {
 module.exports = {
   categoryOf, statusTimeline, hoursBetween, percentile,
   businessMinutesBetween, resolveBusinessHours,
+  parseBusinessHours, validateBusinessHours,
   localMidnightUtc, isoWeekdayInTz,
 };

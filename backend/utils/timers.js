@@ -64,8 +64,27 @@ function parseUtc(s) {
   return new Date(String(s).replace(' ', 'T') + (String(s).endsWith('Z') ? '' : 'Z'));
 }
 
-/** Raw wall-clock minutes of a segment; an open segment is measured to `now`. */
+/**
+ * Raw wall-clock minutes of a segment; an open segment is measured to `now`.
+ *
+ * An abandoned segment credits NOTHING. Its ended_at records when the server
+ * found it still running, not when the person stopped working, so its span
+ * measures the length of the oversight rather than the length of the session.
+ * Crediting it put hours nobody worked into work_logs — see
+ * docs/superpowers/specs/2026-08-15-abandoned-timer-credits-zero-design.md.
+ */
 function segmentMinutes(seg, now) {
+  if (seg.auto_stopped === STOP_ABANDONED) return 0;
+  const start = parseUtc(seg.started_at);
+  const end = seg.ended_at ? parseUtc(seg.ended_at) : now;
+  return Math.max(0, (end - start) / 60_000);
+}
+
+/**
+ * The span a segment actually covered, ignoring the zero-credit rule above.
+ * Only for reporting on damage already done — never for crediting time.
+ */
+function rawSegmentMinutes(seg, now) {
   const start = parseUtc(seg.started_at);
   const end = seg.ended_at ? parseUtc(seg.ended_at) : now;
   return Math.max(0, (end - start) / 60_000);
@@ -200,12 +219,17 @@ async function closeStaleSegments(db, { userId, issueId, reason } = {}) {
     }
 
     // No defensible business-hours boundary — either no profile at all, or a
-    // start that falls outside one (weekend, after close). Fall back to the
-    // abandonment cap so the segment cannot grow without bound.
+    // start that falls outside one (weekend, after close). Close the segment so
+    // it cannot grow without bound, and credit NOTHING: nobody knows how long
+    // this session really was, and the server is not entitled to guess.
+    //
+    // ended_at is the moment of discovery, not a synthesised end. It is what
+    // recentAutoStop's one-day recency filter and the rail's timeAgo() read, so
+    // back-dating it to force the zero credit would suppress the explanation on
+    // exactly the timers that need one. segmentMinutes gives the zero instead.
     if (openMinutes > ABANDONED_AFTER_MINUTES) {
-      const cappedEnd = new Date(parseUtc(seg.started_at).getTime() + RUNAWAY_MINUTES * 60_000);
       await run(db, 'UPDATE timer_segments SET ended_at = ?, auto_stopped = ? WHERE id = ?',
-        [stampOf(cappedEnd), STOP_ABANDONED, seg.id]);
+        [nowStamp(), STOP_ABANDONED, seg.id]);
       closedIssueIds.add(seg.issue_id);
       closed += 1;
       continue;
@@ -243,27 +267,36 @@ async function closeStaleSegments(db, { userId, issueId, reason } = {}) {
 }
 
 /**
- * Find — and optionally repair — segments that recorded an impossible session.
+ * Find — and optionally remove — tracked time that no session supports.
  *
- * Before the abandonment cap existed a forgotten timer stayed open, accruing
- * against `now` on every read, and was closed and committed whole when the
- * issue eventually reached a done status. A timer nobody paused on a Friday
- * afternoon could therefore land in work_logs as three weeks of tracked work.
- * The live rules now cap such a segment, but only while it is still open;
- * anything already closed keeps its inflated span, so it needs this one pass.
+ * Two generations of the same mistake are in the data. Before any bound
+ * existed, a forgotten timer stayed open, accrued against `now` on every read,
+ * and was committed whole when the issue reached a done status, so a stopwatch
+ * left running on a Friday could land in work_logs as three weeks of work.
+ * The rule that replaced it credited a flat twelve hours instead — a smaller
+ * invention, but an invention, and one that lands at exactly RUNAWAY_MINUTES
+ * where a threshold on span alone can never see it.
  *
- * `apply: false` (the default) inspects and returns the same report without
- * writing anything, so the caller can show the damage before consenting to it.
+ * So damage is defined by disagreement rather than by size: a pair whose
+ * committed `source='timer'` work log claims more than its segments now credit.
+ * That is self-limiting — once the repair runs, the two agree and the pair
+ * stops being reported — and it needs no threshold to catch the 12-hour rows.
  *
- * Idempotent: a capped segment no longer exceeds the threshold. Segments a
- * human has taken ownership of (settled_at set) are never touched — correcting
- * a number by hand is exactly the signal that the machine should stop adjusting
- * it. Orphaned segments are skipped via the JOIN: with no issue left there is
- * nothing to recompute and no report they can reach.
+ * `apply: false` (the default) inspects and writes nothing, so the caller can
+ * show the damage before consenting to it.
+ *
+ * Segments a human has taken ownership of (settled_at set) are never touched:
+ * correcting a number by hand is exactly the signal that the machine should
+ * stop adjusting it. Orphaned segments are skipped via the JOIN.
+ *
+ * The pass reads closed segments only, so a timer running at the moment it runs
+ * is absent from `credited_after` and the preview can understate what survives
+ * by that session's length. The write is unaffected: it goes through
+ * commitTimer, which pauses and counts the open segment like any other.
  */
 async function findTimerOvercounts(db, { apply = false } = {}) {
   const segments = await queryAll(db, `
-    SELECT t.id, t.issue_id, t.user_id, t.started_at, t.ended_at,
+    SELECT t.id, t.issue_id, t.user_id, t.started_at, t.ended_at, t.auto_stopped,
            i.issue_key, u.name AS user_name
     FROM timer_segments t
     JOIN issues i ON i.id = t.issue_id
@@ -271,22 +304,48 @@ async function findTimerOvercounts(db, { apply = false } = {}) {
     WHERE t.ended_at IS NOT NULL AND t.settled_at IS NULL
     ORDER BY t.started_at`);
 
-  const overcounted = segments
-    .map((seg) => ({ ...seg, minutes: segmentMinutes(seg, new Date()) }))
-    .filter((seg) => seg.minutes > ABANDONED_AFTER_MINUTES)
-    .map((seg) => ({ ...seg, capped_minutes: RUNAWAY_MINUTES }));
-
-  const pairs = new Map();
-  for (const seg of overcounted) {
-    pairs.set(`${seg.issue_id} ${seg.user_id}`,
-      { issueId: seg.issue_id, userId: seg.user_id, issueKey: seg.issue_key });
+  const now = new Date();
+  const byPair = new Map();
+  for (const seg of segments) {
+    const key = `${seg.issue_id} ${seg.user_id}`;
+    if (!byPair.has(key)) {
+      byPair.set(key, {
+        issueId: seg.issue_id, userId: seg.user_id, issueKey: seg.issue_key,
+        userName: seg.user_name || 'Unknown', credited_after: 0, suspect: [],
+      });
+    }
+    const pair = byPair.get(key);
+    const raw = rawSegmentMinutes(seg, now);
+    // An impossible span, or a segment an earlier rule already marked. Both
+    // credit nothing once repaired; everything else keeps its measured time.
+    if (seg.auto_stopped === STOP_ABANDONED || raw > ABANDONED_AFTER_MINUTES) {
+      pair.suspect.push({ ...seg, minutes: raw, credited_minutes: 0 });
+    } else {
+      pair.credited_after += segmentMinutes(seg, now);
+    }
   }
+
+  const damagedPairs = [];
+  for (const pair of byPair.values()) {
+    if (!pair.suspect.length) continue;
+    const log = await queryOne(db,
+      "SELECT minutes FROM work_logs WHERE issue_id = ? AND user_id = ? AND source = 'timer'",
+      [pair.issueId, pair.userId]);
+    const logged = Number(log?.minutes || 0);
+    const after = Math.round(pair.credited_after);
+    if (logged > after) damagedPairs.push({ ...pair, logged_minutes: logged, credited_after: after });
+  }
+
+  const overcounted = damagedPairs.flatMap((p) => p.suspect);
+  const pairs = new Map(damagedPairs.map((p) => [`${p.issueId} ${p.userId}`, p]));
 
   if (apply) {
     for (const seg of overcounted) {
-      const capped = new Date(parseUtc(seg.started_at).getTime() + RUNAWAY_MINUTES * 60_000);
-      await run(db, 'UPDATE timer_segments SET ended_at = ?, auto_stopped = ? WHERE id = ?',
-        [stampOf(capped), STOP_ABANDONED, seg.id]);
+      // Marking the reason is the whole repair: segmentMinutes reads it and
+      // credits nothing. ended_at is left alone — it records when the segment
+      // was closed, and rewriting history to a synthesised end would only
+      // replace one invention with another.
+      await run(db, 'UPDATE timer_segments SET auto_stopped = ? WHERE id = ?', [STOP_ABANDONED, seg.id]);
     }
     // Rewrite each affected work log through commitTimer — the same function
     // the live paths use, so repaired rows come from exactly the rule that
@@ -296,11 +355,13 @@ async function findTimerOvercounts(db, { apply = false } = {}) {
     }
   }
 
+  // Totals describe the work logs, not the segment spans: what is actually
+  // recorded against these people today, and what survives the repair.
   return {
     segments: overcounted,
     pairs: [...pairs.values()],
-    minutes_before: Math.round(overcounted.reduce((sum, s) => sum + s.minutes, 0)),
-    minutes_after: overcounted.length * RUNAWAY_MINUTES,
+    minutes_before: damagedPairs.reduce((sum, p) => sum + p.logged_minutes, 0),
+    minutes_after: damagedPairs.reduce((sum, p) => sum + p.credited_after, 0),
     applied: apply,
   };
 }
@@ -321,6 +382,33 @@ async function settleSegments(db, issueId, userId) {
   await run(db,
     'UPDATE timer_segments SET settled_at = ? WHERE issue_id = ? AND user_id = ? AND settled_at IS NULL',
     [nowStamp(), issueId, userId]);
+}
+
+// Beyond this, an unresolved timer stops being presented as actionable. The
+// segment is kept; it is simply no longer asked about, because a list that
+// grows without limit becomes a second thing to ignore and month-old time is
+// not going to be remembered accurately anyway.
+const UNRESOLVED_WINDOW_DAYS = 30;
+
+/**
+ * Abandoned segments this user has not yet accounted for.
+ *
+ * An abandoned segment credits nothing, so unless the person says how long they
+ * worked, the time is never recorded at all. Only 'abandoned' qualifies: a
+ * workday-end close already credited its time and needs no answer.
+ *
+ * Resolution is `settled_at`, which already means "a human has taken ownership
+ * of this time" — set either by logging work on the issue or by dismissing.
+ */
+async function unresolvedSegments(db, userId) {
+  const cutoff = stampOf(new Date(Date.now() - UNRESOLVED_WINDOW_DAYS * 24 * 60 * 60_000));
+  return queryAll(db, `
+    SELECT t.id, t.issue_id, t.started_at, t.ended_at, i.issue_key, i.title
+    FROM timer_segments t
+    JOIN issues i ON i.id = t.issue_id
+    WHERE t.user_id = ? AND t.auto_stopped = ? AND t.settled_at IS NULL
+      AND t.ended_at >= ?
+    ORDER BY t.ended_at DESC`, [userId, STOP_ABANDONED, cutoff]);
 }
 
 /**
@@ -411,24 +499,6 @@ async function issueTimerUserIds(db, issueId) {
   return rows.map((r) => r.user_id);
 }
 
-/** Per-user minute totals for all completed timer segments on the issue. */
-async function issueTimerTotals(db, issueId) {
-  const segments = await queryAll(db,
-    `SELECT t.*, u.name AS user_name FROM timer_segments t
-     LEFT JOIN users u ON u.id = t.user_id
-     WHERE t.issue_id = ? AND t.settled_at IS NULL ORDER BY t.started_at`, [issueId]);
-
-  const now = new Date();
-  const byUser = new Map();
-  for (const seg of segments) {
-    if (!byUser.has(seg.user_id)) {
-      byUser.set(seg.user_id, { user_id: seg.user_id, name: seg.user_name || 'Unknown', minutes: 0 });
-    }
-    byUser.get(seg.user_id).minutes += segmentMinutes(seg, now);
-  }
-  return [...byUser.values()].map((u) => ({ ...u, minutes: Math.round(u.minutes) }));
-}
-
 /** Timer state for one user on one issue, plus per-user totals for everyone. */
 async function timerState(db, issueId, userId) {
   await closeStaleSegments(db, { userId });
@@ -509,8 +579,9 @@ async function commitTimer(db, issueId, userId) {
 }
 
 module.exports = {
-  RUNAWAY_MINUTES, ABANDONED_AFTER_MINUTES, nowStamp, closeStaleSegments,
+  RUNAWAY_MINUTES, ABANDONED_AFTER_MINUTES, UNRESOLVED_WINDOW_DAYS,
+  unresolvedSegments, nowStamp, closeStaleSegments,
   startTimer, pauseTimer, timerState, commitTimer, issueTimerUserIds,
-  issueTimerTotals, recentAutoStop, settleSegments, findTimerOvercounts,
+  recentAutoStop, settleSegments, findTimerOvercounts,
   STOP_WORKDAY_END, STOP_ABANDONED, STOP_ISSUE_DONE, STOP_SWITCHED, STOP_DUPLICATE,
 };

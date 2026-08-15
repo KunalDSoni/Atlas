@@ -46,6 +46,11 @@ router.post('/issues/:issueId/worklogs', requireAuth, async (req, res) => {
     const id = uuidv4();
     await run(db, "INSERT INTO work_logs (id, issue_id, user_id, minutes, comment, source) VALUES (?, ?, ?, ?, ?, 'manual')",
       [id, req.params.issueId, req.userId, minutes, req.body.comment || null]);
+
+    // Logging work here answers the question an abandoned timer asked — how
+    // long was that session? — so it stops being unresolved. Scoped to this
+    // user, so one person's answer never clears another's prompt.
+    await settleSegments(db, req.params.issueId, req.userId);
     await recomputeTimeSpent(db, req.params.issueId);
 
     const log = await queryOne(db, `

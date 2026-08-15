@@ -9,6 +9,7 @@ const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { verifyPassword, hashPassword } = require('../utils/password');
 const { serverError } = require('../utils/errors');
+const { validateBusinessHours } = require('../utils/flow');
 
 const router = express.Router();
 
@@ -39,9 +40,17 @@ router.get('/', requireAuth, async (req, res) => {
 router.put('/', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const { name, phone, department, job_title, bio, timezone, avatar_color } = req.body;
+    const { name, phone, department, job_title, bio, timezone, avatar_color, business_hours } = req.body;
     const updates = [];
     const params = [];
+    // The personal override of the project's working hours. Validated before
+    // any write so a rejected profile cannot half-apply the other fields.
+    if (business_hours !== undefined) {
+      const check = validateBusinessHours(business_hours);
+      if (!check.ok) return res.status(400).json({ error: check.error });
+      updates.push('business_hours = ?');
+      params.push(check.json);
+    }
     if (name !== undefined) { updates.push('name = ?'); params.push(name); }
     if (phone !== undefined) { updates.push('phone = ?'); params.push(phone); }
     if (department !== undefined) { updates.push('department = ?'); params.push(department); }
@@ -55,7 +64,7 @@ router.put('/', requireAuth, async (req, res) => {
       await run(db, `UPDATE users SET ${updates.join(', ')} WHERE id = ?`, params);
     }
 
-    const user = await queryOne(db, 'SELECT id, name, email, role, avatar_color, avatar_url, phone, department, job_title, bio, timezone, is_active, last_login, created_at FROM users WHERE id = ?', [req.userId]);
+    const user = await queryOne(db, 'SELECT id, name, email, role, avatar_color, avatar_url, phone, department, job_title, bio, timezone, business_hours, is_active, last_login, created_at FROM users WHERE id = ?', [req.userId]);
     res.json(user);
   } catch (e) { serverError(res, e); }
 });

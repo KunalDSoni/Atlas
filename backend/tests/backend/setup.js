@@ -89,6 +89,7 @@ async function createTestApp() {
   testApp.use('/api', require('../../routes/notifications'));
   testApp.use('/api', require('../../routes/worklogs'));
   testApp.use('/api', require('../../routes/timers'));
+  testApp.use('/api', require('../../routes/my-time'));
   testApp.use('/api', require('../../routes/releases'));
   testApp.use('/api', require('../../routes/workflows'));
   testApp.use('/api', require('../../routes/automations'));

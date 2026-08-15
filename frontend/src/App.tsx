@@ -18,6 +18,7 @@ import LoginScreen from '@/screens/login';
 const Dashboard = lazy(() => import('@/screens/dashboard'));
 const Profile = lazy(() => import('@/screens/profile'));
 const Settings = lazy(() => import('@/screens/settings'));
+const MyTime = lazy(() => import('@/screens/my-time'));
 const AdminOverview = lazy(() => import('@/screens/admin-overview'));
 const AdminUsers = lazy(() => import('@/screens/admin-users'));
 const AdminProjects = lazy(() => import('@/screens/admin-projects'));
@@ -116,6 +117,7 @@ function ProtectedLayout() {
               <Route path="/product/impact" element={<ImpactDashboard />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/my-time" element={<MyTime />} />
               <Route path="/admin" element={<RequireAdmin><AdminOverview /></RequireAdmin>} />
               <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
               <Route path="/admin/projects" element={<RequireAdmin><AdminProjects /></RequireAdmin>} />

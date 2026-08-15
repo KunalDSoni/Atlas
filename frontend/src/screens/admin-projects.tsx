@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { FolderKanban, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { Clock, FolderKanban, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { CustomFieldsManager } from '@/components/app/custom-fields-manager';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import { api } from '@/lib/api';
 import { useProjects } from '@/hooks/use-projects';
 import type { Project } from '@/lib/types';
 import { CreateProjectDialog } from '@/components/app/create-project-dialog';
+import { ProjectWorkingHoursDialog } from '@/components/app/project-working-hours-dialog';
 import { EmptyState, ErrorState, PageHeader, RowsSkeleton, UserAvatar } from '@/components/app/primitives';
 import { formatDate } from '@/lib/format';
 
@@ -23,6 +24,7 @@ export default function AdminProjectsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [fieldsProject, setFieldsProject] = useState<Project | null>(null);
+  const [hoursProject, setHoursProject] = useState<Project | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -136,6 +138,9 @@ export default function AdminProjectsScreen() {
                     <Button variant="ghost" size="icon" className="size-8 text-muted-foreground" aria-label={`Custom fields for ${p.name}`} title="Custom fields" onClick={() => setFieldsProject(p)}>
                       <SlidersHorizontal className="size-4" />
                     </Button>
+                    <Button variant="ghost" size="icon" className="size-8 text-muted-foreground" aria-label={`Working hours for ${p.name}`} title="Working hours" onClick={() => setHoursProject(p)}>
+                      <Clock className="size-4" />
+                    </Button>
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button variant="ghost" size="icon" className="size-8 text-destructive" aria-label={`Delete ${p.name}`}>
@@ -170,6 +175,11 @@ export default function AdminProjectsScreen() {
       )}
 
       <CreateProjectDialog open={createOpen} onOpenChange={setCreateOpen} onCreated={afterChange} />
+      <ProjectWorkingHoursDialog
+        project={hoursProject}
+        onOpenChange={(o) => !o && setHoursProject(null)}
+        onSaved={afterChange}
+      />
       <CustomFieldsManager
         projectId={fieldsProject?.id ?? null}
         projectName={fieldsProject?.name}
