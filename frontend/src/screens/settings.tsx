@@ -10,6 +10,7 @@ import { api } from '@/lib/api';
 import type { Settings } from '@/lib/types';
 import { ErrorState, PageHeader, RowsSkeleton } from '@/components/app/primitives';
 import { DeveloperSettings } from '@/components/app/developer-settings';
+import { WorkingHoursCard } from '@/components/app/working-hours-card';
 
 const NOTIFICATION_TOGGLES: { key: keyof Settings; label: string; hint: string }[] = [
   { key: 'email_notifications', label: 'Email notifications', hint: 'Receive updates by email.' },
@@ -87,6 +88,8 @@ export default function SettingsScreen() {
             </div>
           </CardContent>
         </Card>
+
+        <WorkingHoursCard />
 
         <Card>
           <CardHeader>

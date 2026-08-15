@@ -18,6 +18,7 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 const requireBoardAdmin = requireRole('admin', 'board_admin');
 const { auditLog } = require('../middleware/logger');
 const { serverError } = require('../utils/errors');
+const { validateBusinessHours } = require('../utils/flow');
 
 const router = express.Router();
 
@@ -69,9 +70,18 @@ router.put('/:id', requireAuth, requireBoardAdmin, async (req, res) => {
     // into every issue_key (ATLAS-3) and into every shared URL (/atlas/ATLAS-3),
     // so renaming it would strand both — issue_key is denormalised and would not
     // follow. Create a new project instead.
-    const { name, description, lead_id, status, wip_limits, is_service_desk } = req.body;
+    const { name, description, lead_id, status, wip_limits, is_service_desk, business_hours } = req.body;
     const updates = [];
     const params = [];
+    // Validated before anything is written, so a rejected profile cannot leave
+    // the other fields half-applied. Omitted leaves the stored value alone;
+    // an explicit null clears it.
+    if (business_hours !== undefined) {
+      const check = validateBusinessHours(business_hours);
+      if (!check.ok) return res.status(400).json({ error: check.error });
+      updates.push('business_hours = ?');
+      params.push(check.json);
+    }
     if (name !== undefined) { updates.push('name = ?'); params.push(name); }
     if (description !== undefined) { updates.push('description = ?'); params.push(description); }
     if (lead_id !== undefined) { updates.push('lead_id = ?'); params.push(lead_id); }

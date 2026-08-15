@@ -22,6 +22,19 @@ export type Priority = 'highest' | 'high' | 'medium' | 'low';
 export type SprintStatus = 'planning' | 'active' | 'completed';
 export type LinkType = 'relates_to' | 'blocks' | 'is_blocked_by' | 'duplicates' | 'is_duplicated_by';
 
+/**
+ * Working hours, stored as JSON on both projects and users. `work_days` holds
+ * ISO weekday numbers (1 = Monday), and `end_hour` must be strictly later than
+ * `start_hour` — the server rejects anything else, because a profile it cannot
+ * order reads back as unconfigured.
+ */
+export interface BusinessHours {
+  timezone: string;
+  work_days: number[];
+  start_hour: number;
+  end_hour: number;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -34,6 +47,8 @@ export interface User {
   job_title: string | null;
   bio: string | null;
   timezone: string | null;
+  /** Personal override of the project's working hours; null = use the project's. */
+  business_hours?: string | null;
   is_active: number;
   last_login: string | null;
   created_at: string;
@@ -49,6 +64,8 @@ export interface Project {
   key: string;
   description: string | null;
   wip_limits: string | null;
+  /** Working hours for everyone on the project; a user may override it. */
+  business_hours?: string | null;
   lead_id: string | null;
   created_at: string;
   lead_name: string | null;
