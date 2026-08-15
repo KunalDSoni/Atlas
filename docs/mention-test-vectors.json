@@ -1,0 +1,242 @@
+{
+  "_comment": "Conformance fixture for the three mention parser implementations: backend/utils/mentions.js, frontend/src/lib/mentions.ts, mobile/src/utils/mentions.ts. All three load this file in their test suites, so an implementation that drifts fails its own tests. Grammar: @[Display Name](user:<id>) where display is 1-100 chars excluding ']' and newline, and id matches [A-Za-z0-9_-]{1,64}.",
+
+  "parseMentionIds": [
+    {
+      "name": "single token",
+      "input": "Hey @[Kunal Soni](user:8f3c1d20-4e5a-4c1b-9f2e-7a6b5c4d3e2f) take a look",
+      "expected": ["8f3c1d20-4e5a-4c1b-9f2e-7a6b5c4d3e2f"]
+    },
+    {
+      "name": "two adjacent tokens",
+      "input": "@[Ann Lee](user:aaa-111) @[Bob Roy](user:bbb-222) please review",
+      "expected": ["aaa-111", "bbb-222"]
+    },
+    {
+      "name": "duplicate ids collapse, document order preserved",
+      "input": "@[Bob Roy](user:bbb-222) and again @[Bob Roy](user:bbb-222) and @[Ann Lee](user:aaa-111)",
+      "expected": ["bbb-222", "aaa-111"]
+    },
+    {
+      "name": "email address is not a mention",
+      "input": "Reach me at foo@bar.com or foo@[bar].com",
+      "expected": []
+    },
+    {
+      "name": "unclosed bracket is literal text",
+      "input": "An @[unfinished mention with no close",
+      "expected": []
+    },
+    {
+      "name": "close bracket inside display name does not parse",
+      "input": "@[Foo]Bar](user:ccc-333)",
+      "expected": []
+    },
+    {
+      "name": "legacy plain name is not a token",
+      "input": "cc @Kunal Soni please",
+      "expected": []
+    },
+    {
+      "name": "underscores and hyphens are valid id characters",
+      "input": "@[Sys Bot](user:svc_bot-01)",
+      "expected": ["svc_bot-01"]
+    },
+    {
+      "name": "empty string",
+      "input": "",
+      "expected": []
+    },
+    {
+      "name": "token spanning a newline in display is rejected",
+      "input": "@[Two\nLines](user:ddd-444)",
+      "expected": []
+    },
+    {
+      "name": "wrong scheme is rejected",
+      "input": "@[Ann Lee](issue:aaa-111)",
+      "expected": []
+    },
+    {
+      "name": "token at very start of text",
+      "input": "@[Ann Lee](user:aaa-111) opened this",
+      "expected": ["aaa-111"]
+    }
+  ],
+
+  "tokenizeMentions": [
+    {
+      "name": "text around a single mention",
+      "input": "Hey @[Ann Lee](user:aaa-111) hi",
+      "expected": [
+        { "type": "text", "value": "Hey " },
+        { "type": "mention", "id": "aaa-111", "name": "Ann Lee" },
+        { "type": "text", "value": " hi" }
+      ]
+    },
+    {
+      "name": "mention only",
+      "input": "@[Ann Lee](user:aaa-111)",
+      "expected": [{ "type": "mention", "id": "aaa-111", "name": "Ann Lee" }]
+    },
+    {
+      "name": "plain text only",
+      "input": "no mentions here",
+      "expected": [{ "type": "text", "value": "no mentions here" }]
+    },
+    {
+      "name": "adjacent mentions with a single space between",
+      "input": "@[Ann Lee](user:aaa-111) @[Bob Roy](user:bbb-222)",
+      "expected": [
+        { "type": "mention", "id": "aaa-111", "name": "Ann Lee" },
+        { "type": "text", "value": " " },
+        { "type": "mention", "id": "bbb-222", "name": "Bob Roy" }
+      ]
+    },
+    {
+      "name": "empty string yields no segments",
+      "input": "",
+      "expected": []
+    },
+    {
+      "name": "malformed token stays text",
+      "input": "@[Ann Lee](user:) hello",
+      "expected": [{ "type": "text", "value": "@[Ann Lee](user:) hello" }]
+    }
+  ],
+
+  "stripMentionSyntax": [
+    {
+      "name": "token becomes at-name",
+      "input": "Hey @[Kunal Soni](user:8f3c-1d20) look",
+      "expected": "Hey @Kunal Soni look"
+    },
+    {
+      "name": "multiple tokens",
+      "input": "@[Ann Lee](user:aaa-111) and @[Bob Roy](user:bbb-222)",
+      "expected": "@Ann Lee and @Bob Roy"
+    },
+    {
+      "name": "text without tokens is unchanged",
+      "input": "plain comment body",
+      "expected": "plain comment body"
+    },
+    {
+      "name": "legacy plain mention is unchanged",
+      "input": "cc @Kunal Soni",
+      "expected": "cc @Kunal Soni"
+    },
+    {
+      "name": "empty string",
+      "input": "",
+      "expected": ""
+    }
+  ],
+
+  "findMentionQuery": [
+    {
+      "name": "at start of field",
+      "input": "@ann",
+      "caret": 4,
+      "expected": { "start": 0, "query": "ann" }
+    },
+    {
+      "name": "after a space",
+      "input": "hello @ann",
+      "caret": 10,
+      "expected": { "start": 6, "query": "ann" }
+    },
+    {
+      "name": "bare at sign opens with an empty query",
+      "input": "@",
+      "caret": 1,
+      "expected": { "start": 0, "query": "" }
+    },
+    {
+      "name": "email address does not trigger",
+      "input": "foo@bar",
+      "caret": 7,
+      "expected": null
+    },
+    {
+      "name": "one space is allowed inside the query",
+      "input": "hi @John Do",
+      "caret": 11,
+      "expected": { "start": 3, "query": "John Do" }
+    },
+    {
+      "name": "two spaces close the query",
+      "input": "hi @John Doe x",
+      "caret": 14,
+      "expected": null
+    },
+    {
+      "name": "newline closes the query",
+      "input": "@ann\nnext",
+      "caret": 9,
+      "expected": null
+    },
+    {
+      "name": "after an opening parenthesis",
+      "input": "(@ann",
+      "caret": 5,
+      "expected": { "start": 1, "query": "ann" }
+    },
+    {
+      "name": "caret before the at sign finds nothing",
+      "input": "@ann",
+      "caret": 0,
+      "expected": null
+    },
+    {
+      "name": "an already-completed token does not re-trigger",
+      "input": "@[Ann Lee](user:aaa-111)",
+      "caret": 24,
+      "expected": null
+    },
+    {
+      "name": "query longer than 50 characters closes",
+      "input": "@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "caret": 53,
+      "expected": null
+    }
+  ],
+
+  "insertMention": [
+    {
+      "name": "replaces the partial query and appends a trailing space",
+      "input": "hi @an",
+      "caret": 6,
+      "user": { "id": "aaa-111", "name": "Ann Lee" },
+      "expected": { "text": "hi @[Ann Lee](user:aaa-111) ", "caret": 28 }
+    },
+    {
+      "name": "keeps text after the caret and does not double the existing space",
+      "input": "hi @an rest",
+      "caret": 6,
+      "user": { "id": "aaa-111", "name": "Ann Lee" },
+      "expected": { "text": "hi @[Ann Lee](user:aaa-111) rest", "caret": 27 }
+    },
+    {
+      "name": "bare at sign with no query",
+      "input": "@",
+      "caret": 1,
+      "user": { "id": "bbb-222", "name": "Bob Roy" },
+      "expected": { "text": "@[Bob Roy](user:bbb-222) ", "caret": 25 }
+    },
+    {
+      "name": "strips close bracket and newline from the display name",
+      "input": "@x",
+      "caret": 2,
+      "user": { "id": "ccc-333", "name": "Od]d\nName" },
+      "expected": { "text": "@[Odd Name](user:ccc-333) ", "caret": 26 }
+    },
+    {
+      "name": "no active query leaves the text untouched",
+      "input": "nothing here",
+      "caret": 12,
+      "user": { "id": "aaa-111", "name": "Ann Lee" },
+      "expected": { "text": "nothing here", "caret": 12 }
+    }
+  ]
+}
