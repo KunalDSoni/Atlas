@@ -1300,6 +1300,108 @@ const MIGRATIONS = [
       },
     ],
   },
+  {
+    id: '036_sprint_auto_key',
+    description: 'Identity for calendar-generated sprints (1st-15th, 16th-end of month)',
+    steps: [
+      {
+        // Which semi-monthly window a sprint was generated for ('2026-09-1').
+        // NULL marks a hand-made sprint, which is how the reconciler tells the
+        // sprints it owns from the ones a person made. Deliberately not the
+        // slug or the name: Jira — and Atlas — let a sprint be renamed even
+        // after completion, so a name match would misfire the first time
+        // somebody tidied a sprint title.
+        addColumn: {
+          table: 'sprints', column: 'auto_key',
+          sqlite: 'ALTER TABLE sprints ADD COLUMN auto_key TEXT',
+          mysql: 'ALTER TABLE sprints ADD COLUMN auto_key VARCHAR(32) NULL',
+        },
+      },
+      {
+        // Load-bearing, not just hygiene: this is what makes reconciliation
+        // race-safe. Two concurrent requests both try to create the window's
+        // sprint, the index lets exactly one through, and the loser re-reads
+        // instead of duplicating the sprint.
+        //
+        // NULLs are distinct in both engines, so any number of manual sprints
+        // coexist under it.
+        sql: {
+          sqlite: 'CREATE UNIQUE INDEX IF NOT EXISTS idx_sprints_project_auto_key ON sprints(project_id, auto_key)',
+          mysql: 'CREATE UNIQUE INDEX idx_sprints_project_auto_key ON sprints(project_id, auto_key)',
+        },
+      },
+    ],
+  },
+  {
+    id: '037_activity_log_system_actor',
+    description: 'Let activity_log record a change no user made',
+    steps: [
+      // Every row in activity_log has until now been somebody's doing, so
+      // user_id was NOT NULL. The sprint scheduler breaks that assumption: when
+      // a window closes it moves unfinished work forward, and no user asked for
+      // it — the move happens on whoever's page load happened to cross the
+      // boundary, who is emphatically not the author of the change.
+      //
+      // The alternatives were worse. Attributing the sweep to that reader, or to
+      // the project lead, writes a lie into the audit trail. Inventing a
+      // system user puts a fake person in every assignee picker and @mention
+      // list. NULL already means "no user" everywhere else: audit_log.user_id is
+      // nullable, routes/activity.js LEFT JOINs users, and audit-log.tsx renders
+      // a null actor as "System".
+      //
+      // Skipping the row was not an option either: previousSprints
+      // (routes/issues.js:111) reads activity_log and nothing else to build an
+      // issue's rollover history, so a sweep that wrote no row would silently
+      // cost automatically-rolled work the history hand-rolled work keeps.
+      {
+        // SQLite cannot drop a NOT NULL in place, so activity_log is rebuilt.
+        // Same approach as 011: the new DDL is DERIVED from the existing one so
+        // that whatever column set this particular deployment has accumulated
+        // survives by construction, instead of being flattened to a shape
+        // hardcoded here.
+        run: async (adapter) => {
+          if (adapter.driver !== 'sqlite') return;
+
+          const rows = await adapter.all(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='activity_log'");
+          const ddl = rows[0] && rows[0].sql;
+          // No table yet (a fresh install builds it already-nullable from
+          // database.js), or it has been rebuilt already. Both make this a no-op,
+          // which is what keeps the step idempotent.
+          if (!ddl || !/user_id\s+TEXT\s+NOT\s+NULL/i.test(ddl)) return;
+
+          const rebuilt = ddl
+            .replace(/CREATE\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?["'`[]?activity_log["'`\]]?/i,
+              'CREATE TABLE activity_log_rebuild_037')
+            .replace(/user_id\s+TEXT\s+NOT\s+NULL/i, 'user_id TEXT');
+
+          if (!/activity_log_rebuild_037/.test(rebuilt) || /user_id\s+TEXT\s+NOT\s+NULL/i.test(rebuilt)) {
+            throw new Error('037: could not derive the rebuilt activity_log DDL from ' + ddl);
+          }
+
+          const indexes = await adapter.all(
+            "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='activity_log' AND sql IS NOT NULL");
+
+          await adapter.exec('DROP TABLE IF EXISTS activity_log_rebuild_037');
+          await adapter.exec(rebuilt);
+          await adapter.exec('INSERT INTO activity_log_rebuild_037 SELECT * FROM activity_log');
+          await adapter.exec('DROP TABLE activity_log');
+          await adapter.exec('ALTER TABLE activity_log_rebuild_037 RENAME TO activity_log');
+          for (const i of indexes) {
+            await adapter.exec(i.sql);
+          }
+        },
+      },
+      {
+        // MySQL's equivalent. Unlike 011 there is no CHECK constraint on this
+        // column to outlive the MODIFY, so the plain form is correct here.
+        run: async (adapter) => {
+          if (adapter.driver !== 'mysql') return;
+          await adapter.exec('ALTER TABLE activity_log MODIFY user_id VARCHAR(36) NULL');
+        },
+      },
+    ],
+  },
 ];
 
 const LEDGER_SQL = {

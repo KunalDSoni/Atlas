@@ -82,8 +82,10 @@ const SCHEMA_SQL = [
     status TEXT DEFAULT 'planning' CHECK(status IN ('planning','active','completed')),
     start_date TEXT,
     end_date TEXT,
+    auto_key TEXT,
     created_at TEXT DEFAULT (datetime('now')),
-    UNIQUE(project_id, slug)
+    UNIQUE(project_id, slug),
+    UNIQUE(project_id, auto_key)
   )`,
   `CREATE TABLE IF NOT EXISTS issues (
     id TEXT PRIMARY KEY,
@@ -126,7 +128,9 @@ const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS activity_log (
     id TEXT PRIMARY KEY,
     issue_id TEXT NOT NULL REFERENCES issues(id),
-    user_id TEXT NOT NULL REFERENCES users(id),
+    -- Nullable: the sprint scheduler moves work with no user behind it. See
+    -- migration 037_activity_log_system_actor.
+    user_id TEXT REFERENCES users(id),
     action TEXT NOT NULL,
     field TEXT,
     old_value TEXT,
@@ -668,8 +672,10 @@ const MYSQL_SCHEMA_SQL = [
     status VARCHAR(20) DEFAULT 'planning' CHECK(status IN ('planning','active','completed')),
     start_date DATETIME NULL,
     end_date DATETIME NULL,
+    auto_key VARCHAR(32) NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uniq_sprints_project_slug (project_id, slug)
+    UNIQUE KEY uniq_sprints_project_slug (project_id, slug),
+    UNIQUE KEY uniq_sprints_project_auto_key (project_id, auto_key)
   ) DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS issues (
     id VARCHAR(36) PRIMARY KEY,
@@ -712,7 +718,7 @@ const MYSQL_SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS activity_log (
     id VARCHAR(36) PRIMARY KEY,
     issue_id VARCHAR(36) NOT NULL,
-    user_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(36) NULL,
     action VARCHAR(255) NOT NULL,
     field VARCHAR(120),
     old_value TEXT,
