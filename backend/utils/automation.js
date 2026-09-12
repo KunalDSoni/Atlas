@@ -5,6 +5,9 @@
 const { queryOne, queryAll, run } = require('../database');
 const { notify } = require('./notify');
 const { issueLink } = require('./links');
+const { categoryOf } = require('./flow');
+const { projectStatuses } = require('./workflow-statuses');
+const { completionBlock } = require('./completion-guard');
 
 function parse(json, fallback) {
   try { return JSON.parse(json) ?? fallback; } catch { return fallback; }
@@ -25,6 +28,17 @@ async function applyActions(db, rule, issue, actorId) {
       switch (action.type) {
         case 'set_status': {
           if (issue.status !== action.value) {
+            // The completion guard binds rules too: a rule that closed a parent
+            // out from under its open children would be a back door around the
+            // same check the UI enforces. There is no run log to write the skip
+            // to, and an activity row would read as a change that never
+            // happened, so the skip is reported to the server log only.
+            const statuses = await projectStatuses(db, issue.project_id);
+            const blocked = await completionBlock(db, issue, action.value, statuses);
+            if (blocked) {
+              console.warn(`automation set_status skipped (rule ${rule.id}): ${blocked.error}`);
+              break;
+            }
             await run(db, "UPDATE issues SET status = ?, updated_at = datetime('now') WHERE id = ?", [action.value, issue.id]);
           }
           break;
@@ -88,10 +102,15 @@ async function runAutomation(db, { type, issue, actorId }) {
 async function checkAllSubtasksDone(db, subtask, actorId) {
   if (!subtask || subtask.type !== 'subtask' || !subtask.parent_id) return;
   try {
-    const counts = await queryOne(db,
-      "SELECT COUNT(*) as total, SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as done FROM issues WHERE parent_id = ? AND type = 'subtask'",
-      [subtask.parent_id]);
-    if (Number(counts.total) > 0 && Number(counts.total) === Number(counts.done || 0)) {
+    // Done is a status CATEGORY, not the literal key 'done'. A project that
+    // renamed its done column, or added a second one, used to never fire this
+    // trigger because every subtask failed a `status = 'done'` comparison.
+    const statuses = await projectStatuses(db, subtask.project_id);
+    const siblings = await queryAll(db,
+      "SELECT status FROM issues WHERE parent_id = ? AND type = 'subtask'", [subtask.parent_id]);
+    const allDone = siblings.length > 0
+      && siblings.every((s) => categoryOf(s.status, statuses) === 'done');
+    if (allDone) {
       const parent = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [subtask.parent_id]);
       await runAutomation(db, { type: 'all_subtasks_done', issue: parent, actorId });
     }

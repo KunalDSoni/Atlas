@@ -8,6 +8,7 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
+import { notifyCompletionBlocked } from '@/lib/completion-blockers';
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/auth-provider';
 import { useWorkflow } from '@/hooks/use-workflow';
@@ -137,7 +138,9 @@ export function useIssueDetail(
       void load();
     } catch (e) {
       setIssue(previous);
-      toast.error('Update failed', { description: e instanceof Error ? e.message : undefined });
+      if (!notifyCompletionBlocked(e)) {
+        toast.error('Update failed', { description: e instanceof Error ? e.message : undefined });
+      }
     }
   }
 

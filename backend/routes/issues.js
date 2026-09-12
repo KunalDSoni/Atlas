@@ -23,6 +23,7 @@ const sla = require('../utils/sla-clocks');
 const { issueLink } = require('../utils/links');
 const { applyAutoWorklog, liveInProgressMinutes } = require('../utils/auto-worklog');
 const { categoryOf } = require('../utils/flow');
+const { completionBlock } = require('../utils/completion-guard');
 const { closeStaleSegments, commitTimer, issueTimerUserIds } = require('../utils/timers');
 const { recomputeTimeSpent } = require('../utils/worklog-sync');
 
@@ -505,6 +506,9 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
       if (!statuses.some((s) => s.key === req.body.status)) {
         return res.status(400).json({ error: 'Unknown status for this project' });
       }
+      // A parent cannot be completed over the top of its open children.
+      const blocked = await completionBlock(db, issue, req.body.status, statuses);
+      if (blocked) return res.status(409).json(blocked);
     }
 
     const allowed = ['title', 'description', 'type', 'status', 'priority', 'assignee_id', 'sprint_id', 'story_points', 'board_order', 'labels', 'due_date', 'original_estimate', 'time_spent', 'parent_id', 'epic_color', 'fix_version_id', 'component_id', 'start_date'];
@@ -682,6 +686,10 @@ router.put('/issues/:id/move', requireAuth, async (req, res) => {
       if (!statuses.some((s) => s.key === status)) {
         return res.status(400).json({ error: 'Unknown status for this project' });
       }
+      // Dragging a card onto a done column is the same transition as picking
+      // the status in the form, so it answers to the same guard.
+      const blocked = await completionBlock(db, issue, status, statuses);
+      if (blocked) return res.status(409).json(blocked);
     }
     const updates = [];
     const params = [];

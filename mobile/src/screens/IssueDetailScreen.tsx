@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScrollView, Text, StyleSheet, ActivityIndicator, Button } from 'react-native';
+import { Alert, ScrollView, Text, StyleSheet, ActivityIndicator, Button } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { fetchIssue, updateIssue } from '../api/issues';
@@ -7,6 +7,7 @@ import { fetchProjectStatuses } from '../api/statuses';
 import { fetchProjectMembers } from '../api/members';
 import { fetchTimer, startTimer, pauseTimer, logWork } from '../api/timers';
 import type { TimerStopReason } from '../api/timers';
+import { getErrorMessage } from '../utils/errors';
 import { StatusPicker } from '../components/StatusPicker';
 import { AssigneePicker } from '../components/AssigneePicker';
 import { CommentList } from '../components/CommentList';
@@ -65,6 +66,13 @@ export function IssueDetailScreen({ route }: Props) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
       queryClient.invalidateQueries({ queryKey: ['issues', projectId] });
+    },
+    // The server rejects completing a parent whose children are still open, and
+    // its message names each one. Without this the picker would just snap back
+    // on the refetch with nothing said.
+    onError: (error: unknown) => {
+      queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
+      Alert.alert('Could not update issue', getErrorMessage(error));
     },
   });
 

@@ -12,29 +12,10 @@ const { v4: uuidv4 } = require('uuid');
 const { getDb, queryOne, queryAll, run } = require('../database');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { serverError } = require('../utils/errors');
+const { CATEGORIES, DEFAULT_STATUSES, projectStatuses } = require('../utils/workflow-statuses');
 
 const requireBoardAdmin = requireRole('admin', 'board_admin');
 const router = express.Router();
-
-const CATEGORIES = ['todo', 'in_progress', 'done'];
-
-/** Built-in workflow used until a project defines its own. */
-const DEFAULT_STATUSES = [
-  { key: 'todo', label: 'To Do', category: 'todo', position: 0 },
-  { key: 'in_progress', label: 'In Progress', category: 'in_progress', position: 1 },
-  { key: 'blocked', label: 'Blocked', category: 'in_progress', position: 2 },
-  { key: 'in_review', label: 'In Review', category: 'in_progress', position: 3 },
-  { key: 'done', label: 'Done', category: 'done', position: 4 },
-];
-
-async function projectStatuses(db, projectId) {
-  const rows = await queryAll(db,
-    'SELECT * FROM project_statuses WHERE project_id = ? ORDER BY position, key', [projectId]);
-  if (rows.length === 0) {
-    return DEFAULT_STATUSES.map((s) => ({ id: `default-${s.key}`, project_id: projectId, builtin: true, ...s }));
-  }
-  return rows.map((r) => ({ ...r, position: Number(r.position), builtin: false }));
-}
 
 // GET /api/projects/:projectId/statuses
 router.get('/projects/:projectId/statuses', requireAuth, async (req, res) => {
