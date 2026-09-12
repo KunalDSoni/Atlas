@@ -264,6 +264,39 @@ describe('sprints a person made', () => {
     expect(await sprintOfIssue(issue.id)).toBe(manual.body.id);
   });
 
+  test('lets a sprint somebody started keep running', async () => {
+    const pid = await freshProject('ManualStarted');
+    await reconcileProject(db, pid, utc(2026, 9, 3));
+
+    // Started by hand mid-window, the way anyone would.
+    const manual = await request(app)
+      .post(`/api/projects/${pid}/sprints`).set(headers).send({ name: 'Mine' });
+    await run(db, "UPDATE sprints SET status = 'active' WHERE id = ?", [manual.body.id]);
+
+    await reconcileProject(db, pid, utc(2026, 9, 4));
+
+    // Completing it here would be circular — a hand-made sprint carries no end
+    // date, so its own presence would trigger the handover that kills it, and
+    // nobody could ever run a sprint of their own.
+    expect(await queryOne(db, 'SELECT status FROM sprints WHERE id = ?', [manual.body.id]))
+      .toMatchObject({ status: 'active' });
+  });
+
+  test('sweeps that sprint at the next real handover', async () => {
+    const pid = await freshProject('ManualUntilBoundary');
+    await reconcileProject(db, pid, utc(2026, 9, 3));
+    const manual = await request(app)
+      .post(`/api/projects/${pid}/sprints`).set(headers).send({ name: 'Mine too' });
+    await run(db, "UPDATE sprints SET status = 'active' WHERE id = ?", [manual.body.id]);
+    const issue = await makeIssue(pid, 'Work in mine', manual.body.id);
+
+    await reconcileProject(db, pid, utc(2026, 9, 16));
+
+    expect(await queryOne(db, 'SELECT status FROM sprints WHERE id = ?', [manual.body.id]))
+      .toMatchObject({ status: 'completed' });
+    expect(await sprintOfIssue(issue.id)).toBe((await byKey(pid, '2026-09-2')).id);
+  });
+
   test('does not resurrect a window somebody completed early', async () => {
     const pid = await freshProject('ClosedEarly');
     await reconcileProject(db, pid, utc(2026, 9, 3));
@@ -275,6 +308,51 @@ describe('sprints a person made', () => {
     // Coming back from completed is what reopen is for, and it stays a
     // deliberate, audited, human decision.
     expect(await byKey(pid, '2026-09-1')).toMatchObject({ status: 'completed' });
+  });
+
+  // The calendar acts at a handover. Between handovers a person is in charge —
+  // without which the scheduler re-activates the current window on every read
+  // and quietly takes two abilities away.
+  test('leaves the active slot empty when a person parks the running sprint', async () => {
+    const pid = await freshProject('Parked');
+    await reconcileProject(db, pid, utc(2026, 9, 3));
+    const first = await byKey(pid, '2026-09-1');
+    await run(db, "UPDATE sprints SET status = 'planning' WHERE id = ?", [first.id]);
+
+    await reconcileProject(db, pid, utc(2026, 9, 4));
+
+    // Re-activating here would make POST /sprints/:id/reopen permanently
+    // unreachable, since reopen refuses while another sprint is active.
+    expect(await byKey(pid, '2026-09-1')).toMatchObject({ status: 'planning' });
+    expect((await sprintsOf(pid)).filter((s) => s.status === 'active')).toHaveLength(0);
+  });
+
+  test('does not undo a reopened sprint on the next read', async () => {
+    const pid = await freshProject('Reopened');
+    await reconcileProject(db, pid, utc(2026, 9, 3));
+    const first = await byKey(pid, '2026-09-1');
+
+    // The real flow: park the running sprint, then reopen a completed one with
+    // a new end date — which is how a person says "this runs until then".
+    await run(db, "UPDATE sprints SET status = 'completed' WHERE id = ?", [first.id]);
+    await run(db, "UPDATE sprints SET status = 'active', end_date = '2026-12-31' WHERE id = ?", [first.id]);
+
+    await reconcileProject(db, pid, utc(2026, 9, 4));
+
+    expect(await byKey(pid, '2026-09-1')).toMatchObject({ status: 'active' });
+  });
+
+  test('resumes at the next handover, once the reopened sprint has run out', async () => {
+    const pid = await freshProject('ResumeAfterReopen');
+    await reconcileProject(db, pid, utc(2026, 9, 3));
+    const first = await byKey(pid, '2026-09-1');
+    await run(db, "UPDATE sprints SET end_date = '2026-09-20' WHERE id = ?", [first.id]);
+
+    // Past that end date the calendar takes the slot back.
+    await reconcileProject(db, pid, utc(2026, 9, 21));
+
+    expect(await byKey(pid, '2026-09-1')).toMatchObject({ status: 'completed' });
+    expect(await byKey(pid, '2026-09-2')).toMatchObject({ status: 'active' });
   });
 
   test('tolerates a manual sprint already holding the slug a window wants', async () => {

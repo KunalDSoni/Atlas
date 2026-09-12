@@ -17,7 +17,13 @@ test('the board is titled with the sprint it shows', async ({ page }) => {
   await expect(page.locator('article').first()).toBeVisible();
 
   const title = (await page.getByRole('heading', { level: 1 }).innerText()).trim();
-  expect(title).toMatch(/^Sprint /);
+  // Sprints are named for the calendar window they cover now ("Sep 1–15, 2026"),
+  // so a fixed "Sprint " prefix is no longer what a real sprint looks like. What
+  // the prefix was actually standing in for is the check that survives: the
+  // heading is a sprint's name and not the "Board" placeholder the skeleton
+  // renders while the sprints load.
+  expect(title).not.toBe('Board');
+  expect(title.length).toBeGreaterThan(0);
 
   // The heading names the sprint the cards actually come from — the board
   // filters to it, so every card carries the same sprint badge.

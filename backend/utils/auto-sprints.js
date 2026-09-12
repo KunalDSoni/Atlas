@@ -133,19 +133,54 @@ async function reconcileProject(db, projectId, now = new Date()) {
   }
 
   const takenSlugs = sprints.map((s) => s.slug).filter(Boolean);
+  const createdCurrent = !currentExisting;
   const currentRow = await ensureWindowSprint(db, projectId, current, currentExisting, takenSlugs);
   const nextRow = await ensureWindowSprint(db, projectId, next, byKey.get(next.key), takenSlugs);
+
+  // The calendar acts at a HANDOVER, not merely because a window is current.
+  // Between handovers a person is in charge, and the scheduler keeps its hands
+  // off the active slot.
+  //
+  // Without this the scheduler re-activates the current window on every single
+  // read, which quietly breaks two things a person is entitled to do:
+  //
+  //   - Parking the running sprint. Set it to planning, and the next page load
+  //     puts it straight back.
+  //   - Reopening a sprint at all. Reopen refuses while another sprint is
+  //     active, so an always-active calendar sprint makes POST /sprints/:id/
+  //     reopen permanently unreachable — and a reopen that did land would be
+  //     completed again on the next read.
+  //
+  // A sprint whose end date is still ahead of us is somebody's deliberate
+  // arrangement rather than something the calendar has overtaken: reopen sets a
+  // new end date precisely to say "this one runs until then". Such a sprint is
+  // not outgoing, so its presence alone does not trigger a handover.
+  //
+  // What counts as a handover is narrow on purpose: the calendar materialising
+  // this window for the first time, or a sprint the calendar itself scheduled
+  // for an EARLIER window still holding the slot past its end date. A sprint
+  // somebody made by hand never triggers one. Letting it would be circular —
+  // a hand-made sprint has no end date, so its own presence would trigger the
+  // handover that immediately completes it, and no one could ever run a sprint
+  // of their own. Such a sprint is still swept at the next real handover, which
+  // is what "swept at the next boundary" was asked to mean.
+  const today = dayOf(now);
+  const stillRunning = (s) => s.end_date && dayOf(s.end_date) >= today;
+  const overtaken = (s) => s.auto_key && s.auto_key !== current.key && !stillRunning(s);
+  const handingOver = createdCurrent || actives.some(overtaken);
+  if (!handingOver) return;
 
   // Unfinished work lands in the current window, unless a human already
   // completed it early — never sweep work into a closed sprint.
   const destination = [currentRow, nextRow].find((s) => s.status !== 'completed') ?? null;
   const destinationId = destination ? destination.id : null;
 
-  // Every active sprint that is not this window's is outgoing. That deliberately
-  // includes hand-made sprints (auto_key IS NULL): global scheduling means an
-  // in-flight manual sprint is swept at the first boundary, which is the
-  // behaviour this feature was asked for. Manual sprints still in 'planning'
-  // are left alone — they are not active, so they block nothing.
+  // Once the calendar is handing over, EVERY other active sprint closes —
+  // including one whose end date is still ahead. Only one sprint may be active,
+  // and that deliberately covers hand-made sprints (auto_key IS NULL): global
+  // scheduling means an in-flight manual sprint is swept at the first handover,
+  // which is the behaviour this feature was asked for. Manual sprints still in
+  // 'planning' are left alone — they are not active, so they block nothing.
   for (const active of actives) {
     if (active.id === currentRow.id) continue;
     await completeOutgoing(db, active, destinationId);
@@ -162,6 +197,12 @@ async function reconcileProject(db, projectId, now = new Date()) {
   // A completed current window is left completed. Bringing a sprint back from
   // completed is what POST /sprints/:id/reopen is for, and it stays the
   // deliberate, audited, human path it is today.
+}
+
+/** The calendar day of a Date or a stored date string, in UTC. */
+function dayOf(value) {
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value).slice(0, 10);
 }
 
 module.exports = { reconcileProject, sweepUnfinished };
