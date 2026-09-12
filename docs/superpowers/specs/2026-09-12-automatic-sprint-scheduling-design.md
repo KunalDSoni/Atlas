@@ -203,7 +203,17 @@ waiting on the wall clock:
 - An in-flight manual sprint is swept and completed at the first reconcile.
 - A manual sprint in `planning` is left untouched.
 
-The existing 40 sprint tests must stay green.
+The existing 40 sprint tests must stay green, plus migration tests covering `036`'s
+unique index and `037` rebuilding a **legacy `NOT NULL`** `activity_log` — the shape
+every deployed instance actually runs it against, and the one a fresh-schema test
+would never exercise.
+
+Three existing tests needed their fixtures adjusted, all for the same reason: they
+reached for a sprint with `sprints.body[0]` and got a completed calendar window,
+which cannot accept new work. They now ask for a sprint that is open. The rules they
+assert are unchanged; only the fixture selection became explicit about what it needs.
+The fourth was `sprints.test.js`'s delete test, which needed its sprints separated in
+time for "the next sprint" to be a well-defined thing at all.
 
 ## Risks
 
