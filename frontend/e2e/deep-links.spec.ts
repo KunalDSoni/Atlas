@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { login, assertNoCrash } from './helpers';
+import { login, assertNoCrash, seedBoardIssue } from './helpers';
 
 test.describe('project-scoped URLs', () => {
   test('the board lives under its project key', async ({ page }) => {
@@ -58,9 +58,17 @@ test.describe('navigation carries the project', () => {
   });
 });
 
+// These specs need a card to click. The board shows one sprint's work, and
+// sprints are scheduled on a calendar now, so a project whose issues all sit in
+// the backlog has an active sprint holding nothing — its board used to be
+// unscoped and show everything. The card is arranged for rather than assumed.
 test.describe('an issue is a place', () => {
-  test('clicking a card pushes its URL and opens the drawer', async ({ page }) => {
+  test.beforeEach(async ({ page }) => {
     await login(page);
+    await seedBoardIssue(page);
+  });
+
+  test('clicking a card pushes its URL and opens the drawer', async ({ page }) => {
     await page.goto('/atlas/board');
     const card = page.locator('[data-issue-key]').first();
     const key = await card.getAttribute('data-issue-key');
@@ -70,7 +78,6 @@ test.describe('an issue is a place', () => {
   });
 
   test('back closes the drawer and returns to the board', async ({ page }) => {
-    await login(page);
     await page.goto('/atlas/board');
     await page.locator('[data-issue-key]').first().click();
     await page.goBack();
@@ -79,7 +86,6 @@ test.describe('an issue is a place', () => {
   });
 
   test('the same URL opened cold renders a full page, not a drawer', async ({ page }) => {
-    await login(page);
     await page.goto('/atlas/board');
     const key = await page.locator('[data-issue-key]').first().getAttribute('data-issue-key');
     await page.goto(`/atlas/${key}`);
@@ -89,14 +95,12 @@ test.describe('an issue is a place', () => {
   });
 
   test('an unknown issue key says so', async ({ page }) => {
-    await login(page);
     await page.goto('/atlas/ATLAS-999999');
     await expect(page.getByText(/issue not found/i)).toBeVisible();
   });
 
   // Deferred from the legacy-redirect task: needs data-issue-id on the card.
   test('an old ?issue=<uuid> link resolves to the permanent URL', async ({ page }) => {
-    await login(page);
     await page.goto('/atlas/board');
     const card = page.locator('[data-issue-key]').first();
     const key = await card.getAttribute('data-issue-key');

@@ -215,6 +215,41 @@ assert are unchanged; only the fixture selection became explicit about what it n
 The fourth was `sprints.test.js`'s delete test, which needed its sprints separated in
 time for "the next sprint" to be a well-defined thing at all.
 
+## What the E2E suite caught that the unit tests did not
+
+Every unit test above exercises a project that *has* sprints. Three faults only
+appear in a project that does not, or in a person disagreeing with the scheduler:
+
+**The scheduler overrode people.** It re-activated the current window on every
+read, which silently removed two abilities: parking the running sprint (the next
+page load put it back), and reopening anything at all — reopen refuses while
+another sprint is active, so an always-active calendar sprint made
+`POST /sprints/:id/reopen` unreachable, and a reopen that did land was completed
+again on the next read. The calendar now acts only at a handover it drives: this
+window being materialised for the first time, or a sprint it scheduled for an
+earlier window still holding the slot past its end date. Between handovers a
+person is in charge.
+
+**The handover test was circular.** A hand-made sprint carries no end date, so its
+own presence counted as "something outgoing holds the slot" — triggering the
+handover that immediately completed it. Nobody could run a sprint of their own.
+Only a sprint the calendar itself scheduled can trigger a handover now; a
+hand-made one is swept at the next real boundary, which is what "swept at the
+next boundary" was asked to mean.
+
+**A project with no sprints loses its board.** `board.tsx` resolves
+`active ?? planning ?? null`, and a project that never used sprints hit the
+`null` branch and showed everything. Give it an empty calendar sprint and the
+board scopes to zero issues — in the demo seed, "Atlas Development" has 219
+issues and no sprints, so its board goes blank. Nothing is deleted and the work
+stays in the backlog, but it reads as a wiped board.
+
+This last one was **put to the user**, because the consequence was not part of
+what they had chosen and it is not reversible once deployed. They chose fully
+global, unchanged. It ships as the second option above: every project gets
+calendar sprints, and a backlog-only project's board shows its new, empty sprint
+until work is planned into it.
+
 ## Risks
 
 **This changes data on a live system with no opt-out.** On first load after deploy,
@@ -224,3 +259,7 @@ here because the audit trail is the only way back to what moved.
 
 The demo seed (`Sprint 12`, active, dated April 2026) will be auto-completed on first
 view like any other in-flight sprint.
+
+Separately, **every project that has never used sprints gets an empty active sprint,
+and its board goes blank** until work is planned into it. The work is untouched in
+the backlog. This was raised with the user and confirmed rather than assumed.
