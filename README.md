@@ -279,6 +279,40 @@ allowed — only new work into a closed sprint is refused. Resubmitting an issue
 unchanged `sprint_id` is not treated as a new assignment, so editing other fields
 on work that sits in a completed sprint keeps working.
 
+#### Automatic sprint scheduling
+
+Sprints run on a fixed calendar in every project. There is no setting:
+
+| Window | Runs |
+|---|---|
+| First | the 1st through the 15th |
+| Second | the 16th through the last day of the month |
+
+Atlas creates each window's sprint, activates it when the window opens, completes
+the outgoing one, and moves unfinished work into the incoming sprint. An issue
+leaves a closing sprint when it is unfinished **or** still has an unfinished
+subtask — which is also what keeps the "finish the subtasks first" rule above
+satisfiable rather than deadlocking the handover. Every rule in the table above
+still applies; nothing about completing or reopening a sprint by hand changes.
+
+Sprints you create yourself keep working alongside the generated ones. A manual
+sprint left in `planning` is untouched; a manual sprint that is *active* when a
+window opens is completed like any other outgoing sprint, since only one sprint
+can be active at a time.
+
+Two details worth knowing:
+
+- **There is no cron.** Atlas reconciles against the calendar on the next read of
+  a sprint endpoint, so a boundary takes effect the first time someone opens the
+  board or the sprints screen after it passes — not at midnight exactly.
+- **Boundaries are UTC.** Projects carry no timezone (it lives on users), so a
+  team far east of Greenwich sees the handover land up to a day off their local
+  calendar.
+
+Generated sprints are marked by `sprints.auto_key` (`2026-09-1`); a null means a
+person made it. Every automatic action is in the audit log under the actor
+`Atlas scheduler`, with the number of issues it moved.
+
 ### Issues Module
 | Method | Endpoint | Description |
 |--------|----------|-------------|

@@ -24,7 +24,10 @@ beforeAll(async () => {
   const projects = await request(getApp()).get('/api/projects').set(headers);
   projectId = projects.body[0].id;
   const sprints = await request(getApp()).get(`/api/projects/${projectId}/sprints`).set(headers);
-  sprintId = sprints.body[0].id;
+  // Explicitly an open one. Sprints are scheduled on a calendar now, so the list
+  // holds completed windows too — and an issue cannot be moved into a completed
+  // sprint, which would leave this suite asserting against an empty activity log.
+  sprintId = sprints.body.find((s) => s.status !== 'completed').id;
 });
 
 describe('board moves are recorded in activity_log', () => {

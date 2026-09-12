@@ -115,9 +115,13 @@ export function IssueTabs({ detail }: { detail: IssueDetail }) {
                       <ul className="space-y-2.5">
                         {activity.map((a) => (
                           <li key={a.id} className="flex items-start gap-2.5 text-sm">
-                            <UserAvatar name={a.user_name} color={a.user_color} className="size-5" />
+                            {/* An entry with no user is the sprint scheduler rolling
+                                unfinished work into the next window — nobody asked
+                                for it, so it is credited to Atlas rather than to
+                                whoever's page load happened to cross the boundary. */}
+                            <UserAvatar name={a.user_name ?? 'Atlas'} color={a.user_color} className="size-5" />
                             <p className="min-w-0 flex-1 text-muted-foreground">
-                              <span className="font-medium text-foreground">{a.user_name}</span> changed{' '}
+                              <span className="font-medium text-foreground">{a.user_name ?? 'Atlas'}</span> changed{' '}
                               <span className="font-medium text-foreground">{a.field}</span>
                               {a.old_value && <> from <span className="text-foreground">{stripMentionSyntax(a.old_value)}</span></>}
                               {a.new_value && <> to <span className="text-foreground">{stripMentionSyntax(a.new_value)}</span></>}

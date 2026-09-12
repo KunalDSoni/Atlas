@@ -24,12 +24,36 @@ const router = express.Router();
 // sprint-lifecycle decision has to agree on what finished means: get this wrong and
 // a project whose done column is "shipped" reports 0% on a finished sprint, has its
 // shipped work swept out as "unfinished" at completion, and cannot close a sprint
-// at all once a shipped subtask exists.
-const doneWhere = (alias) => `(${alias}.status = 'done' OR EXISTS (
-  SELECT 1 FROM project_statuses ps
-  WHERE ps.project_id = ${alias}.project_id AND ps.key = ${alias}.status AND ps.category = 'done'))`;
+// at all once a shipped subtask exists. Shared with the automatic scheduler, which
+// decides which issues get moved out of a closing sprint, in utils/done-status.js.
+const { doneWhere } = require('../utils/done-status');
+const { reconcileProject } = require('../utils/auto-sprints');
 
 const CHILD_DONE = doneWhere('child');
+
+// The one ordering "the list" means, used by both the GET that renders it and
+// nextSprintAfter, which walks it to find a deleted sprint's successor.
+//
+// Calendar order first. Sprints used to be ordered by creation alone, which was
+// a fair proxy for sequence while a human made them one at a time. Automatic
+// scheduling breaks that proxy: it writes a window and the window after it in
+// the same breath, so creation order says nothing about which runs first, and
+// "Sep 16–30" could list above "Sep 1–15".
+//
+// `(start_date IS NULL)` leads so undated sprints sort last rather than first —
+// SQLite and MySQL both sort NULLs first in ASC, and both evaluate the
+// comparison as 0/1, so this is the portable spelling of NULLS LAST. An undated
+// hand-made sprint is not scheduled against anything and belongs after the ones
+// that are.
+//
+// `id` closes it off. created_at has second resolution, so undated sprints made
+// in the same second tie and come back in whatever order the engine happened to
+// scan — the list could reorder itself between two reads, and deleting a sprint
+// could hand its issues to a different successor each time. Ordering by a random
+// UUID is arbitrary, but it is *fixed*, which is the property that matters. Same
+// reasoning as the tiebreak in previousSprints (routes/issues.js).
+const SPRINT_LIST_ORDER = (sql) =>
+  `${sql} ORDER BY (start_date IS NULL), start_date, created_at, id`;
 
 // Jira lets you rename a completed sprint but not re-date or re-status one, and
 // the only way back to active is POST /sprints/:id/reopen, which carries its own
@@ -81,8 +105,8 @@ async function unfinishedSubtaskParents(db, sprintId) {
 // separate comparison would order same-second sprints differently from the list
 // the user is looking at.
 async function nextSprintAfter(db, sprint) {
-  const sprints = await queryAll(db,
-    'SELECT id, name, status FROM sprints WHERE project_id = ? ORDER BY created_at',
+  const sprints = await queryAll(db, SPRINT_LIST_ORDER(
+    'SELECT id, name, status FROM sprints WHERE project_id = ?'),
     [sprint.project_id]);
   const index = sprints.findIndex((s) => s.id === sprint.id);
   if (index === -1) return null;
@@ -101,10 +125,15 @@ async function enrichSprint(db, sprint) {
 }
 
 // GET /api/projects/:projectId/sprints
+// Serves the sprints screen and the board, which reads the same endpoint
+// (frontend/src/screens/board.tsx:175). Both go through the calendar reconciler
+// first — it is where automatic sprints actually happen, since Atlas has no cron.
 router.get('/projects/:projectId/sprints', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
-    const sprints = await queryAll(db, 'SELECT * FROM sprints WHERE project_id = ? ORDER BY created_at', [req.params.projectId]);
+    await reconcileProject(db, req.params.projectId);
+    const sprints = await queryAll(db,
+      SPRINT_LIST_ORDER('SELECT * FROM sprints WHERE project_id = ?'), [req.params.projectId]);
     res.json(await Promise.all(sprints.map(s => enrichSprint(db, s))));
   } catch (e) { serverError(res, e); }
 });
@@ -135,7 +164,12 @@ router.get('/sprints/:id', requireAuth, async (req, res) => {
     const db = await getDb();
     const sprint = await queryOne(db, 'SELECT * FROM sprints WHERE id = ?', [req.params.id]);
     if (!sprint) return res.status(404).json({ error: 'Sprint not found' });
-    res.json(await enrichSprint(db, sprint));
+    // Reconcile against this sprint's own project, then re-read: landing on a
+    // sprint detail page is exactly when a boundary that passed overnight should
+    // be applied, and the sprint being looked at may be the one that just closed.
+    await reconcileProject(db, sprint.project_id);
+    const current = await queryOne(db, 'SELECT * FROM sprints WHERE id = ?', [req.params.id]);
+    res.json(await enrichSprint(db, current ?? sprint));
   } catch (e) { serverError(res, e); }
 });
 

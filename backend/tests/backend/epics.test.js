@@ -126,7 +126,11 @@ describe('type-change guards', () => {
 
   test('cannot convert an issue in a sprint to an epic', async () => {
     const sprints = await request(app).get(`/api/projects/${projectId}/sprints`).set(headers);
-    const issue = await createIssue({ title: 'Sprinted', type: 'task', sprint_id: sprints.body[0].id });
+    // Any sprint that can still take work: the list now includes completed
+    // calendar windows, and creating into one is refused before the type guard
+    // under test ever gets a chance to speak.
+    const open = sprints.body.find((s) => s.status !== 'completed');
+    const issue = await createIssue({ title: 'Sprinted', type: 'task', sprint_id: open.id });
     const res = await request(app).put(`/api/issues/${issue.body.id}`).set(headers).send({ type: 'epic' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/sprint/i);

@@ -464,6 +464,14 @@ describe('DELETE /api/sprints/:id', () => {
 
   // Jira moves them to the next sprint in the list, not to the backlog.
   test('should move issues to the next sprint when one follows', async () => {
+    // Both ticks are load-bearing. "The next sprint" is only a well-defined
+    // thing when these two sit in seconds of their own: the list is ordered by
+    // created_at, and the project now also holds the sprints the calendar
+    // scheduler generated. Without this first tick they can share a second with
+    // Doomed, and the successor the rule picks is whichever the id tiebreak
+    // happens to favour rather than the one this test named.
+    await tick();
+
     const doomed = await request(app)
       .post(`/api/projects/${projectId}/sprints`)
       .set(headers)

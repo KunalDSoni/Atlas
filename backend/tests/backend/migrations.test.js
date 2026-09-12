@@ -280,3 +280,98 @@ describe('034_backfill_request_count', () => {
     expect((await queryOne(db, 'SELECT request_count FROM pb_features WHERE id = ?', [id])).request_count).toBe(0);
   });
 });
+
+describe('036_sprint_auto_key', () => {
+  test('adds auto_key and makes a window unique per project', async () => {
+    const db = await getDb();
+    const projectId = crypto.randomUUID();
+    await run(db, 'INSERT INTO projects (id, name, key) VALUES (?, ?, ?)',
+      [projectId, 'Auto Key', `AK${Date.now() % 10000}`]);
+
+    const mk = (key, slug) => run(db,
+      'INSERT INTO sprints (id, project_id, name, slug, auto_key) VALUES (?, ?, ?, ?, ?)',
+      [crypto.randomUUID(), projectId, `S ${slug}`, slug, key]);
+
+    await mk('2026-09-1', 'w1');
+    // The index is what makes reconciliation race-safe: a second caller trying
+    // to create the same window must be refused, not allowed to duplicate it.
+    await expect(mk('2026-09-1', 'w1-dup')).rejects.toThrow();
+    // A different window is fine, and so is the next project along.
+    await expect(mk('2026-09-2', 'w2')).resolves.toBeUndefined();
+  });
+
+  test('leaves any number of hand-made sprints under a null auto_key', async () => {
+    const db = await getDb();
+    const projectId = crypto.randomUUID();
+    await run(db, 'INSERT INTO projects (id, name, key) VALUES (?, ?, ?)',
+      [projectId, 'Manual Many', `MM${Date.now() % 10000}`]);
+
+    for (const slug of ['a', 'b', 'c']) {
+      await run(db, 'INSERT INTO sprints (id, project_id, name, slug) VALUES (?, ?, ?, ?)',
+        [crypto.randomUUID(), projectId, `Manual ${slug}`, slug]);
+    }
+
+    const rows = await queryAll(db,
+      'SELECT auto_key FROM sprints WHERE project_id = ?', [projectId]);
+    expect(rows).toHaveLength(3);
+    expect(rows.every((r) => r.auto_key === null)).toBe(true);
+  });
+});
+
+describe('037_activity_log_system_actor', () => {
+  // The interesting case is not a fresh database — database.js already builds
+  // the column nullable — but an EXISTING one carrying the old NOT NULL shape.
+  // That is what every deployed instance will run this against.
+  test('rebuilds a legacy NOT NULL activity_log into a nullable one', async () => {
+    const db = await getDb();
+
+    await run(db, 'DROP TABLE IF EXISTS activity_log');
+    await run(db, `CREATE TABLE activity_log (
+      id TEXT PRIMARY KEY,
+      issue_id TEXT NOT NULL REFERENCES issues(id),
+      user_id TEXT NOT NULL REFERENCES users(id),
+      action TEXT NOT NULL,
+      field TEXT,
+      old_value TEXT,
+      new_value TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    )`);
+    await run(db, 'CREATE INDEX idx_activity_legacy_issue ON activity_log(issue_id)');
+
+    const keptId = crypto.randomUUID();
+    await run(db,
+      `INSERT INTO activity_log (id, issue_id, user_id, action, field, old_value, new_value)
+       VALUES (?, 'issue-1', 'user-1', 'update', 'status', 'todo', 'done')`, [keptId]);
+
+    await run(db, 'DELETE FROM schema_migrations WHERE id = ?', ['037_activity_log_system_actor']);
+    const applied = await runMigrations(sqliteAdapter(db));
+    expect(applied).toEqual(['037_activity_log_system_actor']);
+
+    // The scheduler's whole reason for this migration: a row with no actor.
+    await run(db,
+      `INSERT INTO activity_log (id, issue_id, user_id, action, field, old_value, new_value)
+       VALUES (?, 'issue-1', NULL, 'update', 'sprint', 'old-sprint', 'new-sprint')`,
+      [crypto.randomUUID()]);
+
+    const rows = await queryAll(db,
+      'SELECT user_id, field FROM activity_log ORDER BY field');
+    expect(rows).toEqual([
+      { user_id: null, field: 'sprint' },
+      { user_id: 'user-1', field: 'status' },
+    ]);
+
+    // Existing history survives the rebuild, and so do the table's indexes —
+    // they live on the table and would otherwise die with it.
+    const idx = await queryAll(db,
+      "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='activity_log' AND name='idx_activity_legacy_issue'");
+    expect(idx).toHaveLength(1);
+  });
+
+  test('is a no-op on a database whose activity_log is already nullable', async () => {
+    const db = await getDb();
+    await run(db, 'DELETE FROM schema_migrations WHERE id = ?', ['037_activity_log_system_actor']);
+    await expect(runMigrations(sqliteAdapter(db))).resolves.toEqual(['037_activity_log_system_actor']);
+    // Re-running the whole runner again applies nothing further.
+    expect(await runMigrations(sqliteAdapter(db))).toEqual([]);
+  });
+});

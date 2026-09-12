@@ -87,8 +87,13 @@ async function logToDb({ userId, userName, action, category, entityType, entityI
     const db = await getDb();
     const id = uuidv4();
 
-    // Look up user name if not provided but we have userId
-    let uName = userName;
+    // Look up user name if not provided but we have userId.
+    // Coalesced to null because every caller used to pass a userId, so uName was
+    // always assigned here and its `undefined` default never reached the bind.
+    // The sprint scheduler logs with no actor at all, and sql.js rejects an
+    // undefined bind outright ("tried to bind a value of an unknown type"),
+    // which the catch below would have swallowed as a silently missing entry.
+    let uName = userName ?? null;
     if (!uName && userId) {
       const user = await queryOne(db, 'SELECT name FROM users WHERE id = ?', [userId]);
       uName = user ? user.name : null;
