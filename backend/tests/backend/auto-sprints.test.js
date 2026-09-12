@@ -11,7 +11,7 @@
 const request = require('supertest');
 const { createTestApp, adminHeaders } = require('./setup');
 const { getDb, queryOne, queryAll, run } = require('../../database');
-const { windowFor, nextWindow, currentAndNext } = require('../../utils/sprint-windows');
+const { windowFor, nextWindow, currentAndNext, calendarDay } = require('../../utils/sprint-windows');
 const { reconcileProject } = require('../../utils/auto-sprints');
 
 let app, headers, projectId, db;
@@ -91,6 +91,32 @@ describe('window math', () => {
     expect(windowFor(utc(2026, 9, 20)).name).toBe('Sep 16–30, 2026');
   });
 
+  // The whole point of naming a zone: these instants are one date in UTC and the
+  // next date in IST, and the window has to follow the team's calendar. Noon-UTC
+  // fixtures elsewhere cannot show this — they fall on the same day either way.
+  describe('boundaries are cut on IST, not UTC', () => {
+    test('the 16th begins at IST midnight, not UTC midnight', () => {
+      // 18:29 UTC on the 15th is 23:59 IST on the 15th — still the first window.
+      expect(windowFor(new Date('2026-09-15T18:29:00Z')).key).toBe('2026-09-1');
+      // One minute later is 00:00 IST on the 16th.
+      expect(windowFor(new Date('2026-09-15T18:30:00Z')).key).toBe('2026-09-2');
+    });
+
+    test('a month turns over on the IST calendar too', () => {
+      expect(windowFor(new Date('2026-09-30T18:29:00Z')).key).toBe('2026-09-2');
+      expect(windowFor(new Date('2026-09-30T18:30:00Z')).key).toBe('2026-10-1');
+    });
+
+    test('and so does a year', () => {
+      expect(windowFor(new Date('2026-12-31T18:30:00Z')).key).toBe('2027-01-1');
+    });
+
+    test('calendarDay reads the same clock the windows are cut on', () => {
+      expect(calendarDay(new Date('2026-09-15T18:29:00Z'))).toBe('2026-09-15');
+      expect(calendarDay(new Date('2026-09-15T18:30:00Z'))).toBe('2026-09-16');
+    });
+  });
+
   test('offers the current window and the one after it, never a past one', () => {
     const { current, next } = currentAndNext(utc(2026, 9, 20));
     expect(current.key).toBe('2026-09-2');
@@ -133,6 +159,18 @@ describe('reconciling a project against the calendar', () => {
     expect(await byKey(pid, '2026-09-2')).toMatchObject({ status: 'active' });
     // The window after the new current one is materialised too.
     expect(await byKey(pid, '2026-10-1')).toMatchObject({ status: 'planning' });
+  });
+
+  test('hands over on the IST boundary, not the UTC one', async () => {
+    const pid = await freshProject('IstHandover');
+    // 17:00 UTC on the 15th = 22:30 IST, still the 15th.
+    await reconcileProject(db, pid, new Date('2026-09-15T17:00:00Z'));
+    expect(await byKey(pid, '2026-09-1')).toMatchObject({ status: 'active' });
+
+    // 18:30 UTC = 00:00 IST on the 16th. The window has turned over.
+    await reconcileProject(db, pid, new Date('2026-09-15T18:30:00Z'));
+    expect(await byKey(pid, '2026-09-1')).toMatchObject({ status: 'completed' });
+    expect(await byKey(pid, '2026-09-2')).toMatchObject({ status: 'active' });
   });
 
   test('crossing a month end hands over to the next month', async () => {

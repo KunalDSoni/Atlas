@@ -49,16 +49,28 @@ The alternative — adding `node-cron` or a `setInterval` — would introduce th
 background scheduler in the codebase, with its own failure modes on a multi-instance
 deployment (every instance firing the same sweep). Rejected.
 
-### Timezone: UTC
+### Timezone: IST
 
 `sprints.start_date` / `end_date` are date-only strings. `projects` has a
 `business_hours` column but **no timezone column**; timezone lives on `users`, so
 there is no project-wide answer to "is it the 16th yet?" available today.
 
-Window boundaries are computed in **UTC**, in one helper, so a later move to a
-project timezone changes one function. A team far east of Greenwich sees the
-boundary land up to a day off their local calendar. That is the accepted cost of
-not inventing a project timezone concept in this change.
+Windows are cut on **IST** (`Asia/Kolkata`), the working calendar of the team
+Atlas runs for, so a window turns over at local midnight there rather than at
+05:30 local. It is one constant, `SPRINT_TIMEZONE`, in one file; when projects
+gain a timezone of their own, that constant is what it replaces.
+
+Resolved through `Intl` with a named IANA zone rather than a fixed `+05:30`
+offset. India does not observe DST, so the two agree today — but the zone stays
+correct if that ever changes, and it matches how the rest of the codebase reads a
+wall clock (`utils/flow.js`).
+
+The reconciler's "has this sprint's end date passed?" check reads the same
+calendar. Asking it against UTC while cutting windows on IST would have the two
+disagree for five and a half hours out of every day.
+
+*(Shipped as UTC on 2026-09-12 and changed to IST the same day, at the user's
+request, before the first handover on the 16th.)*
 
 ### Identity: an `auto_key`, not a name match
 
