@@ -5,7 +5,7 @@
 
 import type {
   ActivityEntry, AdminStats, AppNotification, Attachment, AuditLogPage, AuthUser, BusinessHours,
-  AutomationAction, AutomationCondition, AutomationRule, AutomationTrigger, Comment, Issue, EpicSummary,
+  AutomationAction, AutomationCondition, AutomationRule, AutomationTrigger, Comment, Issue, IssueType, EpicSummary,
   DashboardGadget, DashboardLayout,
   ProfileResponse, Project, ProjectComponent, ProjectMember, ProjectStats, SavedFilter, SearchResults, Settings, Sprint, User, Version,
   IssueLink, LinkType, LinkedIssueSummary, MentionCandidate, MentioningPage, JqlSearchIssue,
@@ -34,10 +34,31 @@ export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
 }
 
+/**
+ * One open child standing between a parent issue and a done status, as named
+ * by the completion guard on the server.
+ */
+export interface CompletionBlocker {
+  id: string;
+  issue_key: string;
+  title: string;
+  type: IssueType;
+  status: string;
+  status_label: string;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /**
+     * Present only on a 409 from the completion guard. `message` already names
+     * the blockers in one line; this is the same set laid out for surfaces that
+     * can render a list.
+     */
+    readonly blockers: CompletionBlocker[] = [],
+    /** The guard's headline without the inline list, for use as a toast title. */
+    readonly summary = '',
   ) {
     super(message);
     this.name = 'ApiError';
@@ -77,7 +98,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const data = text ? safeJson(text) : null;
 
   if (!res.ok) {
-    throw new ApiError(serverMessage(data) || `Request failed (${res.status})`, res.status);
+    throw new ApiError(
+      serverMessage(data) || `Request failed (${res.status})`,
+      res.status,
+      serverBlockers(data),
+      serverSummary(data),
+    );
   }
   return data as T;
 }
@@ -103,6 +129,20 @@ function serverMessage(data: unknown): string {
   if (typeof body.error === 'string' && body.error) return body.error;
   if (typeof body.message === 'string' && body.message) return body.message;
   return '';
+}
+
+/** The completion guard's structured blocker list, when the body carries one. */
+function serverBlockers(data: unknown): CompletionBlocker[] {
+  if (!data || typeof data !== 'object') return [];
+  const { blockers } = data as { blockers?: unknown };
+  return Array.isArray(blockers) ? (blockers as CompletionBlocker[]) : [];
+}
+
+/** The guard's headline with no list in it, for use as a toast title. */
+function serverSummary(data: unknown): string {
+  if (!data || typeof data !== 'object') return '';
+  const { summary } = data as { summary?: unknown };
+  return typeof summary === 'string' ? summary : '';
 }
 
 const get = <T>(p: string) => request<T>(p);

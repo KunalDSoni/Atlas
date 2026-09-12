@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Headphones, Inbox, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { notifyBulkOutcome, type BulkFailure } from '@/lib/completion-blockers';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -299,15 +300,24 @@ export default function ServiceDeskQueues() {
 
   async function bulkUpdate(body: Record<string, unknown>) {
     const ids = [...selected];
-    try {
-      await Promise.all(ids.map((id) => api.issues.update(id, body)));
-      toast.success(`Updated ${ids.length} request${ids.length === 1 ? '' : 's'}`);
-      setSelected(new Set());
-      await Promise.all([loadIssues(), loadQueues()]);
-    } catch (e) {
-      toast.error('Bulk update failed', { description: e instanceof Error ? e.message : undefined });
-      void loadIssues();
-    }
+    // Partial apply: a request blocked by its open subtasks must not stop the
+    // rest of the selection from moving. See the board's bulkUpdate.
+    const results = await Promise.allSettled(ids.map((id) => api.issues.update(id, body)));
+
+    const failures: BulkFailure[] = [];
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        const id = ids[index];
+        failures.push({
+          issueKey: issues.find((i) => i.id === id)?.issue_key ?? id,
+          error: result.reason,
+        });
+      }
+    });
+
+    notifyBulkOutcome(results.length - failures.length, failures, 'request');
+    setSelected(new Set());
+    await Promise.all([loadIssues(), loadQueues()]);
   }
 
   async function removeQueue(queue: Queue) {

@@ -1,1 +1,0 @@
-import{r}from"./vendor-ym9A7WGO.js";import{g as c}from"./index-BuvQZF6_.js";let e=null;const a=new Set;function u(){const[s,n]=r.useState(e??!1);return r.useEffect(()=>{if(e!==null){n(e);return}return a.add(n),c.ai.status().then(t=>{e=t.enabled,a.forEach(l=>l(t.enabled))}).catch(()=>{e=!1,a.forEach(t=>t(!1))}),()=>{a.delete(n)}},[]),s}export{u};

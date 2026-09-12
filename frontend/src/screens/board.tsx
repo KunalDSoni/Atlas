@@ -4,6 +4,7 @@ import { issueUrl } from '@/lib/urls';
 import { useLiveEvents } from '@/hooks/use-live-events';
 import { ArrowDown, ArrowUp, Check, Columns3, Plus, Rows3, Search, SlidersHorizontal, Trash2, Workflow, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { notifyBulkOutcome, notifyCompletionBlocked, type BulkFailure } from '@/lib/completion-blockers';
 import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -277,9 +278,13 @@ export default function BoardScreen() {
       await api.issues.move(id, { status, board_order: statusTotals[status] });
     } catch (e) {
       setIssues(previous);
-      toast.error('Could not move issue', {
-        description: e instanceof Error ? e.message : 'Please try again.',
-      });
+      // The completion guard names every open child; that list is the message,
+      // so it replaces the generic toast rather than being squeezed into it.
+      if (!notifyCompletionBlocked(e)) {
+        toast.error('Could not move issue', {
+          description: e instanceof Error ? e.message : 'Please try again.',
+        });
+      }
     }
   }
 
@@ -299,15 +304,26 @@ export default function BoardScreen() {
 
   async function bulkUpdate(body: Partial<Issue>) {
     const ids = [...selected];
-    try {
-      await Promise.all(ids.map((id) => api.issues.update(id, body)));
-      toast.success(`Updated ${ids.length} issue${ids.length === 1 ? '' : 's'}`);
-      exitSelectMode();
-      void load();
-    } catch (e) {
-      toast.error('Bulk update failed', { description: e instanceof Error ? e.message : undefined });
-      void load();
-    }
+    // Settled, not all: one blocked parent used to abandon the whole batch
+    // after some requests had already landed, leaving the board in a state
+    // the toast did not describe. Now every issue is attempted and the ones
+    // that could not move are named.
+    const results = await Promise.allSettled(ids.map((id) => api.issues.update(id, body)));
+
+    const failures: BulkFailure[] = [];
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        const id = ids[index];
+        failures.push({
+          issueKey: issues.find((i) => i.id === id)?.issue_key ?? id,
+          error: result.reason,
+        });
+      }
+    });
+
+    notifyBulkOutcome(results.length - failures.length, failures, 'issue');
+    exitSelectMode();
+    void load();
   }
 
   async function bulkDelete() {
