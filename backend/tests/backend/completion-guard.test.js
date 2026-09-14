@@ -6,6 +6,7 @@
  */
 const request = require('supertest');
 const { createTestApp, getApp, adminHeaders } = require('./setup');
+const { getDb, queryOne, run } = require('../../database');
 
 let app, headers, projectId;
 
@@ -111,6 +112,18 @@ describe('PUT /api/issues/:id — story blocked by open subtasks', () => {
     expect(res.body.error).toContain('1 open subtask.');
     expect(res.body.error).toContain('Finish it first');
   });
+
+  test('caps the blocker list but reports the true count', async () => {
+    // 24 open subtasks: the body carries 20 and says 24, so a rejected click on
+    // a large epic cannot ship an unbounded payload.
+    const { story } = await storyWithSubtasks(24, 'Crowded story');
+    const res = await request(app).put(`/api/issues/${story.id}`).set(headers).send({ status: 'done' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.blockers).toHaveLength(20);
+    expect(res.body.blocker_count).toBe(24);
+    expect(res.body.summary).toContain('24 open subtasks');
+  }, 30000);
 
   test('names at most five blockers inline, then summarizes the rest', async () => {
     const { story } = await storyWithSubtasks(7);
@@ -243,13 +256,21 @@ describe('done is a category, not the key "done"', () => {
   });
 
   test('moving between two done columns is never blocked', async () => {
-    // Reachable for rows that predate the guard: a parent already done, with a
-    // child that is still open. Re-filing it under another done column is not
-    // a new completion and must not be rejected.
+    // Only reachable now for rows that predate the guard: the child side pulls
+    // a done parent back out of done the moment open work lands under it, so
+    // this state has to be written directly, the way history left it.
     const story = await createIn(customProjectId, { title: 'Already done', type: 'story' });
     await request(app).put(`/api/issues/${story.id}`).set(headers).send({ status: 'done' });
-    await createIn(customProjectId, { title: 'Late child', type: 'subtask', parent_id: story.id });
+    const child = await createIn(customProjectId, { title: 'Late child', type: 'subtask', parent_id: story.id });
 
+    // Creating the child reopened the parent; force it back to the legacy shape.
+    const db = await getDb();
+    await run(db, "UPDATE issues SET status = 'done' WHERE id = ?", [story.id]);
+    const stranded = await queryOne(db, 'SELECT status FROM issues WHERE id = ?', [story.id]);
+    expect(stranded.status).toBe('done');
+    expect(child.status).toBe('todo');
+
+    // Re-filing it under another done column is not a new completion.
     const res = await request(app).put(`/api/issues/${story.id}`).set(headers).send({ status: shippedKey });
     expect(res.status).toBe(200);
   });
