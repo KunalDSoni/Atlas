@@ -85,3 +85,48 @@ none, so a rejected change would have reverted silently.
 
 Rows that were already done-with-open-children before this shipped keep that
 shape. The guard runs on transition; nothing backfills history.
+
+---
+
+## Addendum, 2026-09-14: the child side
+
+The guard as first shipped was one-directional. It stopped a parent entering
+done over open children, and did nothing about the children. Three probes
+against the merged code all reached the state the guard exists to prevent:
+
+| | Before | After |
+| --- | --- | --- |
+| Create an open subtask under a done story | `201`, parent stays done | parent reopens |
+| Reparent an open subtask onto a done story | `200`, parent stays done | parent reopens |
+| Reopen a subtask under a done parent | `200`, parent stays done | parent reopens |
+
+The invariant is now stated in both directions: **no issue in a done-category
+status has open children.**
+
+- `completionBlock()` holds the parent side — a parent cannot enter done while
+  its children are open.
+- `reopenDoneAncestors()` holds the child side — when open work lands under a
+  done parent, by creation, reparenting or reopening, the parent comes back out.
+
+Adding work is never refused; only the parent's claim to be finished is. The
+reopen walks the whole chain, so a reopened subtask reopens its story and then
+its epic, stopping at the first ancestor that is not done.
+
+A reopened parent lands in the project's first in-progress column by position,
+falling back to the first to-do column. In-progress, not to-do: the parent had
+been finished and is not any more, while some of its children still are, so it
+is genuinely mid-flight. Each move is written to `activity_log` under the user
+whose action caused it — the status really did change, and history that showed
+it changing by itself would be worse than the entry.
+
+### Payload
+
+`blockers` is capped at 20 and `blocker_count` carries the true total. An epic
+with 120 open children was returning a 21.6 KB body to render six rows.
+
+### Legacy rows
+
+Rows that were already done-with-open-children still exist and are still never
+blocked from moving between done columns or back out of done. They are only
+reachable now by direct database writes, which is how the test for that case
+builds them.

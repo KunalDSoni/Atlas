@@ -1,4 +1,16 @@
-// A parent issue cannot be completed while its children are still open.
+// The invariant: no issue in a done-category status has open children.
+//
+// Two halves, because work moves in both directions.
+//
+//   completionBlock()    guards the PARENT side — a parent cannot enter a done
+//                        status while its children are open.
+//   reopenDoneAncestors() guards the CHILD side — when open work lands under a
+//                        done parent (created there, moved there, or reopened
+//                        there), the parent comes back out of done.
+//
+// Only blocking the parent left the invariant trivially defeatable: reparent an
+// open subtask onto a done story and you were back in the state the block
+// exists to prevent, having never seen it.
 //
 // Applies at both levels of the hierarchy: an epic is blocked by its open
 // stories/tasks/bugs, and a story/task/bug is blocked by its open subtasks.
@@ -12,11 +24,23 @@
 // that were already done-with-open-children before this guard existed keep
 // that shape — the guard runs on transition, and nothing backfills history.
 
-const { queryAll } = require('../database');
+const { v4: uuidv4 } = require('uuid');
+const { queryAll, queryOne, run } = require('../database');
 const { categoryOf } = require('./flow');
+const { projectStatuses } = require('./workflow-statuses');
 
 /** How many blockers the single-line message names before it summarizes. */
 const INLINE_LIMIT = 5;
+
+/**
+ * How many blockers the response carries. The count is always exact; the list
+ * is capped so a rejected click on a 500-child epic does not ship a 90 KB body
+ * that no client renders in full.
+ */
+const PAYLOAD_LIMIT = 20;
+
+/** A parent cannot sit above open work forever; stop walking runaway chains. */
+const MAX_ANCESTOR_DEPTH = 10;
 
 function labelOf(statusKey, statuses) {
   const hit = statuses.find((s) => s.key === statusKey);
@@ -95,8 +119,61 @@ async function completionBlock(db, issue, nextStatus, statuses) {
   return {
     error: blockerMessage(issue, blockers),
     summary: blockerSummary(issue, blockers),
-    blockers,
+    blockers: blockers.slice(0, PAYLOAD_LIMIT),
+    blocker_count: blockers.length,
   };
 }
 
-module.exports = { findOpenChildren, entersDone, blockerSummary, blockerMessage, completionBlock };
+/** Where a reopened parent lands: the first in-progress column, else the first todo. */
+function reopenTarget(statuses) {
+  const ordered = [...statuses].sort((a, b) => Number(a.position) - Number(b.position));
+  return ordered.find((s) => s.category === 'in_progress')
+    || ordered.find((s) => s.category === 'todo')
+    || null;
+}
+
+/**
+ * The child half of the invariant. Called after open work lands under a parent
+ * — by creation, by reparenting, or by the child leaving done — it walks up the
+ * chain and pulls any done ancestor back out of done.
+ *
+ * In-progress, not to-do: the parent had been finished and is not any more, and
+ * some of its children are still done, so it is genuinely mid-flight. Each move
+ * is written to activity_log under the user who caused it, because it really
+ * did happen and the history would otherwise show a status changing by itself.
+ *
+ * Returns the issues it reopened, outermost last.
+ */
+async function reopenDoneAncestors(db, child, actorId) {
+  const reopened = [];
+  let current = child;
+
+  for (let depth = 0; depth < MAX_ANCESTOR_DEPTH; depth += 1) {
+    if (!current || !current.parent_id) break;
+    const parent = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [current.parent_id]);
+    if (!parent) break;
+
+    const statuses = await projectStatuses(db, parent.project_id);
+    if (categoryOf(parent.status, statuses) !== 'done') break;
+
+    const target = reopenTarget(statuses);
+    // A workflow made entirely of done columns has nowhere to reopen to.
+    if (!target || target.key === parent.status) break;
+
+    await run(db, "UPDATE issues SET status = ?, updated_at = datetime('now') WHERE id = ?",
+      [target.key, parent.id]);
+    await run(db,
+      "INSERT INTO activity_log (id, issue_id, user_id, action, field, old_value, new_value) VALUES (?, ?, ?, 'update', 'status', ?, ?)",
+      [uuidv4(), parent.id, actorId, parent.status, target.key]);
+
+    reopened.push({ ...parent, status: target.key, previous_status: parent.status });
+    current = parent;
+  }
+
+  return reopened;
+}
+
+module.exports = {
+  findOpenChildren, entersDone, blockerSummary, blockerMessage, completionBlock,
+  reopenTarget, reopenDoneAncestors,
+};

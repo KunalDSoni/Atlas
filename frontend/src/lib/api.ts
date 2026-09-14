@@ -59,6 +59,12 @@ export class ApiError extends Error {
     readonly blockers: CompletionBlocker[] = [],
     /** The guard's headline without the inline list, for use as a toast title. */
     readonly summary = '',
+    /**
+     * How many blockers there are in total. `blockers` is capped by the server,
+     * so on a large epic this is larger than the list — the count is what the
+     * "and N more" line must be built from.
+     */
+    readonly blockerCount = 0,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -103,6 +109,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       res.status,
       serverBlockers(data),
       serverSummary(data),
+      serverBlockerCount(data),
     );
   }
   return data as T;
@@ -143,6 +150,14 @@ function serverSummary(data: unknown): string {
   if (!data || typeof data !== 'object') return '';
   const { summary } = data as { summary?: unknown };
   return typeof summary === 'string' ? summary : '';
+}
+
+/** The true blocker total, which can exceed the capped `blockers` list. */
+function serverBlockerCount(data: unknown): number {
+  if (!data || typeof data !== 'object') return 0;
+  const { blocker_count: count } = data as { blocker_count?: unknown };
+  if (typeof count === 'number' && Number.isFinite(count)) return count;
+  return serverBlockers(data).length;
 }
 
 const get = <T>(p: string) => request<T>(p);

@@ -37,10 +37,11 @@ const blocker = (over: Partial<Record<string, unknown>> = {}) => ({
   ...over,
 });
 
-const guardBody = (blockers: unknown[]) => ({
+const guardBody = (blockers: unknown[], blocker_count?: number) => ({
   error: 'ATL-12 has 2 open subtasks. Finish them first: ATL-14 (In Progress), ATL-15 (To Do).',
   summary: 'ATL-12 has 2 open subtasks. Finish them first.',
   blockers,
+  ...(blocker_count === undefined ? {} : { blocker_count }),
 });
 
 beforeEach(() => {
@@ -67,6 +68,8 @@ describe('the api client carries the guard payload through', () => {
     expect(err.status).toBe(409);
     expect(err.blockers).toHaveLength(2);
     expect(err.summary).toBe('ATL-12 has 2 open subtasks. Finish them first.');
+    // No blocker_count in the body: fall back to what the list actually holds.
+    expect(err.blockerCount).toBe(2);
     // `message` stays the standalone one-liner, so any surface that only knows
     // how to show a string still names the blockers.
     expect(err.message).toContain('ATL-14 (In Progress)');
@@ -86,6 +89,27 @@ describe('the api client carries the guard payload through', () => {
     mockFetch({ error: 'broken', blockers: 'three' }, { ok: false, status: 409 });
     const err = await api.issues.update('issue-1', { status: 'done' }).catch((e) => e);
     expect(err.blockers).toEqual([]);
+  });
+});
+
+describe('the capped payload', () => {
+  it('reports the true total when the server caps the list', async () => {
+    mockFetch(guardBody([blocker(), blocker({ id: 'id-2' })], 120), { ok: false, status: 409 });
+
+    const err = await api.issues.update('issue-1', { status: 'done' }).catch((e) => e);
+
+    expect(err.blockers).toHaveLength(2);
+    expect(err.blockerCount).toBe(120);
+  });
+
+  it('names the true total in a bulk failure line', () => {
+    notifyBulkOutcome(1, [
+      { issueKey: 'ATL-1', error: new ApiError('x', 409, [blocker()] as never, '', 120) },
+    ], 'issue');
+
+    const { description } = toast.warning.mock.calls[0][1] as { description: React.ReactElement };
+    render(description);
+    expect(screen.getByText('— 120 open subtasks')).toBeInTheDocument();
   });
 });
 
@@ -121,6 +145,23 @@ describe('BlockerList', () => {
     expect(screen.getByText('ATL-5')).toBeInTheDocument();
     expect(screen.queryByText('ATL-6')).not.toBeInTheDocument();
     expect(screen.getByText('and 3 more')).toBeInTheDocument();
+  });
+
+  it('counts from the server total, not the capped list it received', () => {
+    // The server sends at most 20 blockers but reports the true count, so an
+    // epic with 120 open children must not claim to have 20.
+    const capped = Array.from({ length: 20 }, (_, i) =>
+      blocker({ id: `id-${i}`, issue_key: `ATL-${i}` }));
+    render(<BlockerList blockers={capped as never} total={120} />);
+
+    expect(screen.getByText('and 114 more')).toBeInTheDocument();
+  });
+
+  it('falls back to the list length when no total is given', () => {
+    const three = Array.from({ length: 8 }, (_, i) =>
+      blocker({ id: `id-${i}`, issue_key: `ATL-${i}` }));
+    render(<BlockerList blockers={three as never} />);
+    expect(screen.getByText('and 2 more')).toBeInTheDocument();
   });
 });
 

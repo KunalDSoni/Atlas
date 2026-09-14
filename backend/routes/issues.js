@@ -23,7 +23,7 @@ const sla = require('../utils/sla-clocks');
 const { issueLink } = require('../utils/links');
 const { applyAutoWorklog, liveInProgressMinutes } = require('../utils/auto-worklog');
 const { categoryOf } = require('../utils/flow');
-const { completionBlock } = require('../utils/completion-guard');
+const { completionBlock, reopenDoneAncestors } = require('../utils/completion-guard');
 const { closeStaleSegments, commitTimer, issueTimerUserIds } = require('../utils/timers');
 const { recomputeTimeSpent } = require('../utils/worklog-sync');
 
@@ -66,6 +66,23 @@ async function validateHierarchy(db, { id, projectId, type, parentId, sprintId }
     if (parent.project_id !== projectId) return 'Parent must be in the same project';
   }
   return null;
+}
+
+/**
+ * Pulls any done ancestor of `issue` back out of done when `issue` is itself
+ * open, and announces each one so boards and open detail sheets follow along.
+ * A no-op when the issue is done or has no parent.
+ */
+async function reopenAncestorsFor(db, issue, actorId) {
+  if (!issue || !issue.parent_id) return [];
+  const statuses = await projectStatuses(db, issue.project_id);
+  if (categoryOf(issue.status, statuses) === 'done') return [];
+
+  const reopened = await reopenDoneAncestors(db, issue, actorId);
+  for (const parent of reopened) {
+    publish({ type: 'issue', action: 'updated', projectId: parent.project_id, issueId: parent.id, actorId });
+  }
+  return reopened;
 }
 
 const router = express.Router();
@@ -428,6 +445,9 @@ router.post('/projects/:projectId/issues', requireAuth, requireBoardAdmin, async
     }
 
     await runAutomation(db, { type: 'issue_created', issue, actorId: req.userId });
+    // New work under a finished parent un-finishes it. Creating the child is
+    // never refused — the parent simply stops claiming to be done.
+    await reopenAncestorsFor(db, issue, req.userId);
     issue = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [id]);
     auditLog({ userId: req.userId, action: 'Created issue', category: 'issues', entityType: 'issue', entityId: id, entityName: issue.issue_key, details: { title, type: type || 'task', priority: priority || 'medium' } });
     dispatchWebhook(db, req.params.projectId, 'issue.created', { id: issue.id, issue_key: issue.issue_key, title: issue.title, type: issue.type, status: issue.status });
@@ -568,6 +588,16 @@ router.put('/issues/:id', requireAuth, async (req, res) => {
     }
 
     let updated = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
+
+    // Two edits can strand a done parent above open work: this issue leaving
+    // done, and this issue moving under a different parent. Both end with the
+    // parent no longer entitled to its done status.
+    const statusMoved = req.body.status !== undefined && req.body.status !== issue.status;
+    const parentMoved = req.body.parent_id !== undefined && String(req.body.parent_id) !== String(issue.parent_id);
+    if (statusMoved || parentMoved) {
+      await reopenAncestorsFor(db, updated, req.userId);
+    }
+
     if (req.body.status !== undefined && req.body.status !== issue.status) {
       await sla.onStatusChange(db, updated, updated.status);
       await runAutomation(db, { type: 'status_changed', issue: updated, actorId: req.userId });
@@ -714,6 +744,8 @@ router.put('/issues/:id/move', requireAuth, async (req, res) => {
 
     let updated = await queryOne(db, 'SELECT * FROM issues WHERE id = ?', [req.params.id]);
     if (status !== undefined && status !== issue.status) {
+      // Dragging a card back out of done reopens whatever it hangs under.
+      await reopenAncestorsFor(db, updated, req.userId);
       // A board drag is a status change like any other — the SLA cannot only
       // notice the ones made through the issue form.
       await sla.onStatusChange(db, updated, updated.status);

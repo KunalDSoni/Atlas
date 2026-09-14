@@ -11,7 +11,11 @@
 import { toast } from 'sonner';
 import { ApiError, type CompletionBlocker } from './api';
 
-/** How many blockers a toast lists before it summarizes the remainder. */
+/**
+ * How many blockers a toast lists before it summarizes the remainder. The
+ * server caps the list it sends; this caps what a toast shows of that list.
+ * Neither number is the truth about how many there are — `blockerCount` is.
+ */
 const VISIBLE_LIMIT = 6;
 
 /** The guard's blockers, or [] for any other failure. */
@@ -29,9 +33,11 @@ export function blockerTitle(error: unknown): string {
   return error.summary || error.message;
 }
 
-export function BlockerList({ blockers }: { blockers: CompletionBlocker[] }) {
+export function BlockerList({ blockers, total }: { blockers: CompletionBlocker[]; total?: number }) {
   const shown = blockers.slice(0, VISIBLE_LIMIT);
-  const hidden = blockers.length - shown.length;
+  // Count from the server's total when it sent one: the list it sent is capped,
+  // so `blockers.length` undercounts a large epic.
+  const hidden = Math.max(total ?? blockers.length, blockers.length) - shown.length;
   return (
     <ul className="mt-1 space-y-0.5">
       {shown.map((blocker) => (
@@ -53,7 +59,10 @@ export function BlockerList({ blockers }: { blockers: CompletionBlocker[] }) {
 export function notifyCompletionBlocked(error: unknown): boolean {
   const blockers = blockersOf(error);
   if (blockers.length === 0) return false;
-  toast.error(blockerTitle(error), { description: <BlockerList blockers={blockers} /> });
+  const total = error instanceof ApiError ? error.blockerCount : blockers.length;
+  toast.error(blockerTitle(error), {
+    description: <BlockerList blockers={blockers} total={total} />,
+  });
   return true;
 }
 
@@ -82,8 +91,11 @@ export function notifyBulkOutcome(
 
   const lines = failures.slice(0, VISIBLE_LIMIT).map(({ issueKey, error }) => {
     const blockers = blockersOf(error);
+    const count = error instanceof ApiError && error.blockerCount
+      ? error.blockerCount
+      : blockers.length;
     const reason = blockers.length > 0
-      ? `${blockers.length} open ${blockers.every((b) => b.type === 'subtask') ? 'subtask' : 'child issue'}${blockers.length === 1 ? '' : 's'}`
+      ? `${count} open ${blockers.every((b) => b.type === 'subtask') ? 'subtask' : 'child issue'}${count === 1 ? '' : 's'}`
       : (error instanceof Error ? error.message : 'could not be updated');
     return { issueKey, reason };
   });
