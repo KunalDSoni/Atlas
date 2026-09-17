@@ -1,12 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { api, clearToken, getToken, onUnauthorized, setToken } from '@/lib/api';
-import type { AuthUser, User } from '@/lib/types';
+import type { User } from '@/lib/types';
 
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  adoptSession: (authed: AuthUser) => void;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -49,14 +48,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(rest as User);
   }, []);
 
-  // Adopts a session the server has already issued (the demo endpoint), as
-  // opposed to login(), which exchanges credentials for one.
-  const adoptSession = useCallback((authed: AuthUser) => {
-    setToken(authed.token);
-    const { token: _token, ...rest } = authed;
-    setUser(rest as User);
-  }, []);
-
   const logout = useCallback(async () => {
     // Nothing to sign out of: start the demo over instead.
     if (__ATLAS_DEMO__) {
@@ -73,7 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, adoptSession, logout, refresh }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, refresh }}>
       {children}
     </AuthContext.Provider>
   );

@@ -7,7 +7,7 @@ test.describe('landing page', () => {
 
     await expect(page.getByRole('heading', { level: 1 }))
       .toContainText('Your backlog and your roadmap');
-    await expect(page.getByRole('button', { name: /try the live demo/i }).first()).toBeVisible();
+    await expect(page.getByRole('link', { name: /try the live demo/i }).first()).toHaveAttribute('href', '/demo/');
     await assertNoCrash(page);
   });
 
@@ -16,23 +16,22 @@ test.describe('landing page', () => {
     await expect(page.locator('h1')).toHaveCount(1);
   });
 
-  test('the product frame tabs switch panels', async ({ page }) => {
+  test('the product frame runs the demo, and its tabs drive it', async ({ page }) => {
     await page.goto('/');
 
     const board = page.getByRole('tab', { name: 'Board' });
     const roadmap = page.getByRole('tab', { name: 'Roadmap' });
-
     await expect(board).toHaveAttribute('aria-selected', 'true');
+
+    const frame = page.frameLocator('#frame-panel iframe');
+    await expect(frame.locator('[data-issue-key]').first()).toBeVisible();
+    const demo = () => page.frames().find((f) => f.url().includes('/demo/'))?.url() ?? '';
+    await expect.poll(demo).toContain('/demo/atl/board');
 
     await roadmap.click();
     await expect(roadmap).toHaveAttribute('aria-selected', 'true');
     await expect(board).toHaveAttribute('aria-selected', 'false');
-    // Scoped to the frame panel: "Enterprise readiness" is also a pillar
-    // heading further down in the capability index, so an unscoped locator
-    // is ambiguous even though the panel itself is correct. Within the panel
-    // itself the roadmap row renders the theme name twice (row label + bar
-    // label), hence .first().
-    await expect(page.locator('#frame-panel').getByText('Enterprise readiness').first()).toBeVisible();
+    await expect.poll(demo).toContain('/demo/product/roadmap');
   });
 
   test('the capability filter narrows the list and recovers', async ({ page }) => {

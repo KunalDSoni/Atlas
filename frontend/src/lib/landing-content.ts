@@ -34,10 +34,11 @@ export const LANDING_COPY = {
     trust: ['Boards', 'Sprints', 'Roadmaps', 'Insights', 'Wiki', 'Service desk', 'Reporting'],
   },
   frame: {
+    // `path` is where the embedded demo goes; `url` is only the address-bar label.
     tabs: [
-      { key: 'board', label: 'Board', url: 'open-atlas.xyz/ATL/board' },
-      { key: 'roadmap', label: 'Roadmap', url: 'open-atlas.xyz/product/roadmap' },
-      { key: 'insights', label: 'Insights', url: 'open-atlas.xyz/product/insights' },
+      { key: 'board', label: 'Board', url: 'open-atlas.xyz/ATL/board', path: '/atl/board' },
+      { key: 'roadmap', label: 'Roadmap', url: 'open-atlas.xyz/product/roadmap', path: '/product/roadmap' },
+      { key: 'insights', label: 'Insights', url: 'open-atlas.xyz/product/insights', path: '/product/insights' },
     ],
   },
   split: {

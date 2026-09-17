@@ -244,7 +244,6 @@ export const api = {
 
   auth: {
     login: (email: string, password: string) => post<AuthUser>('/auth/login', { email, password }),
-    demoLogin: () => post<AuthUser>('/auth/demo'),
     logout: () => post<{ ok: boolean }>('/auth/logout'),
     me: () => get<User>('/auth/me'),
   },
