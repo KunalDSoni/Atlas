@@ -1,0 +1,20 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "atlas-demo",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "NODE_ENV=development",
+        "PORT=3011",
+        "SEED_DEMO_DATA=true",
+        "SQLITE_PATH=backend/dummy.db",
+        "DEMO_EMAIL=demo@example.com",
+        "APP_URL=http://localhost:3011",
+        "node",
+        "backend/server.js"
+      ],
+      "port": 3011
+    }
+  ]
+}
