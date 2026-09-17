@@ -28,10 +28,17 @@ For frontend development with hot reload, run the backend and then
 signed-in users to `/dashboard`. `/login` is still the sign-in form; it is
 just no longer the front door.
 
-To enable the one-click demo button, set `DEMO_EMAIL` (see `.env.example`).
-The demo account is created with role `user`, and its workspace re-seeds on
-the first visit after `DEMO_RESET_HOURS`. Leaving `DEMO_EMAIL` unset disables
-`POST /api/auth/demo` entirely, and the button falls back to `/login`.
+The product frame under the hero, and every "Try the live demo" button, open
+`/demo/`: the real app built a second time (`vite build --mode demo`, part of
+`npm run build`) with its API client answering from recorded sample data in
+`frontend/src/demo/fixtures.json`. It needs no account and touches no server
+state — moving a card, editing or creating an issue, and commenting stick until
+reload; nothing else is saved. Re-record the sample data with
+`cd frontend && npm run demo:capture` when screens change; seeded dates are
+relative to the capture day, so re-capturing also refreshes the sample sprint.
+
+`POST /api/auth/demo` (gated on `DEMO_EMAIL`) still exists on the backend, but
+the landing page no longer calls it.
 
 ## Feature Overview
 
