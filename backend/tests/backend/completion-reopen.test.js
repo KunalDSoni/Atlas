@@ -78,8 +78,14 @@ describe('new work created under a done parent', () => {
 
     const activity = await request(app).get(`/api/issues/${story.id}/activity`).set(headers);
     const statusRows = activity.body.filter((a) => a.field === 'status');
-    const reopen = statusRows[statusRows.length - 1];
-    expect(reopen.old_value).toBe('done');
+    // By what the row records, not where it sits. The endpoint orders newest
+    // first, while activity_log.created_at is datetime('now') — one-second
+    // granularity — so the todo->done write and the reopen usually share a
+    // timestamp and come back in scan order. Indexing off the end only found
+    // the reopen while that tie held; when the two writes straddled a second
+    // boundary the sort became real and the assertion read the wrong row.
+    const reopen = statusRows.find((a) => a.old_value === 'done');
+    expect(reopen).toBeDefined();
     expect(reopen.new_value).toBe('in_progress');
     // Attributed to the person whose action caused it, not to nobody.
     expect(reopen.user_name).toBeTruthy();
