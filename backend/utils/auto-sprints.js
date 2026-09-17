@@ -19,7 +19,7 @@ const { v4: uuidv4 } = require('uuid');
 const { queryOne, queryAll, run } = require('../database');
 const { auditLog } = require('../middleware/logger');
 const { slugify, uniqueSlug } = require('./slug');
-const { currentAndNext } = require('./sprint-windows');
+const { currentAndNext, calendarDay } = require('./sprint-windows');
 const { leavesClosingSprint } = require('./done-status');
 
 // What the audit trail shows as the actor. audit_log.user_id stays null — there
@@ -164,7 +164,10 @@ async function reconcileProject(db, projectId, now = new Date()) {
   // handover that immediately completes it, and no one could ever run a sprint
   // of their own. Such a sprint is still swept at the next real handover, which
   // is what "swept at the next boundary" was asked to mean.
-  const today = dayOf(now);
+  // The sprint calendar's today, not UTC's. Asking "has this end date passed?"
+  // against a different calendar than the windows are cut on would disagree with
+  // the boundaries for five and a half hours out of every day.
+  const today = calendarDay(now);
   const stillRunning = (s) => s.end_date && dayOf(s.end_date) >= today;
   const overtaken = (s) => s.auto_key && s.auto_key !== current.key && !stillRunning(s);
   const handingOver = createdCurrent || actives.some(overtaken);
@@ -199,7 +202,12 @@ async function reconcileProject(db, projectId, now = new Date()) {
   // deliberate, audited, human path it is today.
 }
 
-/** The calendar day of a Date or a stored date string, in UTC. */
+/**
+ * The day part of a STORED date. Sprint dates are date-only values already, so
+ * this only has to strip a time component — a driver that hands back a Date
+ * (rather than the string MySQL is configured for) is read the same way.
+ * The current instant goes through calendarDay instead, which is timezone-aware.
+ */
 function dayOf(value) {
   if (value instanceof Date) return value.toISOString().slice(0, 10);
   return String(value).slice(0, 10);

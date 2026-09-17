@@ -4,17 +4,28 @@
 // clock of its own. Every caller passes the instant it wants evaluated, so the
 // boundary rules are testable without a server and without waiting for a date.
 //
-// Boundaries are computed in UTC. sprints.start_date/end_date are date-only
-// strings, and `projects` has no timezone column — timezone lives on `users`
-// (database.js:29), so there is no project-wide answer to "is it the 16th yet?"
-// to read. UTC is the deterministic stand-in, deliberately confined to this
-// file so moving to a project timezone later changes one function.
+// Boundaries are computed in IST (Asia/Kolkata), the working calendar of the
+// team Atlas runs for. A window turns over at local midnight there, so the 16th
+// begins when the team's day does rather than at 05:30 their time, which is what
+// a UTC boundary would have meant.
+//
+// It is one constant in one file. `projects` has no timezone column — timezone
+// lives on `users` (database.js:29) — so there is still no per-project answer
+// available; when there is, SPRINT_TIMEZONE is what it replaces.
+//
+// Resolved through Intl with a named IANA zone rather than a fixed +05:30
+// offset. India happens not to observe DST, so the two agree today, but the
+// zone stays correct if that ever stops being true, and it matches how the rest
+// of the codebase reads a wall clock (utils/flow.js).
 
 // The last day belonging to the first window. The second window runs from the
 // day after this one to the end of the month, so a 28-day February gives a
 // 13-day second window and a 31-day month gives a 16-day one. Sprint length
 // varying by a few days across months is inherent to a calendar cadence.
 const FIRST_WINDOW_LAST_DAY = 15;
+
+// The calendar the windows are cut on. One constant, one file.
+const SPRINT_TIMEZONE = 'Asia/Kolkata';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -55,10 +66,29 @@ function buildWindow(year, month, half) {
 
 /** The window containing `date`. */
 function windowFor(date) {
-  const year = date.getUTCFullYear();
-  const month = date.getUTCMonth() + 1;
-  const half = date.getUTCDate() <= FIRST_WINDOW_LAST_DAY ? 1 : 2;
-  return buildWindow(year, month, half);
+  const { year, month, day } = calendarParts(date);
+  return buildWindow(year, month, day <= FIRST_WINDOW_LAST_DAY ? 1 : 2);
+}
+
+/** The calendar date `instant` falls on, as read in SPRINT_TIMEZONE. */
+function calendarParts(instant) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: SPRINT_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(instant).reduce((acc, p) => (acc[p.type] = p.value, acc), {});
+  return { year: Number(parts.year), month: Number(parts.month), day: Number(parts.day) };
+}
+
+/**
+ * `instant` as a 'YYYY-MM-DD' day in SPRINT_TIMEZONE.
+ *
+ * Shared with the reconciler so that "has this sprint's end date passed?" is
+ * asked against the same calendar the windows are cut on. Comparing a stored
+ * end_date against a UTC today would disagree with the window boundaries for
+ * five and a half hours every day.
+ */
+function calendarDay(instant) {
+  const { year, month, day } = calendarParts(instant);
+  return dateStr(year, month, day);
 }
 
 /** The window immediately after `window`, rolling the year at December. */
@@ -81,8 +111,10 @@ function currentAndNext(now) {
 
 module.exports = {
   FIRST_WINDOW_LAST_DAY,
+  SPRINT_TIMEZONE,
   daysInMonth,
   windowFor,
   nextWindow,
   currentAndNext,
+  calendarDay,
 };

@@ -305,9 +305,11 @@ Two details worth knowing:
 - **There is no cron.** Atlas reconciles against the calendar on the next read of
   a sprint endpoint, so a boundary takes effect the first time someone opens the
   board or the sprints screen after it passes — not at midnight exactly.
-- **Boundaries are UTC.** Projects carry no timezone (it lives on users), so a
-  team far east of Greenwich sees the handover land up to a day off their local
-  calendar.
+- **Boundaries are IST** (`Asia/Kolkata`). A window turns over at local midnight
+  there — the 16th begins when the team's day does, not at 05:30. It is one
+  constant, `SPRINT_TIMEZONE` in `backend/utils/sprint-windows.js`; projects
+  carry no timezone of their own (it lives on users), so that constant is what a
+  per-project setting would replace.
 
 Generated sprints are marked by `sprints.auto_key` (`2026-09-1`); a null means a
 person made it. Every automatic action is in the audit log under the actor
