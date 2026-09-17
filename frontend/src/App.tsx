@@ -12,6 +12,7 @@ import { ProjectScope } from '@/components/app/project-scope';
 import { LegacyProjectRedirect } from '@/components/app/legacy-redirect';
 import { PortalShell } from '@/components/app/portal-shell';
 import { LandingGate } from '@/components/app/landing-gate';
+import { DemoBridge } from '@/demo/demo-bridge';
 import { PROJECT_SCREENS } from '@/lib/urls';
 import LoginScreen from '@/screens/login';
 
@@ -152,10 +153,11 @@ function ProtectedLayout() {
 export default function App() {
   return (
     <ThemeProvider>
-      <BrowserRouter>
+      <BrowserRouter basename={__ATLAS_DEMO__ ? '/demo' : undefined}>
         <AuthProvider>
+          {__ATLAS_DEMO__ && <DemoBridge />}
           <Routes>
-            <Route path="/login" element={<LoginScreen />} />
+            <Route path="/login" element={__ATLAS_DEMO__ ? <Navigate to="/dashboard" replace /> : <LoginScreen />} />
             <Route path="/" element={<LandingGate />} />
             <Route path="/help/*" element={<HelpLayout />} />
             <Route path="/portal" element={<PortalShell />}>

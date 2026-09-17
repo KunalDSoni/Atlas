@@ -74,5 +74,5 @@ export function releaseUrl(projectKey: string, slug: string): string {
 
 /** For Copy Link — a URL that survives being pasted into Slack. */
 export function absoluteUrl(path: string): string {
-  return `${window.location.origin}${path}`;
+  return `${window.location.origin}${__ATLAS_DEMO__ ? '/demo' : ''}${path}`;
 }

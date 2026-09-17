@@ -216,6 +216,10 @@ export default function ReportsScreen() {
 
   /** CSV lives behind auth, so fetch it with the token and save the blob. */
   async function downloadCsv() {
+    if (__ATLAS_DEMO__) {
+      toast.info('CSV export is turned off in the demo.');
+      return;
+    }
     if (!currentProjectId) return;
     try {
       const res = await fetch(api.reports.csvUrl(currentProjectId), {

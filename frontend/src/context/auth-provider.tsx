@@ -58,6 +58,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    // Nothing to sign out of: start the demo over instead.
+    if (__ATLAS_DEMO__) {
+      window.location.assign('/demo/');
+      return;
+    }
     try {
       await api.auth.logout();
     } catch {

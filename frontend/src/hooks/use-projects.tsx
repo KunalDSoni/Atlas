@@ -18,7 +18,8 @@ interface ProjectsContextValue {
 }
 
 const ProjectsContext = createContext<ProjectsContextValue | null>(null);
-const LAST_PROJECT_KEY = 'atlas_last_project';
+// The demo keeps its own key so it never re-points a real session on the same origin.
+const LAST_PROJECT_KEY = __ATLAS_DEMO__ ? 'atlas_demo_last_project' : 'atlas_last_project';
 
 export function ProjectsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();

@@ -25,12 +25,16 @@ import type {
 const TOKEN_KEY = 'atlas_token';
 
 export function getToken(): string | null {
+  // The demo is always signed in, and never touches the real session's key.
+  if (__ATLAS_DEMO__) return 'demo';
   return localStorage.getItem(TOKEN_KEY);
 }
 export function setToken(token: string) {
+  if (__ATLAS_DEMO__) return;
   localStorage.setItem(TOKEN_KEY, token);
 }
 export function clearToken() {
+  if (__ATLAS_DEMO__) return;
   localStorage.removeItem(TOKEN_KEY);
 }
 
@@ -79,6 +83,11 @@ export function onUnauthorized(handler: () => void) {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  if (__ATLAS_DEMO__) {
+    const { demoRequest } = await import('@/demo/demo-api');
+    return (await demoRequest(path, options)) as T;
+  }
+
   const token = getToken();
   const isFormData = options.body instanceof FormData;
 

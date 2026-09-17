@@ -12,7 +12,8 @@ let source: EventSource | null = null;
 let refCount = 0;
 
 function open() {
-  if (source) return;
+  // The demo has no server to stream from.
+  if (__ATLAS_DEMO__ || source) return;
   const token = getToken();
   if (!token) return;
   source = new EventSource(`/api/stream?token=${encodeURIComponent(token)}`);
