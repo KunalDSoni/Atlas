@@ -1,6 +1,6 @@
 {
   "name": "atlas",
-  "version": "14.13.0",
+  "version": "14.13.1",
   "description": "Atlas — Project management tool built for teams that ship fast. A full-stack Jira clone with Kanban boards, sprint management, role-based access, and real-time dashboards.",
   "private": true,
   "scripts": {
