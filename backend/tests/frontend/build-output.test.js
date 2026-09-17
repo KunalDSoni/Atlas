@@ -94,3 +94,29 @@ describeIfBuilt('Bundle wiring', () => {
     expect(bundle).not.toContain('x-user-role');
   });
 });
+
+const DEMO_INDEX = path.join(BUILD_DIR, 'demo', 'index.html');
+const describeIfDemoBuilt = fs.existsSync(DEMO_INDEX) ? describe : describe.skip;
+
+describeIfDemoBuilt('Demo build', () => {
+  test('its shell loads assets from /demo/assets, and they exist', () => {
+    const html = fs.readFileSync(DEMO_INDEX, 'utf8');
+    const refs = [...html.matchAll(/(?:src|href)="(\/demo\/assets\/[^"]+)"/g)].map((m) => m[1]);
+    expect(refs.length).toBeGreaterThan(0);
+    for (const ref of refs) {
+      expect(fs.existsSync(path.join(BUILD_DIR, ref.replace(/^\//, '')))).toBe(true);
+    }
+  });
+
+  test('sample data ships in the demo bundle only', () => {
+    const fixtures = require('../../../frontend/src/demo/fixtures.json');
+    const listKey = Object.keys(fixtures).find((k) => /^\/projects\/[^/]+\/issues$/.test(k) && fixtures[k].length);
+    const marker = fixtures[listKey][0].title;
+    const contains = (dir) => fs.readdirSync(dir)
+      .filter((f) => f.endsWith('.js'))
+      .some((f) => fs.readFileSync(path.join(dir, f), 'utf8').includes(marker));
+
+    expect(contains(path.join(BUILD_DIR, 'demo', 'assets'))).toBe(true);
+    expect(contains(path.join(BUILD_DIR, 'assets'))).toBe(false);
+  });
+});

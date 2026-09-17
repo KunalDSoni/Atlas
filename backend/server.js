@@ -10,6 +10,7 @@ const { initDb, getDb, queryOne } = require('./database');
 const { authMiddleware } = require('./middleware/auth');
 const { requestLogger } = require('./middleware/logger');
 const { blockClients } = require('./middleware/servicedesk');
+const { frameOptionsFor } = require('./utils/frame-options');
 const { apiRateLimit } = require('./middleware/ratelimit');
 
 // Route modules
@@ -75,7 +76,7 @@ app.use(cors({
 // Baseline security headers.
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-Frame-Options', frameOptionsFor(req.path));
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
@@ -241,6 +242,13 @@ app.use('/api', requestTypesRoutes);
 app.use('/api', queuesRoutes);
 app.use('/api', slaRoutes);
 app.use('/api', deflectionRoutes);
+
+// The sample-data demo is a second SPA (frontend `vite build --mode demo`) with
+// its own entry. express.static above serves /demo/ and its assets; deep links
+// need the demo's index.html, not the app's.
+app.get('/demo/{*splat}', (req, res) => {
+  res.sendFile('index.html', { root: path.join(BUILD_DIR, 'demo') });
+});
 
 // SPA fallback (Express 5 compatible)
 app.get('/{*splat}', (req, res) => {
