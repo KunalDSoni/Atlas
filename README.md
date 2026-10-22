@@ -150,7 +150,8 @@ repository" flow, which tries to create a new copy of the repo. Go back, choose
 GitHub **Settings → Applications → Installed GitHub Apps → Cloudflare Workers and
 Pages → Configure** and grant it this repo.
 
-To deploy from your machine instead:
+To deploy from your machine instead (Wrangler needs Node.js 22 or later;
+Cloudflare's own builds already use a newer Node):
 `cd frontend && npx wrangler login && npm run deploy:cloudflare`.
 
 How it works: `vite.config.ts` swaps `src/main.tsx` for `src/site-main.tsx` in

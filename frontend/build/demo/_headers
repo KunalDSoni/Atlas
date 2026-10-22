@@ -15,8 +15,3 @@
 /demo/*
   ! X-Frame-Options
   X-Frame-Options: SAMEORIGIN
-
-/assets/*
-  Cache-Control: public, max-age=31536000, immutable
-/demo/assets/*
-  Cache-Control: public, max-age=31536000, immutable

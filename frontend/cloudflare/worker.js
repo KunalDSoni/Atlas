@@ -7,10 +7,15 @@
 // assets' SPA fallback only knows the root one, so deep links like /demo/board
 // would load the landing page. Files are served as-is; every other /demo path
 // gets the demo's index.html, as the Express route in backend/server.js does.
-function demoAsset(request, env) {
+async function demoAsset(request, env) {
   const { pathname } = new URL(request.url);
-  if (/\.[a-z0-9]+$/i.test(pathname)) return env.ASSETS.fetch(request);
-  return env.ASSETS.fetch(new URL('/demo/', request.url));
+  if (!/\.[a-z0-9]+$/i.test(pathname)) return env.ASSETS.fetch(new URL('/demo/', request.url));
+
+  // A missing file comes back as the SPA fallback page. Answer 404 instead, so
+  // a stale chunk requested after a redeploy is not cached as HTML.
+  const asset = await env.ASSETS.fetch(request);
+  const isFallback = asset.headers.get('Content-Type')?.startsWith('text/html') && !pathname.endsWith('.html');
+  return isFallback ? new Response('Not found', { status: 404 }) : asset;
 }
 
 // public/_headers covers files served straight from the assets, but Cloudflare
@@ -30,6 +35,7 @@ async function demo(request, env) {
   const asset = await demoAsset(request, env);
   const response = new Response(asset.body, asset);
   for (const [name, value] of Object.entries(DEMO_HEADERS)) response.headers.set(name, value);
+  // Content-hashed build output never changes under the same name.
   if (asset.ok && new URL(request.url).pathname.startsWith('/demo/assets/')) {
     response.headers.set('Cache-Control', 'public, max-age=31536000, immutable');
   }
