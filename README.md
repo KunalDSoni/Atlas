@@ -137,14 +137,17 @@ Cloudflare forward `/api/*` to it — the browser still sees one origin, so no C
 setup is needed. Deploy the backend first and note its public URL
 (e.g. `https://atlas-api.onrender.com`).
 
-**As a Worker** (the dashboard's default: Workers & Pages → Create → Worker → Import a repository):
+**As a Worker** (the dashboard's default: Workers & Pages → Create application →
+Connect GitHub → pick `Atlas`). The Cloudflare files must be on the branch Cloudflare
+builds (`main` by default).
 
 - Project name: `atlas` (must match `name` in `frontend/wrangler.jsonc`)
-- Root directory / path: `frontend`
-- Build command: `npm ci && npm run build`
-- Deploy command: `npx wrangler deploy`
-- After the first deploy: Worker → **Settings → Variables and Secrets** → add
-  `BACKEND_URL` = your backend URL, then redeploy.
+- Build command: `npm run build` (Cloudflare installs dependencies itself)
+- Deploy command: `npx wrangler deploy` (the default); leave the preview command at its default
+- Advanced settings → Path: `frontend`; leave build variables empty
+- After the first deploy: Worker → **Settings → Variables and Secrets → Add** → Text,
+  `BACKEND_URL` = your backend origin (`https://…`, no path), then **Deploy**.
+  Build variables never reach the running Worker, so don't put it there.
 
 **As Pages** (Workers & Pages → Create → Pages → Connect to Git):
 
@@ -152,10 +155,14 @@ setup is needed. Deploy the backend first and note its public URL
   `npm run build`, build output directory: `build`, variable `NODE_VERSION` = `20`
 - **Settings → Variables and Secrets** → add `BACKEND_URL`, then redeploy.
 
-If the dashboard says **Missing git connection**, Cloudflare's GitHub app cannot
-see this repository: on GitHub open **Settings → Applications → Installed GitHub
-Apps → Cloudflare Workers and Pages → Configure** and grant it this repo (or
-reconnect GitHub from the Cloudflare import screen).
+If the dashboard says **Missing git connection**, you are probably in the
+"clone a public repository" flow, which tries to create a new copy of the repo.
+Go back, choose **Connect GitHub**, and pick `Atlas` from the list. If `Atlas` is
+not listed, open GitHub **Settings → Applications → Installed GitHub Apps →
+Cloudflare Workers and Pages → Configure** and grant it this repo.
+
+Branch previews get an empty `previews` block in `wrangler.jsonc` and no
+`BACKEND_URL`, so their pages load but `/api` returns 503.
 
 Without `BACKEND_URL` the site and `/demo/` still load, and API calls return 503.
 To deploy the Worker from your machine instead:

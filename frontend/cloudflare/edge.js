@@ -15,7 +15,15 @@ export function proxyApi(request, env) {
   }
 
   const url = new URL(request.url);
-  const target = new URL(url.pathname + url.search, env.BACKEND_URL);
+  let target;
+  try {
+    target = new URL(url.pathname + url.search, env.BACKEND_URL);
+  } catch {
+    return Response.json(
+      { error: 'Atlas API is misconfigured: BACKEND_URL must be a full URL such as https://atlas.example.com.' },
+      { status: 503 },
+    );
+  }
 
   // Method, headers (x-auth-token included) and body carry over as-is; the
   // live-events EventSource on /api/stream streams straight through.

@@ -12,5 +12,9 @@
     "run_worker_first": ["/api", "/api/*", "/demo", "/demo/*"]
   },
   // Keep BACKEND_URL set in the dashboard across deploys.
-  "keep_vars": true
+  "keep_vars": true,
+  // Required by `wrangler preview` (Workers Builds' default for non-production
+  // branches). Previews do not inherit dashboard variables, so add
+  // "vars": { "BACKEND_URL": "..." } here if previews should reach an API.
+  "previews": {}
 }
