@@ -128,31 +128,43 @@ creation requires the `admin` or `board_admin` role, matching
 To verify this path before shipping, run `cd frontend && npm run test:e2e:empty` —
 it boots the real backend unseeded and drives the first-run flow in a browser.
 
-## Deploying the frontend on Cloudflare Pages
+## Deploying the frontend on Cloudflare
 
-Cloudflare Pages hosts the static app (`frontend/build`, including the `/demo/`
-sample-data demo). The Express API and its database cannot run on Pages, so keep
+Cloudflare hosts the static app (`frontend/build`, including the `/demo/`
+sample-data demo). The Express API and its database cannot run there, so keep
 the backend on a Node host (Render via `render.yaml`, or the Docker image) and let
-Pages forward `/api/*` to it — the browser still sees one origin, so no CORS
-setup is needed.
+Cloudflare forward `/api/*` to it — the browser still sees one origin, so no CORS
+setup is needed. Deploy the backend first and note its public URL
+(e.g. `https://atlas-api.onrender.com`).
 
-1. Deploy the backend first and note its public URL (e.g. `https://atlas-api.onrender.com`).
-2. Cloudflare dashboard → **Workers & Pages → Create → Pages → Connect to Git** → pick this repo.
-3. Build settings:
-   - Framework preset: **None**
-   - Root directory: `frontend`
-   - Build command: `npm run build`
-   - Build output directory: `build`
-   - Environment variable: `NODE_VERSION` = `20`
-4. **Settings → Variables and Secrets** → add `BACKEND_URL` = your backend URL, then redeploy.
+**As a Worker** (the dashboard's default: Workers & Pages → Create → Worker → Import a repository):
+
+- Project name: `atlas` (must match `name` in `frontend/wrangler.jsonc`)
+- Root directory / path: `frontend`
+- Build command: `npm ci && npm run build`
+- Deploy command: `npx wrangler deploy`
+- After the first deploy: Worker → **Settings → Variables and Secrets** → add
+  `BACKEND_URL` = your backend URL, then redeploy.
+
+**As Pages** (Workers & Pages → Create → Pages → Connect to Git):
+
+- Framework preset: **None**, root directory: `frontend`, build command:
+  `npm run build`, build output directory: `build`, variable `NODE_VERSION` = `20`
+- **Settings → Variables and Secrets** → add `BACKEND_URL`, then redeploy.
+
+If the dashboard says **Missing git connection**, Cloudflare's GitHub app cannot
+see this repository: on GitHub open **Settings → Applications → Installed GitHub
+Apps → Cloudflare Workers and Pages → Configure** and grant it this repo (or
+reconnect GitHub from the Cloudflare import screen).
 
 Without `BACKEND_URL` the site and `/demo/` still load, and API calls return 503.
-To deploy from your machine instead: `cd frontend && npx wrangler login && npm run deploy:cloudflare`.
+To deploy the Worker from your machine instead:
+`cd frontend && npx wrangler login && npm run deploy:cloudflare`.
 
-How it works: `frontend/functions/api/[[path]].js` proxies the API (live
-updates on `/api/stream` included), `frontend/functions/demo/[[path]].js` serves
-the demo's deep links, and `frontend/public/_headers` applies the same security
-headers Express sets.
+How it works: `frontend/cloudflare/edge.js` proxies the API (live updates on
+`/api/stream` included) and serves the demo's deep links; `cloudflare/worker.js`
+(Worker) and `functions/` (Pages) both call it. `frontend/public/_headers`
+applies the same security headers Express sets.
 
 ## Testing
 

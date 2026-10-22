@@ -12,7 +12,7 @@
     "test": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:empty": "playwright test -c playwright.empty.config.ts",
-    "deploy:cloudflare": "npm run build && npx wrangler pages deploy build --project-name atlas"
+    "deploy:cloudflare": "npm run build && npx wrangler deploy"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
