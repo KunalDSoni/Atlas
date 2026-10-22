@@ -21,9 +21,11 @@ export function Hero({ demoSlot }: { demoSlot: ReactNode }) {
 
         <div className="mt-7 flex flex-wrap justify-center gap-3">
           {demoSlot}
-          <a href="/login" className="rounded-md border border-border px-6 py-3 font-semibold hover:bg-surface">
-            {LANDING_COPY.nav.signIn}
-          </a>
+          {!__ATLAS_SITE__ && (
+            <a href="/login" className="rounded-md border border-border px-6 py-3 font-semibold hover:bg-surface">
+              {LANDING_COPY.nav.signIn}
+            </a>
+          )}
         </div>
 
         <p className="mt-9 text-xs font-medium uppercase tracking-widest text-faint">

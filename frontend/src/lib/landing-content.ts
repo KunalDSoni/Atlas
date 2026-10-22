@@ -121,7 +121,8 @@ export const LANDING_COPY = {
     links: [
       { label: 'Product', href: '#product' },
       { label: 'Capabilities', href: '#capabilities' },
-      { label: 'Sign in', href: '/login' },
+      // The website-only build ships no app to sign in to.
+      ...(__ATLAS_SITE__ ? [] : [{ label: 'Sign in', href: '/login' }]),
     ],
   },
 };

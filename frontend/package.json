@@ -6,13 +6,14 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build && vite build --mode demo",
+    "build:site": "tsc -b && vite build --mode site --outDir dist/site && vite build --mode demo --outDir dist/site/demo",
     "demo:capture": "vite build && node scripts/capture-demo-fixtures.mjs",
     "preview": "vite preview",
     "lint": "tsc -b --noEmit",
     "test": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:empty": "playwright test -c playwright.empty.config.ts",
-    "deploy:cloudflare": "npm run build && wrangler deploy"
+    "deploy:cloudflare": "npm run build:site && wrangler deploy"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

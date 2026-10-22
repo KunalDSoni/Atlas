@@ -7,11 +7,24 @@ export default defineConfig(({ mode }) => {
   // `vite build --mode demo` is the sample-data demo served at /demo/ — the same
   // app with its API client answering from src/demo/fixtures.json.
   const demo = mode === 'demo';
+  // `vite build --mode site` is the public website alone (npm run build:site):
+  // the landing page from src/site-main.tsx, with no app, login or API behind it.
+  const site = mode === 'site';
 
   return {
     base: demo ? '/demo/' : '/',
-    define: { __ATLAS_DEMO__: JSON.stringify(demo) },
-    plugins: [react(), tailwindcss()],
+    define: { __ATLAS_DEMO__: JSON.stringify(demo), __ATLAS_SITE__: JSON.stringify(site) },
+    plugins: [
+      react(),
+      tailwindcss(),
+      site && {
+        name: 'atlas-site-entry',
+        transformIndexHtml: {
+          order: 'pre',
+          handler: (html: string) => html.replace('/src/main.tsx', '/src/site-main.tsx'),
+        },
+      },
+    ],
     resolve: {
       alias: { '@': path.resolve(__dirname, './src') },
     },

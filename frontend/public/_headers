@@ -1,6 +1,5 @@
-# Cloudflare Pages response headers for the static build — the same baseline
-# Express sets in backend/server.js. API responses come from the backend
-# through functions/api and keep the backend's own headers.
+# Cloudflare response headers for the static build — the same baseline
+# Express sets in backend/server.js.
 /*
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
