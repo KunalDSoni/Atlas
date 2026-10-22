@@ -128,6 +128,32 @@ creation requires the `admin` or `board_admin` role, matching
 To verify this path before shipping, run `cd frontend && npm run test:e2e:empty` —
 it boots the real backend unseeded and drives the first-run flow in a browser.
 
+## Deploying the frontend on Cloudflare Pages
+
+Cloudflare Pages hosts the static app (`frontend/build`, including the `/demo/`
+sample-data demo). The Express API and its database cannot run on Pages, so keep
+the backend on a Node host (Render via `render.yaml`, or the Docker image) and let
+Pages forward `/api/*` to it — the browser still sees one origin, so no CORS
+setup is needed.
+
+1. Deploy the backend first and note its public URL (e.g. `https://atlas-api.onrender.com`).
+2. Cloudflare dashboard → **Workers & Pages → Create → Pages → Connect to Git** → pick this repo.
+3. Build settings:
+   - Framework preset: **None**
+   - Root directory: `frontend`
+   - Build command: `npm run build`
+   - Build output directory: `build`
+   - Environment variable: `NODE_VERSION` = `20`
+4. **Settings → Variables and Secrets** → add `BACKEND_URL` = your backend URL, then redeploy.
+
+Without `BACKEND_URL` the site and `/demo/` still load, and API calls return 503.
+To deploy from your machine instead: `cd frontend && npx wrangler login && npm run deploy:cloudflare`.
+
+How it works: `frontend/functions/api/[[path]].js` proxies the API (live
+updates on `/api/stream` included), `frontend/functions/demo/[[path]].js` serves
+the demo's deep links, and `frontend/public/_headers` applies the same security
+headers Express sets.
+
 ## Testing
 
 | Command | Scope |

@@ -1,0 +1,23 @@
+# Cloudflare Pages response headers for the static build — the same baseline
+# Express sets in backend/server.js. API responses come from the backend
+# through functions/api and keep the backend's own headers.
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+  Cross-Origin-Resource-Policy: same-origin
+  Permissions-Policy: geolocation=(), microphone=(), camera=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+
+# The demo may be framed by the same origin (matches backend/utils/frame-options.js).
+/demo
+  ! X-Frame-Options
+  X-Frame-Options: SAMEORIGIN
+/demo/*
+  ! X-Frame-Options
+  X-Frame-Options: SAMEORIGIN
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+/demo/assets/*
+  Cache-Control: public, max-age=31536000, immutable

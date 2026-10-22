@@ -11,7 +11,8 @@
     "lint": "tsc -b --noEmit",
     "test": "vitest",
     "test:e2e": "playwright test",
-    "test:e2e:empty": "playwright test -c playwright.empty.config.ts"
+    "test:e2e:empty": "playwright test -c playwright.empty.config.ts",
+    "deploy:cloudflare": "npm run build && npx wrangler pages deploy build --project-name atlas"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
