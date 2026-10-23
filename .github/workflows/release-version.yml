@@ -2,15 +2,13 @@
 #
 # "Earns one" means the push contains a feat, a fix, a perf, or a breaking
 # change. Docs and chores cut nothing — releasing on every commit would burn a
-# version on a typo and push a container image for it. The mapping lives in
-# backend/scripts/next-version.js and is unit-tested there.
+# version on a typo. The mapping lives in backend/scripts/next-version.js and is
+# unit-tested there.
 #
 # Two GitHub behaviours shape this file:
 #
-#  1. Events created with GITHUB_TOKEN do not start workflows. The tag pushed
-#     below therefore cannot be relied on to trigger release-build.yml, so this
-#     workflow calls it directly. The same rule works in our favour for the
-#     release commit: it does not re-run CI, so there is no loop.
+#  1. Events created with GITHUB_TOKEN do not start workflows, so the release
+#     commit pushed below does not re-run CI, and there is no loop.
 #  2. Default workflow permissions on this repo are read-only, so the write
 #     scope is requested explicitly below.
 name: Release - version on main
@@ -45,13 +43,8 @@ jobs:
           # Tags and full history: the helper needs every commit since the last
           # release to decide the bump.
           fetch-depth: 0
-          # RELEASE_TOKEN, when configured, is what makes the tag push a real
-          # event that starts release-build.yml. GITHUB_TOKEN cannot: GitHub
-          # does not start workflows from events it creates, and the AWS role's
-          # trust policy only issues credentials for a tag ref — a reusable
-          # call from this workflow presents refs/heads/main and is refused.
-          # Without the secret, versioning still works; only the image is
-          # skipped, and the summary below says so.
+          # RELEASE_TOKEN, when configured, pushes the release commit and tag;
+          # otherwise GITHUB_TOKEN does.
           token: ${{ secrets.RELEASE_TOKEN || github.token }}
 
       - uses: actions/setup-node@v5
@@ -140,7 +133,7 @@ jobs:
           git commit -m "chore(release): ${{ steps.compute.outputs.version }}"
 
           # Tag the release commit, so the tag points at the code whose
-          # manifests say that version. release-build.yml asserts exactly this.
+          # manifests say that version.
           git tag "${{ steps.compute.outputs.tag }}"
           git push origin HEAD:main
           git push origin "${{ steps.compute.outputs.tag }}"
@@ -152,16 +145,4 @@ jobs:
             echo "### Released ${{ steps.compute.outputs.tag }}"
             echo ""
             echo "Bump: **${{ steps.compute.outputs.bump }}**"
-            echo ""
-            if [ -n "${{ secrets.RELEASE_TOKEN }}" ]; then
-              echo "The tag push starts *Release - build image*. **Nothing is deployed** — run *Release - deploy one customer* for that."
-            else
-              echo "⚠️ **No image was built.** The tag was pushed with \`GITHUB_TOKEN\`, and GitHub does not start workflows from events it creates."
-              echo ""
-              echo "To build automatically, add a repository secret \`RELEASE_TOKEN\` — a fine-grained PAT with **Contents: read and write** on this repo. Until then, build this release by re-pushing its tag from a terminal:"
-              echo ""
-              echo "\`\`\`"
-              echo "git push --delete origin ${{ steps.compute.outputs.tag }} && git push origin ${{ steps.compute.outputs.tag }}"
-              echo "\`\`\`"
-            fi
           } >> "$GITHUB_STEP_SUMMARY"

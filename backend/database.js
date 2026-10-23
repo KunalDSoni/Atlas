@@ -1241,12 +1241,11 @@ async function initMysql() {
 
   // TLS to the database. Off by default (a local MySQL on the same host needs
   // none); required in production, where the connection crosses a network.
-  // The CA bundle is baked into the image at /app/certs — see the Dockerfile.
-  // We read it explicitly rather than using mysql2's bundled 'Amazon RDS'
-  // profile, which predates AWS's CA rotation and fails opaquely when stale.
+  // The server certificate is checked against Node's public CAs, or against
+  // MYSQL_SSL_CA when the provider issues its own.
   const ssl = (process.env.MYSQL_SSL || '').toLowerCase() === 'true'
     ? {
-        ca: require('fs').readFileSync(process.env.MYSQL_SSL_CA || '/app/certs/rds-global-bundle.pem'),
+        ...(process.env.MYSQL_SSL_CA && { ca: require('fs').readFileSync(process.env.MYSQL_SSL_CA) }),
         minVersion: 'TLSv1.2',
       }
     : undefined;
