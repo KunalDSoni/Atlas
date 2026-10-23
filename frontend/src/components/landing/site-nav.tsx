@@ -23,9 +23,11 @@ export function SiteNav({ demoSlot }: { demoSlot: ReactNode }) {
         </nav>
 
         <div className="ml-auto flex items-center gap-3">
-          <a href="/login" className="hidden rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-surface md:inline-block">
-            {LANDING_COPY.nav.signIn}
-          </a>
+          {!__ATLAS_SITE__ && (
+            <a href="/login" className="hidden rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-surface md:inline-block">
+              {LANDING_COPY.nav.signIn}
+            </a>
+          )}
           {demoSlot}
           <button
             type="button"
@@ -46,9 +48,11 @@ export function SiteNav({ demoSlot }: { demoSlot: ReactNode }) {
               {l.label}
             </a>
           ))}
-          <a href="/login" className="block py-2 text-sm font-medium text-muted-foreground">
-            {LANDING_COPY.nav.signIn}
-          </a>
+          {!__ATLAS_SITE__ && (
+            <a href="/login" className="block py-2 text-sm font-medium text-muted-foreground">
+              {LANDING_COPY.nav.signIn}
+            </a>
+          )}
         </div>
       )}
     </header>

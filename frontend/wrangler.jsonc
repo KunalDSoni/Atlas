@@ -1,0 +1,17 @@
+// The public Atlas website on Cloudflare Workers: the landing page and the
+// /demo/ sample-data demo, with no app or API behind it.
+// Dashboard build command: `npm run build:site`; deploy command: `npx wrangler deploy`.
+{
+  "name": "atlas",
+  "main": "cloudflare/worker.js",
+  "compatibility_date": "2025-09-01",
+  "assets": {
+    "directory": "./dist/site",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/demo", "/demo/*"]
+  },
+  // Required by `wrangler preview`, Workers Builds' default command for
+  // non-production branches. The website needs no Preview-specific settings.
+  "previews": {}
+}
